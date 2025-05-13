@@ -1,0 +1,10 @@
+export { default as GeneralTab } from './GeneralTab';
+export { default as RegistrationTab } from './RegistrationTab';
+export { default as ResourcesTab } from './ResourcesTab';
+export { default as AbstractsTab } from './AbstractsTab';
+export { default as BadgesTab } from './BadgesTab';
+export { default as EmailTab } from './EmailTab';
+export { default as PaymentTab } from './PaymentTab';
+export { default as CategoriesTab } from './CategoriesTab';
+export { default as SettingsTab } from './SettingsTab';
+export { default as ScheduleTab } from './ScheduleTab'; 

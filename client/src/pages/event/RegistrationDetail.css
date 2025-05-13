@@ -1,0 +1,68 @@
+.registration-detail-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.registration-detail-page .ant-page-header {
+  padding: 24px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.registration-detail-page .ant-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.registration-detail-page .ant-descriptions-item-label {
+  width: 150px;
+  font-weight: 500;
+}
+
+.registration-detail-page .qr-code-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.registration-detail-page .ant-statistic {
+  margin-bottom: 20px;
+}
+
+.registration-detail-page .ant-statistic-title {
+  font-size: 14px;
+}
+
+.registration-detail-page .badge-preview {
+  border: 1px dashed #ccc;
+  padding: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+  background-color: #fafafa;
+}
+
+.registration-detail-page .ant-timeline {
+  margin-top: 20px;
+}
+
+.registration-detail-page .ant-table-wrapper {
+  margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .registration-detail-page .ant-descriptions-item {
+    padding-bottom: 8px;
+  }
+  
+  .registration-detail-page .ant-row {
+    flex-direction: column;
+  }
+  
+  .registration-detail-page .ant-col {
+    width: 100%;
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+} 

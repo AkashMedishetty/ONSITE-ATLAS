@@ -1,0 +1,784 @@
+[{
+  "_id": {
+    "$oid": "67dae3d3b7eb304a8e31b1b7"
+  },
+  "name": "Speaker",
+  "description": "",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#EF4444",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "createdAt": {
+    "$date": "2025-03-19T15:33:39.206Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-19T15:33:39.206Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67db1970f43e13e1c4bf9731"
+  },
+  "name": "Delegate",
+  "description": "",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#4F46E5",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "createdAt": {
+    "$date": "2025-03-19T19:22:24.335Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-19T19:22:24.335Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbbe88d438efe76adf88db"
+  },
+  "name": "Moderators",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:06:48.149Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:06:48.149Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbbe89d438efe76adf8901"
+  },
+  "name": "Judge",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:06:49.380Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:06:49.380Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbbe8ed438efe76adf8993"
+  },
+  "name": "Orators",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:06:54.062Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:06:54.062Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc420c50d47dc49fc3322"
+  },
+  "name": "CONSULTANT  NS",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:40.381Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:40.381Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc420c50d47dc49fc332c"
+  },
+  "name": "CONSULTANT",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:40.800Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:40.800Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc420c50d47dc49fc3332"
+  },
+  "name": "NEURO SURGEON",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:40.999Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:40.999Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc421c50d47dc49fc3348"
+  },
+  "name": "Consultant",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:41.773Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:41.773Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc422c50d47dc49fc335a"
+  },
+  "name": "SENIOR RESIDENT",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:42.404Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:42.404Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dbc422c50d47dc49fc3364"
+  },
+  "name": "CONSULTANAT",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T07:30:42.763Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T07:30:42.763Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc006c0c5898aeef199dcb"
+  },
+  "name": "Faculty",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:47:56.485Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:47:56.485Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc00890c5898aeef19a15d"
+  },
+  "name": "dint pick the call",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": false,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:25.817Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-04T03:49:21.818Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008a0c5898aeef19a163"
+  },
+  "name": "19th Evening",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:26.000Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:26.000Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008a0c5898aeef19a171"
+  },
+  "name": "dint gave confirmation",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:26.415Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:26.415Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a187"
+  },
+  "name": "19th evening",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.097Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.097Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a18d"
+  },
+  "name": "22nd Morning",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.249Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.249Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a193"
+  },
+  "name": "dont want to present Oral Poster",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.413Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.413Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a199"
+  },
+  "name": "Dont Want to present oral poster",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.577Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.577Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a19f"
+  },
+  "name": "22nd morning",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.735Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.735Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008b0c5898aeef19a1a5"
+  },
+  "name": "Dint Pick The Call",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:27.880Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:27.880Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008c0c5898aeef19a1b3"
+  },
+  "name": "dint Pick The Call",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:28.316Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:28.316Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008c0c5898aeef19a1b9"
+  },
+  "name": "May Not Attend",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:28.478Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:28.478Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008c0c5898aeef19a1bf"
+  },
+  "name": "is in operation Teatre",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:28.636Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:28.636Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008d0c5898aeef19a1d1"
+  },
+  "name": "will do registeraton and will share poster",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:29.134Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:29.134Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008d0c5898aeef19a1d7"
+  },
+  "name": "call be on one hour",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:29.296Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:29.296Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008d0c5898aeef19a1dd"
+  },
+  "name": "19th evening - E-Poster",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:29.450Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:29.450Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc008d0c5898aeef19a1eb"
+  },
+  "name": "curently busy",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#3B82F6",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "createdAt": {
+    "$date": "2025-03-20T11:48:29.832Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T11:48:29.832Z"
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dc8db68530615cc66c3752"
+  },
+  "name": "Akash Medishetty",
+  "description": "",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#dae548",
+  "permissions": {
+    "meals": true,
+    "kitItems": true,
+    "certificates": true,
+    "abstractSubmission": false
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "createdAt": {
+    "$date": "2025-03-20T21:50:46.801Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-20T21:50:46.801Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed31c6b5930d0c3267b5b2"
+  },
+  "name": "NONE",
+  "description": "",
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "color": "#020113",
+  "permissions": {
+    "meals": false,
+    "kitItems": false,
+    "certificates": false,
+    "abstractSubmission": false
+  },
+  "mealEntitlements": [],
+  "kitItemEntitlements": [],
+  "certificateEntitlements": [],
+  "createdAt": {
+    "$date": "2025-04-02T12:47:02.173Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T12:47:02.173Z"
+  },
+  "__v": 0
+}]

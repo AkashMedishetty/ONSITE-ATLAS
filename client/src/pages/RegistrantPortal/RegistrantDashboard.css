@@ -1,0 +1,222 @@
+/* Dashboard Container */
+.dashboard-container {
+  background-color: #f5f7fa;
+  min-height: calc(100vh - 56px);
+}
+
+/* Loading State */
+.loading-container {
+  min-height: calc(100vh - 56px);
+  background-color: #f8f9fa;
+}
+
+.large-spinner {
+  width: 3rem;
+  height: 3rem;
+}
+
+.error-alert {
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1);
+}
+
+/* Cards */
+.dashboard-card {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border: none !important;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1) !important;
+}
+
+.card-header-custom {
+  background-color: #f8f9fa;
+  border-bottom: none;
+  padding: 1rem 1.25rem;
+}
+
+/* Welcome Card */
+.welcome-card {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border: none !important;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.welcome-body {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 1.5rem;
+}
+
+.event-title {
+  color: #2c3e50;
+  font-weight: 700;
+}
+
+.welcome-message {
+  color: #495057;
+}
+
+/* Icons */
+.icon-primary {
+  color: #0d6efd;
+}
+
+/* Badges */
+.status-badge {
+  padding: 0.35rem 0.75rem;
+  border-radius: 50rem;
+  font-weight: 500;
+}
+
+.resource-badge {
+  padding: 0.35rem 0.75rem;
+}
+
+/* Buttons */
+.dashboard-btn {
+  border-radius: 50rem;
+  padding: 0.5rem 1.25rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.dashboard-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
+}
+
+.btn-download-badge {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.btn-download-cert {
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-support-ticket {
+  background-color: #0dcaf0;
+  border-color: #0dcaf0;
+}
+
+.btn-edit-profile {
+  background-color: #198754;
+  border-color: #198754;
+}
+
+.btn-view-abstract, 
+.btn-view-all-abstracts,
+.btn-download-invoice {
+  border-radius: 50rem;
+}
+
+.btn-new-abstract {
+  border-radius: 50rem;
+  padding: 0.5rem 1.25rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+/* Profile Section */
+.detail-item {
+  transition: background-color 0.2s ease;
+}
+
+.detail-item:hover {
+  background-color: #f8f9fa;
+}
+
+.detail-label {
+  margin-bottom: 0.25rem;
+}
+
+.custom-fields-footer {
+  padding: 1.25rem;
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+}
+
+.custom-field-item {
+  padding: 0.5rem 0;
+}
+
+/* Resources Section */
+.resource-item {
+  transition: background-color 0.2s ease;
+}
+
+.resource-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Abstracts Section */
+.abstract-item {
+  transition: background-color 0.2s ease;
+}
+
+.abstract-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Payments Section */
+.payments-table {
+  margin-bottom: 0;
+}
+
+.payment-row {
+  transition: background-color 0.2s ease;
+}
+
+.payment-amount {
+  color: #0d6efd;
+  font-weight: 600;
+}
+
+/* Empty States */
+.text-center.p-4.text-muted {
+  border-radius: 0.375rem;
+  background-color: #f8f9fa;
+  padding: 2rem !important;
+  margin: 0.5rem 0;
+  transition: background-color 0.2s ease;
+}
+
+.text-center.p-4.text-muted:hover {
+  background-color: #f0f0f0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .welcome-body {
+    text-align: center;
+  }
+  
+  .welcome-body .col-md-4 {
+    text-align: center !important;
+    margin-top: 1rem;
+  }
+}
+
+/* AbstractsList Table and Sort Styles */
+.abstracts-table th.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.abstracts-table th.clickable:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+.ascending {
+  transform: rotate(180deg);
+} 

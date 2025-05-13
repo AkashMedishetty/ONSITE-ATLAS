@@ -1,0 +1,552 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { FaUsers, FaUtensils, FaBox, FaCertificate, FaEdit, FaTrash, FaDownload, FaPlus } from 'react-icons/fa';
+import { Button, Spinner, Modal, Badge, Alert } from '../../../components/common';
+import eventService from '../../../services/eventService';
+import categoryService from '../../../services/categoryService';
+import registrationService from '../../../services/registrationService';
+import resourceService from '../../../services/resourceService';
+import CategoryResourcesConfig from './CategoryResourcesConfig';
+
+const CategoriesTab = ({ event }) => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const eventId = id || (event && event._id);
+
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [registrations, setRegistrations] = useState([]);
+  const [foodSettings, setFoodSettings] = useState(null);
+  const [kitSettings, setKitSettings] = useState(null);
+  const [certificateSettings, setCertificateSettings] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [showRegistrationsModal, setShowRegistrationsModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configTab, setConfigTab] = useState('food');
+  const [loadingData, setLoadingData] = useState(false);
+  const [categoryPermissions, setCategoryPermissions] = useState({});
+  const [originalPermissions, setOriginalPermissions] = useState({});
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+  const [saveInProgress, setSaveInProgress] = useState(false);
+
+  useEffect(() => {
+    if (eventId) {
+      fetchCategories();
+      fetchResourceSettings();
+    }
+  }, [eventId, event]);
+
+  // Fetch registrant counts for each category
+  const fetchRegistrantCounts = async (categoriesData) => {
+    if (!eventId || !categoriesData || !Array.isArray(categoriesData)) return categoriesData;
+
+    try {
+      const updatedCategories = [...categoriesData];
+      
+      // Get registrant counts for each category
+      for (let i = 0; i < updatedCategories.length; i++) {
+        const category = updatedCategories[i];
+        try {
+          const response = await registrationService.getCategoryRegistrations(eventId, category._id);
+          if (response && response.success) {
+            updatedCategories[i] = {
+              ...category,
+              registrantCount: response.data?.length || 0
+            };
+          }
+        } catch (error) {
+          console.error(`Error fetching registrant count for category ${category.name}:`, error);
+        }
+      }
+      
+      return updatedCategories;
+    } catch (error) {
+      console.error('Error fetching registrant counts:', error);
+      return categoriesData;
+    }
+  };
+
+  const fetchCategories = async () => {
+    if (!eventId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Step 1: Get all categories
+      const categoriesResponse = await categoryService.getEventCategories(eventId);
+      
+      // Step 2: Get statistics from the dashboard endpoint (reuse the same data source as dashboard)
+      const statsResponse = await eventService.getEventStatistics(eventId);
+      
+      if (categoriesResponse && categoriesResponse.success) {
+        console.log('Categories loaded:', categoriesResponse.data);
+        
+        // Ensure consistent permissions format
+        let processedCategories = categoriesResponse.data.map(category => ({
+          ...category,
+          permissions: {
+            meals: category.permissions?.meals || false,
+            kitItems: category.permissions?.kitItems || false,
+            certificates: category.permissions?.certificates || false,
+            abstractSubmission: category.permissions?.abstractSubmission || false
+          },
+          mealEntitlements: category.mealEntitlements || [],
+          kitItemEntitlements: category.kitItemEntitlements || [],
+          certificateEntitlements: category.certificateEntitlements || [],
+          registrantCount: 0 // Default to 0 initially
+        }));
+        
+        // If we have dashboard statistics, use those counts
+        if (statsResponse && statsResponse.success && statsResponse.data.categories) {
+          console.log('Using statistics data for counts:', statsResponse.data.categories);
+          const catMap = {};
+          statsResponse.data.categories.forEach(cat => {
+            catMap[cat.id || cat._id] = cat.count;
+          });
+          
+          // Update the counts from the statistics
+          processedCategories = processedCategories.map(category => ({
+            ...category,
+            registrantCount: catMap[category._id] || 0
+          }));
+        } else {
+          console.log('No statistics data, falling back to individual counts');
+          // Fallback: Get counts individually (less efficient)
+          processedCategories = await fetchRegistrantCounts(processedCategories);
+        }
+        
+        setCategories(processedCategories);
+      } else {
+        console.error('Failed to load categories:', categoriesResponse);
+        throw new Error(categoriesResponse?.message || 'Failed to load categories');
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setError(error.message || 'Failed to load categories');
+
+      // Don't show alert if we're already showing an error
+      if (!error.message?.includes('Network Error')) {
+        // Alert the user about the error in a nicer way
+        window.alert && window.alert(`Error loading categories: ${error.message || 'Unknown error'}`);
+      }
+
+      // Set empty categories array so UI doesn't break
+      setCategories([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchResourceSettings = async () => {
+    if (!eventId) return;
+
+    try {
+      // Try to get food settings
+      try {
+        const foodResponse = await resourceService.getFoodSettings(eventId);
+        if (foodResponse && foodResponse.success) {
+          console.log('Food settings loaded:', foodResponse.data);
+          setFoodSettings(foodResponse.data);
+        } else {
+          console.warn('Failed to fetch food settings:', foodResponse?.message);
+          setFoodSettings(null);
+        }
+      } catch (error) {
+        console.error('Error fetching food settings:', error);
+        setFoodSettings(null);
+      }
+
+      // Try to get kit settings
+      try {
+        const kitResponse = await resourceService.getKitSettings(eventId);
+        if (kitResponse && kitResponse.success) {
+          console.log('Kit settings loaded:', kitResponse.data);
+          setKitSettings(kitResponse.data);
+        } else {
+          console.warn('Failed to fetch kit settings:', kitResponse?.message);
+          setKitSettings(null);
+        }
+      } catch (error) {
+        console.error('Error fetching kit settings:', error);
+        setKitSettings(null);
+      }
+
+      // Try to get certificate settings
+      try {
+        const certResponse = await resourceService.getCertificateSettings(eventId);
+        if (certResponse && certResponse.success) {
+          console.log('Certificate settings loaded:', certResponse.data);
+          setCertificateSettings(certResponse.data);
+        } else {
+          console.warn('Failed to fetch certificate settings:', certResponse?.message);
+          setCertificateSettings(null);
+        }
+      } catch (error) {
+        console.error('Error fetching certificate settings:', error);
+        setCertificateSettings(null);
+      }
+    } catch (error) {
+      console.error('Error in fetchResourceSettings:', error);
+    }
+  };
+
+  // Update permissions when selected category changes
+  useEffect(() => {
+    if (selectedCategory) {
+      const permissions = {
+        meals: selectedCategory.permissions?.meals || false,
+        kitItems: selectedCategory.permissions?.kitItems || false,
+        certificates: selectedCategory.permissions?.certificates || false,
+        abstractSubmission: selectedCategory.permissions?.abstractSubmission || false
+      };
+      setCategoryPermissions(permissions);
+      setOriginalPermissions(permissions);
+    }
+  }, [selectedCategory]);
+
+  const handleCategoryClick = async (category) => {
+    setSelectedCategory(category);
+    setShowConfigModal(true);
+  };
+
+  const handleConfigClick = (category, e) => {
+    e.stopPropagation();
+    setSelectedCategory(category);
+    setShowConfigModal(true);
+  };
+
+  const handleDeleteClick = (category, e) => {
+    e.stopPropagation();
+    setSelectedCategory(category);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteCategory = async () => {
+    if (deleteConfirmation !== 'DELETE') {
+      return;
+    }
+
+    setDeleteInProgress(true);
+
+    try {
+      const response = await categoryService.deleteCategory(eventId, selectedCategory._id);
+
+      if (response && response.success) {
+        // Remove from local state
+        setCategories(categories.filter(c => c._id !== selectedCategory._id));
+        setShowDeleteModal(false);
+        setDeleteConfirmation('');
+      } else {
+        throw new Error(response?.message || 'Failed to delete category');
+      }
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      setError('Failed to delete category. Please try again.');
+    } finally {
+      setDeleteInProgress(false);
+    }
+  };
+
+  const handleExportRegistrations = async () => {
+    if (!selectedCategory) return;
+
+    try {
+      const response = await registrationService.exportCategoryRegistrations(
+        eventId,
+        selectedCategory._id
+      );
+
+      if (response && response.success && response.data.url) {
+        // Open download link in new tab
+        window.open(response.data.url, '_blank');
+      } else {
+        console.error('Export failed:', response?.message);
+        alert('Failed to export registrations');
+      }
+    } catch (error) {
+      console.error('Error exporting registrations:', error);
+      alert('Failed to export registrations');
+    }
+  };
+
+  const handleAddCategory = () => {
+    navigate(`/events/${eventId}/categories/new`, {
+      state: {
+        returnTo: `/events/${eventId}`,
+        activeTab: 'categories'
+      }
+    });
+  };
+
+  const handleSaveConfig = async (updatedPermissions) => {
+    if (!selectedCategory) return;
+
+    try {
+      const response = await categoryService.updateCategoryPermissions(
+        eventId,
+        selectedCategory._id,
+        updatedPermissions
+      );
+
+      if (response && response.success) {
+        // Update the category in the local state
+        setCategories(categories.map(c =>
+          c._id === selectedCategory._id
+            ? { ...c, permissions: updatedPermissions }
+            : c
+        ));
+        setShowConfigModal(false);
+      } else {
+        throw new Error(response?.message || 'Failed to update category permissions');
+      }
+    } catch (error) {
+      console.error('Error updating permissions:', error);
+      alert('Failed to save permissions');
+    }
+  };
+
+  // Function to check if a resource is allowed for this category
+  const isResourceAllowed = (category, resourceType) => {
+    if (!category.permissions) return false;
+
+    switch (resourceType) {
+      case 'food':
+        return category.permissions.meals || false;
+      case 'kit':
+        return category.permissions.kitItems || false;
+      case 'certificate':
+        return category.permissions.certificates || false;
+      default:
+        return false;
+    }
+  };
+
+  // Function to get resource counts
+  const getResourceStats = (category, resourceType) => {
+    if (!category.permissions) return 0;
+
+    switch (resourceType) {
+      case 'food':
+        return Array.isArray(category.mealEntitlements) ? 
+          category.mealEntitlements.filter(item => item.entitled).length : 0;
+      case 'kit':
+        return Array.isArray(category.kitItemEntitlements) ? 
+          category.kitItemEntitlements.filter(item => item.entitled).length : 0;
+      case 'certificate':
+        return Array.isArray(category.certificateEntitlements) ? 
+          category.certificateEntitlements.filter(item => item.entitled).length : 0;
+      default:
+        return 0;
+    }
+  };
+
+  // Render a resource badge
+  const renderResourceBadge = (category, type, icon) => {
+    const isAllowed = isResourceAllowed(category, type);
+    const count = getResourceStats(category, type);
+
+    return (
+      <div className="flex flex-col items-center mb-2">
+        <Badge
+          variant={isAllowed ? (count > 0 ? "success" : "primary") : "default"}
+          size="md"
+          className="mb-1"
+        >
+          {icon}
+          <span className="ml-1">{count}</span>
+        </Badge>
+        <span className="text-xs text-gray-500">
+          {isAllowed ? (count > 0 ? "Configured" : "Enabled") : "Not Allowed"}
+        </span>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Spinner size="lg" />
+        <span className="ml-2">Loading categories...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <Alert type="error" message={error} onClose={() => setError(null)} />
+      )}
+
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-800">Event Categories</h2>
+          <p className="text-gray-500 text-sm">Manage attendee categories and resource permissions</p>
+        </div>
+        <Button 
+          variant="primary"
+          onClick={handleAddCategory}
+          leftIcon={<FaPlus />}
+        >
+          Add New Category
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {categories.length === 0 ? (
+          <div className="col-span-full bg-gray-50 rounded-lg p-8 text-center">
+            <p className="text-gray-500 mb-4">No categories have been created for this event yet.</p>
+            <Button 
+              variant="primary"
+              onClick={handleAddCategory}
+              leftIcon={<FaPlus />}
+            >
+              Add First Category
+            </Button>
+          </div>
+        ) : (
+          categories.map(category => (
+            <div 
+              key={category._id}
+              className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
+              onClick={() => handleCategoryClick(category)}
+            >
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex items-center">
+                  <div 
+                    className="w-3 h-3 rounded-full mr-2" 
+                    style={{ backgroundColor: category.color || '#9CA3AF' }}
+                  ></div>
+                  <h3 className="text-lg font-medium text-gray-900">{category.name}</h3>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  {category.description || 'No description'}
+                </p>
+              </div>
+              
+              <div className="p-4">
+                <div className="flex justify-center mb-4">
+                  <div className="flex space-x-8">
+                    <div>
+                      {renderResourceBadge(
+                        category, 
+                        'food', 
+                        <FaUtensils className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div>
+                      {renderResourceBadge(
+                        category, 
+                        'kit', 
+                        <FaBox className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div>
+                      {renderResourceBadge(
+                        category, 
+                        'certificate', 
+                        <FaCertificate className="h-4 w-4" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between mt-4">
+                  <span className="inline-flex items-center text-sm">
+                    <FaUsers className="mr-1 h-4 w-4 text-gray-500" />
+                    <span className="font-medium mr-1">{category.registrantCount || 0}</span>
+                    <span className="text-gray-500">Registrants</span>
+                  </span>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 px-4 py-3 flex justify-between">
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => handleDeleteClick(category, e)}
+                  leftIcon={<FaTrash className="h-4 w-4 text-red-500" />}
+                >
+                  Delete
+                </Button>
+                <Button 
+                  variant="primary"
+                  size="sm"
+                  onClick={(e) => handleConfigClick(category, e)}
+                  leftIcon={<FaEdit className="h-4 w-4" />}
+                >
+                  Configure
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Category Resources Configuration Modal */}
+      <CategoryResourcesConfig
+        isOpen={showConfigModal}
+        onClose={() => setShowConfigModal(false)}
+        category={selectedCategory}
+        eventId={eventId}
+        onSave={handleSaveConfig}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <Modal 
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeleteConfirmation('');
+        }}
+        title="Delete Category"
+      >
+        <div className="p-4">
+          <p className="mb-4 text-red-600">
+            Deleting the <strong>{selectedCategory?.name}</strong> category will remove all associated permissions. This action cannot be undone.
+          </p>
+          
+          <div className="mb-4">
+            <label htmlFor="confirmDelete" className="block text-sm font-medium text-gray-700">
+              Type DELETE to confirm
+            </label>
+            <input
+              type="text"
+              id="confirmDelete"
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+            />
+          </div>
+          
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteModal(false);
+                setDeleteConfirmation('');
+              }}
+              disabled={deleteInProgress}
+            >
+              Cancel
+            </Button>
+            
+            <Button
+              variant="danger"
+              onClick={handleDeleteCategory}
+              disabled={deleteConfirmation !== 'DELETE' || deleteInProgress}
+              loading={deleteInProgress}
+            >
+              Delete Category
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default CategoriesTab; 

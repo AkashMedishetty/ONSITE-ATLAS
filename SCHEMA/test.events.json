@@ -1,0 +1,121 @@
+[{
+  "_id": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "name": "Akash Medishetty",
+  "description": "HI",
+  "startDate": {
+    "$date": "2025-03-19T00:00:00.000Z"
+  },
+  "endDate": {
+    "$date": "2025-03-28T00:00:00.000Z"
+  },
+  "venue": {
+    "name": "Karimnagar",
+    "address": "Prakasham gunj, H.no 2/5/77",
+    "city": "Karimnagar",
+    "state": "Telangana",
+    "country": "India",
+    "zipCode": "505001"
+  },
+  "registrationSettings": {
+    "idPrefix": "ATC",
+    "startNumber": 1000,
+    "isOpen": true,
+    "allowOnsite": true,
+    "customFields": []
+  },
+  "categories": [],
+  "abstractSettings": {
+    "enabled": true,
+    "isOpen": true,
+    "deadline": {
+      "$date": "2025-03-29T00:00:00.000Z"
+    },
+    "maxLength": 500,
+    "allowEditing": true,
+    "guidelines": "",
+    "categories": [
+      {
+        "name": "Paper Presentation",
+        "description": "",
+        "_id": {
+          "$oid": "67dd6a379f6b58494d5e1690"
+        }
+      },
+      {
+        "name": "Oral Presentation ",
+        "description": "",
+        "_id": {
+          "$oid": "67dd6a379f6b58494d5e1691"
+        }
+      }
+    ],
+    "notifyOnSubmission": false,
+    "allowFiles": true,
+    "maxFileSize": 35
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "status": "published",
+  "createdAt": {
+    "$date": "2025-03-18T15:27:22.733Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-21T13:31:34.987Z"
+  },
+  "meals": [],
+  "kitItems": [],
+  "certificateTypes": [],
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67d9c14b767d4071286d54ac"
+  },
+  "name": "Annual Tech Conference 2023",
+  "description": "HIE",
+  "startDate": {
+    "$date": "2025-03-20T00:00:00.000Z"
+  },
+  "endDate": {
+    "$date": "2025-03-26T00:00:00.000Z"
+  },
+  "venue": {
+    "name": "Hyderabad",
+    "address": "Donthanpally",
+    "city": "Hyderabad",
+    "state": "Telangana",
+    "country": "India",
+    "zipCode": "501503"
+  },
+  "registrationSettings": {
+    "idPrefix": "",
+    "startNumber": 1,
+    "isOpen": true,
+    "allowOnsite": true,
+    "customFields": []
+  },
+  "categories": [],
+  "abstractSettings": {
+    "isOpen": false,
+    "deadline": null,
+    "maxLength": 500,
+    "allowEditing": true
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "status": "published",
+  "createdAt": {
+    "$date": "2025-03-18T18:54:03.582Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-18T18:54:03.582Z"
+  },
+  "meals": [],
+  "kitItems": [],
+  "certificateTypes": [],
+  "__v": 0
+}]

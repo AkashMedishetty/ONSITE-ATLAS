@@ -1,0 +1,318 @@
+[{
+  "_id": {
+    "$oid": "67dd52304b05b0a44be6a3dd"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "type": "food",
+  "settings": {
+    "days": [
+      {
+        "date": "2025-03-19",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          },
+          {
+            "name": "High Tea",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-20",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-21",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-22",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-23",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-24",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-25",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-26",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-27",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      },
+      {
+        "date": "2025-03-28",
+        "meals": [
+          {
+            "name": "Breakfast",
+            "startTime": "07:00",
+            "endTime": "09:00"
+          },
+          {
+            "name": "Lunch",
+            "startTime": "12:00",
+            "endTime": "14:00"
+          },
+          {
+            "name": "Dinner",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          }
+        ]
+      }
+    ],
+    "dietaryOptions": [
+      "Vegetarian",
+      "Non-Vegetarian",
+      "Vegan",
+      "Gluten-Free"
+    ]
+  },
+  "isEnabled": true,
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "updatedBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "createdAt": {
+    "$date": "2025-03-21T11:49:04.125Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-21T12:20:51.847Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dd59bb4b05b0a44be6c28b"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "type": "kitBag",
+  "settings": {
+    "items": [
+      {
+        "name": "KIT BAG",
+        "description": "",
+        "quantity": 1000
+      }
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL"
+    ]
+  },
+  "isEnabled": true,
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "updatedBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "createdAt": {
+    "$date": "2025-03-21T12:21:15.697Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-21T12:25:44.206Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67dd59d64b05b0a44be6c32d"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "type": "certificate",
+  "settings": {
+    "templates": [
+      {
+        "name": "Participation Certificate",
+        "description": "Certificate of participation for attendees"
+      },
+      {
+        "name": "Speaker Certificate",
+        "description": "Certificate for speakers and presenters"
+      }
+    ],
+    "types": [
+      {
+        "name": "Workshop",
+        "description": ""
+      }
+    ]
+  },
+  "isEnabled": true,
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "updatedBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "createdAt": {
+    "$date": "2025-03-21T12:21:42.130Z"
+  },
+  "updatedAt": {
+    "$date": "2025-03-21T12:26:03.987Z"
+  },
+  "__v": 0
+}]

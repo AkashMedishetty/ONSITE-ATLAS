@@ -1,0 +1,266 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+
+## Table of Contents
+1. [Project Overview](mdc:#project-overview)
+2. [Key Requirements](mdc:#key-requirements)
+3. [System Architecture](mdc:#system-architecture)
+4. [Database Schema](mdc:#database-schema)
+5. [Core Workflows](mdc:#core-workflows)
+6. [UI/UX Strategy](mdc:#uiux-strategy)
+7. [Implementation Plan](mdc:#implementation-plan)
+8. [Development Status](mdc:#development-status)
+9. [MongoDB Connection](mdc:#mongodb-connection)
+
+## Project Overview
+
+A comprehensive conference management system designed to handle onsite registration, badge printing, resource tracking (food, kits, certificates), and abstract submission for events. The system features a multi-tenant architecture supporting multiple events.
+
+**Primary Goals:**
+- Streamline onsite registration process
+- Track resource distribution (meals, kit bags, certificates)
+- Manage attendee categories with different permissions
+- Support abstract submission and review
+- Provide comprehensive reporting and analytics
+- Create an exceptional UI/UX experience for clients
+
+## Key Requirements
+
+### Core Registration Features
+- Custom Registration ID generation with configurable prefix
+- QR code-based identification and tracking
+- Dynamic registration form with configurable fields
+- Bulk import/export via Excel
+- Badge printing with customizable templates
+
+### Resource Management
+- **Food Tracking:**
+  - Configurable meals per day
+  - Category-specific meal permissions
+  - QR code scanning for validation
+  - Usage tracking with timestamps
+
+- **Kit Bag Distribution:**
+  - Configurable kit items
+  - Category-specific entitlements
+  - QR scanning for issuance
+  - Inventory tracking
+
+- **Certificate Management:**
+  - Multiple certificate types
+  - Category-based permissions
+  - Digital certificate generation and email distribution
+  - Physical certificate printing
+
+### Abstract Submission
+- Dedicated submission portal
+- Abstract editing capabilities
+- Review workflow
+- Bulk download with naming by registrant and ID
+
+### Administration Features
+- Global search across all entities
+- Inline editing directly from search results
+- Comprehensive dashboards and reporting
+- Resource usage management with void capabilities
+
+### Scanner Functionality
+- Dedicated scanning stations for specific resources
+- Support for both camera and handheld scanners
+- Automatic submission without manual confirmation
+- Clear visual/audio feedback
+
+## System Architecture
+
+### Technology Stack
+- **Frontend**: React with Vite, Tailwind CSS
+- **Backend**: Node.js, Express
+- **Database**: MongoDB (Atlas)
+- **File Storage**: AWS S3
+- **Deployment**: AWS Amplify
+
+
+## Database Schema
+
+### Core Collections
+1. **Users** - Admin and staff accounts
+   - Authentication details
+   - Role-based permissions
+
+2. **Events** - Conference details
+   - Basic information
+   - Registration settings
+   - Portal URLs
+
+3. **Categories** - Attendee types
+   - Name and description
+   - Resource permissions
+
+4. **Registrations** - Attendee information
+   - Personal details
+   - Registration ID and QR
+   - Category association
+   - Check-in status
+
+5. **ResourceTracking** - Unified tracking
+   - Resource type (food, kit, certificate)
+   - Timestamp information
+   - Issuance details
+   - Void status
+
+6. **Settings** - Resource configuration
+   - Food settings (meals, days)
+   - Kit settings (items)
+   - Certificate settings (types)
+   - Category permissions
+
+7. **Abstracts** - Abstract submissions
+   - Content and metadata
+   - Author information
+   - Review status
+
+## Core Workflows
+
+### Event Setup Workflow
+1. Admin creates new event with details
+2. Configures registration settings and ID format
+3. Creates attendee categories with permissions
+4. Sets up resource definitions and permissions
+5. Configures abstract submission settings
+6. Creates staff accounts with appropriate roles
+
+### Registration Process
+1. **Pre-event Registration**
+   - Attendees register via public link
+   - System generates Registration ID and QR
+   - Email confirmation sent
+
+2. **Bulk Import**
+   - Admin uploads Excel with attendee data
+   - System validates and creates registrations
+   - Automatically generates Registration IDs
+
+3. **Onsite Registration**
+   - Staff registers walk-ins at event
+   - System generates ID and prints badge
+
+### Resource Distribution
+1. **Station Setup**
+   - Staff selects specific resource type (meal, kit item)
+   - Chooses scanning method (camera/handheld)
+   - Station locked to that resource
+
+2. **Scanning Process**
+   - Attendee badge QR scanned
+   - System validates category permissions
+   - Automatic approval/denial
+   - Transaction recorded with timestamp
+
+### Abstract Submission
+1. Author accesses submission portal
+2. Authenticates with Registration ID
+3. Submits or edits abstract content
+4. Admins review and manage submissions
+5. Bulk download capability for all abstracts
+
+### Post-Event
+1. Digital certificate generation
+2. Email distribution to attendees
+3. Comprehensive reporting
+4. Data export and archiving
+
+## UI/UX Strategy
+
+### Design Philosophy
+- Minimalist elegance with creative accents
+- Professional foundation with delightful interactions
+- Purposeful animations that enhance usability
+
+### Key Design Elements
+- Clean, uncluttered interfaces
+- Typography-focused design
+- Subtle, meaningful animations
+- Micro-interactions for feedback
+
+### Animation Strategy
+- Entrance animations for content
+- Transition effects between states
+- Success/error feedback animations
+- Loading states that reduce perceived wait
+
+### Color System
+- Primary: Deep blue (#2A4365)
+- Secondary: Vibrant accent (#8B5CF6)
+- Neutral palette
+- Status colors for feedback
+
+### Implementation Tools
+- Framer Motion for animations
+- Tailwind CSS for styling
+- React Spring for physics-based interactions
+- Headless UI components for accessibility
+
+## Implementation Plan
+
+### Phase 1: Foundation
+- Project structure setup
+- Database connection
+- Authentication system
+- Core component library
+- Base styling and animation system
+
+### Phase 2: Event & Registration
+- Event creation and management
+- Registration system
+- QR code generation
+- Badge printing functionality
+
+### Phase 3: Resource Management
+- Food tracking
+- Kit bag distribution
+- Certificate management
+- Scanner interfaces
+
+### Phase 4: Advanced Features
+- Abstract submission system
+- Global search functionality
+- Dashboard and reporting
+- Digital certificate distribution
+
+### Phase 5: Polish & Deployment
+- UI/UX refinement
+- Performance optimization
+- Testing and bug fixes
+- AWS deployment
+
+## Development Status
+
+- [x] Project requirements gathering
+- [x] System architecture design
+- [x] Database schema design
+- [x] UI/UX strategy
+- [x] Implementation planning
+- [ ] Project structure setup
+- [ ] Core component development
+- [ ] Backend API development
+- [ ] Feature implementation
+- [ ] Testing and refinement
+- [ ] Deployment
+
+## MongoDB Connection
+
+**Connection Details:**
+- Database: MongoDB Atlas
+- Connection string: mongodb+srv://AkashMedishetty:<password>@onsitealturism.lzb7f.mongodb.net/?retryWrites=true&w=majority&appName=OnsiteAlturism
+
+**Security Note:**
+- Database credentials will be stored in environment variables
+- Never committed to version control
+
+---
+
+This reference document will be updated as the project progresses to reflect current status, decisions, and changes to requirements. 

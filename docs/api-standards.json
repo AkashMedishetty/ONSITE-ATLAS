@@ -1,0 +1,216 @@
+{
+  "apiStandards": {
+    "responseFormats": {
+      "success": {
+        "structure": {
+          "success": true,
+          "data": "Object or Array - The response data"
+        },
+        "example": {
+          "success": true,
+          "data": {
+            "id": "60d21b4667d0d8992e610c85",
+            "name": "Example Event",
+            "description": "This is an example event",
+            "startDate": "2023-06-15T00:00:00.000Z",
+            "endDate": "2023-06-17T00:00:00.000Z"
+          }
+        }
+      },
+      "paginatedSuccess": {
+        "structure": {
+          "success": true,
+          "data": "Array - The items for current page",
+          "pagination": {
+            "page": "Number - Current page number",
+            "limit": "Number - Items per page",
+            "totalPages": "Number - Total pages available",
+            "totalItems": "Number - Total items across all pages"
+          }
+        },
+        "example": {
+          "success": true,
+          "data": [
+            {
+              "id": "60d21b4667d0d8992e610c85",
+              "name": "Event 1"
+            },
+            {
+              "id": "60d21b4967d0d8992e610c86",
+              "name": "Event 2"
+            }
+          ],
+          "pagination": {
+            "page": 1,
+            "limit": 10,
+            "totalPages": 5,
+            "totalItems": 48
+          }
+        }
+      },
+      "error": {
+        "structure": {
+          "success": false,
+          "message": "String - General error message",
+          "errors": "Array (optional) - Specific validation errors"
+        },
+        "example": {
+          "success": false,
+          "message": "Invalid request data",
+          "errors": [
+            {
+              "field": "email",
+              "message": "Email is required"
+            },
+            {
+              "field": "name",
+              "message": "Name must be at least 3 characters"
+            }
+          ]
+        }
+      }
+    },
+    "paginationParameters": {
+      "page": {
+        "type": "Number",
+        "description": "Page number to retrieve",
+        "default": 1
+      },
+      "limit": {
+        "type": "Number",
+        "description": "Number of items per page",
+        "default": 10,
+        "max": 100
+      },
+      "sort": {
+        "type": "String",
+        "description": "Field to sort by",
+        "default": "createdAt"
+      },
+      "order": {
+        "type": "String",
+        "description": "Sort order (asc or desc)",
+        "default": "desc",
+        "values": ["asc", "desc"]
+      },
+      "search": {
+        "type": "String",
+        "description": "Search term for text search",
+        "default": ""
+      }
+    },
+    "endpoints": {
+      "required": [
+        {
+          "module": "Auth",
+          "endpoints": [
+            { "method": "POST", "path": "/api/auth/login", "description": "User login" },
+            { "method": "POST", "path": "/api/auth/register", "description": "User registration" },
+            { "method": "POST", "path": "/api/auth/forgot-password", "description": "Request password reset" },
+            { "method": "POST", "path": "/api/auth/reset-password", "description": "Reset password with token" }
+          ]
+        },
+        {
+          "module": "Events",
+          "endpoints": [
+            { "method": "GET", "path": "/api/events", "description": "Get all events (with pagination)" },
+            { "method": "POST", "path": "/api/events", "description": "Create new event" },
+            { "method": "GET", "path": "/api/events/:id", "description": "Get event by ID" },
+            { "method": "PUT", "path": "/api/events/:id", "description": "Update event" },
+            { "method": "DELETE", "path": "/api/events/:id", "description": "Delete event (soft delete)" },
+            { "method": "GET", "path": "/api/events/:id/dashboard", "description": "Get event dashboard data" },
+            { "method": "GET", "path": "/api/events/:id/statistics", "description": "Get event statistics" }
+          ]
+        },
+        {
+          "module": "Registrations",
+          "endpoints": [
+            { "method": "GET", "path": "/api/registrations", "description": "Get all registrations" },
+            { "method": "GET", "path": "/api/events/:eventId/registrations", "description": "Get registrations for event" },
+            { "method": "POST", "path": "/api/registrations", "description": "Create new registration" },
+            { "method": "GET", "path": "/api/registrations/:id", "description": "Get registration by ID" },
+            { "method": "PUT", "path": "/api/registrations/:id", "description": "Update registration" },
+            { "method": "DELETE", "path": "/api/registrations/:id", "description": "Delete registration" },
+            { "method": "POST", "path": "/api/events/:eventId/registrations/import", "description": "Import registrations in bulk" },
+            { "method": "POST", "path": "/api/registrations/validate", "description": "Validate registration ID" }
+          ]
+        }
+      ],
+      "missingEndpoints": [
+        {
+          "module": "Badges",
+          "endpoints": [
+            { "method": "GET", "path": "/api/events/:eventId/badges/templates", "description": "Get badge templates for event" },
+            { "method": "GET", "path": "/api/events/:eventId/badges/templates/:id", "description": "Get specific badge template" },
+            { "method": "POST", "path": "/api/events/:eventId/badges/templates", "description": "Create badge template" },
+            { "method": "PUT", "path": "/api/events/:eventId/badges/templates/:id", "description": "Update badge template" },
+            { "method": "DELETE", "path": "/api/events/:eventId/badges/templates/:id", "description": "Delete badge template" },
+            { "method": "POST", "path": "/api/events/:eventId/badges/generate", "description": "Generate badges for printing" },
+            { "method": "POST", "path": "/api/events/:eventId/badges/preview", "description": "Preview badge for a registration" }
+          ]
+        },
+        {
+          "module": "Reports",
+          "endpoints": [
+            { "method": "GET", "path": "/api/reports", "description": "Get all available reports" },
+            { "method": "GET", "path": "/api/events/:eventId/reports", "description": "Get reports for event" },
+            { "method": "POST", "path": "/api/events/:eventId/reports/generate", "description": "Generate custom report" },
+            { "method": "GET", "path": "/api/events/:eventId/reports/templates", "description": "Get report templates" },
+            { "method": "POST", "path": "/api/events/:eventId/reports/templates", "description": "Create report template" },
+            { "method": "PUT", "path": "/api/events/:eventId/reports/templates/:id", "description": "Update report template" }
+          ]
+        },
+        {
+          "module": "User Management",
+          "endpoints": [
+            { "method": "GET", "path": "/api/users", "description": "Get all users" },
+            { "method": "POST", "path": "/api/users", "description": "Create new user" },
+            { "method": "GET", "path": "/api/users/:id", "description": "Get user by ID" },
+            { "method": "PUT", "path": "/api/users/:id", "description": "Update user" },
+            { "method": "DELETE", "path": "/api/users/:id", "description": "Delete user" },
+            { "method": "GET", "path": "/api/roles", "description": "Get all roles" },
+            { "method": "POST", "path": "/api/roles", "description": "Create new role" },
+            { "method": "PUT", "path": "/api/roles/:id", "description": "Update role" },
+            { "method": "DELETE", "path": "/api/roles/:id", "description": "Delete role" }
+          ]
+        },
+        {
+          "module": "Email Templates",
+          "endpoints": [
+            { "method": "GET", "path": "/api/email-templates", "description": "Get all email templates" },
+            { "method": "GET", "path": "/api/events/:eventId/email-templates", "description": "Get email templates for event" },
+            { "method": "POST", "path": "/api/events/:eventId/email-templates", "description": "Create email template" },
+            { "method": "PUT", "path": "/api/events/:eventId/email-templates/:id", "description": "Update email template" },
+            { "method": "DELETE", "path": "/api/events/:eventId/email-templates/:id", "description": "Delete email template" },
+            { "method": "POST", "path": "/api/events/:eventId/email-templates/:id/test", "description": "Send test email using template" }
+          ]
+        }
+      ]
+    },
+    "environmentVariables": {
+      "frontend": {
+        "format": "import.meta.env.VARIABLE_NAME",
+        "note": "Vite uses import.meta.env instead of process.env"
+      },
+      "backend": {
+        "format": "process.env.VARIABLE_NAME"
+      },
+      "requiredVariables": {
+        "common": [
+          { "name": "API_URL", "description": "Base URL for API requests" }
+        ],
+        "frontend": [
+          { "name": "VITE_API_URL", "description": "Base URL for API requests" },
+          { "name": "VITE_APP_TITLE", "description": "Application title" }
+        ],
+        "backend": [
+          { "name": "PORT", "description": "Server port number" },
+          { "name": "NODE_ENV", "description": "Environment (development, production, testing)" },
+          { "name": "MONGODB_URI", "description": "MongoDB connection string" },
+          { "name": "JWT_SECRET", "description": "Secret for JWT token signing" },
+          { "name": "JWT_EXPIRE", "description": "JWT token expiration time" }
+        ]
+      }
+    }
+  }
+} 

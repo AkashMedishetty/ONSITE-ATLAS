@@ -1,0 +1,1 @@
+- `utils/excelHelper.js`: Helpers for Excel import/export (registrations, abstracts). Includes `generateAbstractsExcel` for exporting abstracts as Excel files, used by the abstracts download endpoint. 

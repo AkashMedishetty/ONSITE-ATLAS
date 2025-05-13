@@ -1,0 +1,256 @@
+[{
+  "_id": {
+    "$oid": "67eccd6bb066892e9c53735c"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dd48d64b05b0a44be6994c"
+  },
+  "type": "food",
+  "status": "used",
+  "details": {
+    "option": "Breakfast"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T05:38:51.671Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T05:38:51.680Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T05:38:51.680Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ecce30b066892e9c5376be"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dbbe88d438efe76adf88de"
+  },
+  "type": "food",
+  "status": "used",
+  "details": {
+    "option": "Breakfast"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T05:42:08.819Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T05:42:08.820Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T05:42:08.820Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed11d1064c69ef7be12274"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dbbe88d438efe76adf88de"
+  },
+  "type": "food",
+  "status": "used",
+  "details": {
+    "option": "0_Breakfast"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:30:41.033Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:30:41.044Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:30:41.044Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed12f9064c69ef7be12339"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dbbe88d438efe76adf88de"
+  },
+  "type": "certificate",
+  "status": "used",
+  "details": {
+    "option": "Speaker Certificate"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:35:37.937Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:35:37.938Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:35:37.938Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed1375064c69ef7be123cb"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dbbe88d438efe76adf88de"
+  },
+  "type": "food",
+  "status": "used",
+  "details": {
+    "option": "0_Lunch"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:37:41.396Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:37:41.396Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:37:41.396Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed153e064c69ef7be1246e"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dd48d64b05b0a44be6994c"
+  },
+  "type": "food",
+  "status": "used",
+  "details": {
+    "option": "0_Breakfast"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:45:18.875Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:45:18.875Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:45:18.875Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed1560064c69ef7be124d9"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dd48d64b05b0a44be6994c"
+  },
+  "type": "certificate",
+  "status": "used",
+  "details": {
+    "option": "Speaker Certificate"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:45:52.041Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:45:52.041Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:45:52.041Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "67ed178c064c69ef7be12631"
+  },
+  "event": {
+    "$oid": "67d990da767d4071286d4ea3"
+  },
+  "registration": {
+    "$oid": "67dd48d64b05b0a44be6994c"
+  },
+  "type": "kitBag",
+  "status": "used",
+  "details": {
+    "option": "KIT BAG"
+  },
+  "createdBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionBy": {
+    "$oid": "000000000000000000000000"
+  },
+  "actionDate": {
+    "$date": "2025-04-02T10:55:08.390Z"
+  },
+  "createdAt": {
+    "$date": "2025-04-02T10:55:08.391Z"
+  },
+  "updatedAt": {
+    "$date": "2025-04-02T10:55:08.391Z"
+  },
+  "__v": 0
+}]
