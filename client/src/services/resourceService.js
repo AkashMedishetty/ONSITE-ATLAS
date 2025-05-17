@@ -125,6 +125,40 @@ const resourceService = {
   },
 
   /**
+   * Upload a certificate template file for an event.
+   * @param {string} eventId - The ID of the event.
+   * @param {File} file - The file to upload.
+   * @returns {Promise<{success: boolean, message: string, data?: {templateUrl: string}}>} - API response with upload result.
+   */
+  uploadCertificateTemplateFile: async (eventId, file) => {
+    try {
+      if (!eventId || !file) {
+        return { success: false, message: 'Event ID and file are required for upload.' };
+      }
+
+      const formData = new FormData();
+      formData.append('eventId', eventId);
+      formData.append('templateFile', file);
+
+      // Note: The backend endpoint /resources/certificate-template/upload needs to be created
+      // and configured to handle multipart/form-data and save the file.
+      const response = await api.post('/resources/certificate-template/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      return response.data; // Expected: { success: true, data: { templateUrl: 'path/to/file.ext' } }
+    } catch (error) {
+      handleError(error, 'Error uploading certificate template file');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to upload certificate template file',
+      };
+    }
+  },
+
+  /**
    * Get food settings for an event
    * @param {string} eventId - Event ID
    * @param {number} timestamp - Optional timestamp for cache busting
@@ -1349,6 +1383,48 @@ const resourceService = {
    * @returns {Promise} - API response
    */
   // ... (rest of the service object)
+
+  getCertificatePdfBlob: async (eventId, templateId, registrationId) => {
+    if (!eventId || !templateId || !registrationId) {
+      console.error('[getCertificatePdfBlob] Missing required IDs', { eventId, templateId, registrationId });
+      return { success: false, message: 'Event ID, Template ID, and Registration ID are required.', blob: null, filename: 'error.pdf' };
+    }
+    const url = `/resources/events/${eventId}/certificate-templates/${templateId}/registrations/${registrationId}/generate-pdf`;
+    try {
+      console.log(`[getCertificatePdfBlob] Fetching PDF from: ${url}`);
+      const response = await api.get(url, { 
+        responseType: 'blob',
+      });
+
+      let filename = `certificate-${registrationId}-${templateId}.pdf`;
+      const contentDisposition = response.headers['content-disposition'];
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/i);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+      console.log(`[getCertificatePdfBlob] Successfully fetched blob. Filename: ${filename}`);
+      return { success: true, blob: response.data, filename: filename };
+    } catch (error) {
+      console.error(`[getCertificatePdfBlob] Error fetching PDF for ${registrationId}:`, error);
+      const errorData = error.response?.data;
+      let errorMessage = 'Failed to generate or fetch certificate PDF.';
+      // If the error response is a blob, it might be a JSON error from the server that needs to be parsed
+      if (errorData instanceof Blob && errorData.type === 'application/json') {
+        try {
+          const errorJson = await errorData.text();
+          const parsedError = JSON.parse(errorJson);
+          errorMessage = parsedError.message || errorMessage;
+        } catch (parseError) {
+          console.error('[getCertificatePdfBlob] Error parsing error blob:', parseError);
+        }
+      } else if (typeof errorData?.message === 'string') {
+        errorMessage = errorData.message;
+      }
+      return { success: false, message: errorMessage, blob: null, filename: 'error.pdf' };
+    }
+  }
 };
 
 // Helper function to get display name for resource type

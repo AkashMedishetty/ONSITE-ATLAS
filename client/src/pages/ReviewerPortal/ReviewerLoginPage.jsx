@@ -1,24 +1,36 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext'; // Assuming useAuth handles general user login
 import { toast } from 'react-hot-toast';
 
 const ReviewerLoginPage = () => {
   const navigate = useNavigate();
+  const { eventId } = useParams(); // Get eventId from URL
   const { login } = useAuth(); // Use the login function from your AuthContext
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (!eventId) {
+      setError('Event information is missing from the URL. Please use the event-specific link provided to you.');
+      // Optionally disable form or further actions
+    }
+  }, [eventId]); // Run this effect when eventId changes or on initial load
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    if (!eventId) { // Prevent submission if eventId was initially missing
+      setError('Cannot log in: Event information is missing from the URL.');
+      return;
+    }
+    setError(''); // Clear previous errors before attempting login
     setLoading(true);
     try {
       // Attempt to log in using the existing login function
       // This function should ideally return user info including roles
-      const userData = await login(email, password);
+      const userData = await login(email, password, eventId);
       
       // IMPORTANT: Add a check here to ensure the logged-in user has a 'reviewer' or 'admin' role
       // This is a client-side check; the backend will enforce API access.
@@ -32,7 +44,11 @@ const ReviewerLoginPage = () => {
         // await logout(); // if you have a logout function in useAuth
       }
     } catch (err) {
+      if (err.isEventMismatch) { // Check for the custom flag
+        setError(err.message); // Display the specific event mismatch error
+      } else {
       setError(err.message || 'Failed to log in. Please check your credentials.');
+      }
     }
     setLoading(false);
   };
@@ -41,8 +57,17 @@ const ReviewerLoginPage = () => {
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-xl">
         <h2 className="text-2xl font-bold text-center text-gray-700">Reviewer Portal Login</h2>
+        
+        {/* Display general error / eventId missing error here */} 
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
+
+        {/* Conditionally render form or just show error if eventId was critical and missing */}
+        {/* For now, form is always rendered but submit is blocked if eventId missing */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
           <div>
             <label htmlFor="email" className="text-sm font-medium text-gray-700 block">Email</label>
             <input

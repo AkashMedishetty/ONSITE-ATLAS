@@ -60,6 +60,7 @@ import {
 import ResourcesTab from './resources/ResourcesTab';
 import AbstractsTab from './abstracts/AbstractsTab';
 import EventUserManagementTab from './settings/EventUserManagementTab'; // Import the component
+import SponsorsList from '../../pages/SponsorManagement/SponsorsList'; // Added for Sponsors Tab
 
 // Simple error boundary component for tabs - RESTORING THIS
 const TabErrorBoundary = ({ children, tabName }) => {
@@ -103,6 +104,7 @@ const isDevelopment = import.meta.env.MODE === 'development';
 const eventNavItems = [
   { id: "dashboard", label: "Dashboard", icon: <FiBarChart2 /> },
   { id: "registrations", label: "Registrations", icon: <FiUsers /> },
+  { id: "sponsors", label: "Sponsors", icon: <BookmarkIcon className="w-5 h-5" /> },
   { id: "categories", label: "Categories", icon: <FiTag /> },
   { id: "resources", label: "Resources", icon: <FiPackage /> },
   { id: "abstracts", label: "Abstracts", icon: <FiFileText /> },
@@ -255,9 +257,13 @@ function EventPortal() {
   
   // Handle navigation back from the location state more robustly
   useEffect(() => {
-    // Check if the location state has an activeTab or subSection
     const locationState = location.state || {};
     
+    if (!id || id === "undefined") {
+      // console.warn("EventPortal: Tab management useEffect skipped due to invalid id:", id);
+      return;
+    }
+
     if (locationState.activeTab && eventNavItems.some(item => item.id === locationState.activeTab)) {
       setActiveTab(locationState.activeTab);
       // Clear location state to prevent re-application on refresh
@@ -319,8 +325,17 @@ function EventPortal() {
   useEffect(() => {
     const loadEventData = async () => {
       setLoading(true);
-      setError(null);
+      // setError(null); // setError will be called below if needed, or not at all if successful
+
+      if (!id || id === "undefined") {
+        console.error('EventPortal: loadEventData aborted due to invalid event id:', id);
+        setEvent(null); // Explicitly clear event data
+        setError('Event ID is missing or invalid. Cannot load event data.');
+        setLoading(false); 
+        return;
+      }
       
+      setError(null); // Clear any previous errors if ID is now valid
       try {
         const eventData = await eventService.getEventById(id);
         
@@ -398,7 +413,7 @@ function EventPortal() {
     };
     
     // Only load data if auth check is done and user is authenticated
-    if (id && !authLoading && isAuthenticated) {
+    if (!authLoading && isAuthenticated) {
       loadEventData();
     } else if (!authLoading && !isAuthenticated) {
       // Handle case where user is not authenticated (e.g., redirect or show error)
@@ -610,6 +625,9 @@ function EventPortal() {
         break;
       case "registrations":
         activeTabContent = <TabErrorBoundary tabName="Registrations"><RegistrationsTab eventId={id} /></TabErrorBoundary>;
+        break;
+      case "sponsors":
+        activeTabContent = <TabErrorBoundary tabName="Sponsors"><SponsorsList eventId={id} /></TabErrorBoundary>;
         break;
       case "categories":
         activeTabContent = <TabErrorBoundary tabName="Categories"><CategoriesTab eventId={id} key={categoriesKey} /></TabErrorBoundary>;

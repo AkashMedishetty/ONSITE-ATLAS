@@ -29,4 +29,13 @@ router.route('/')
   .get(protect, resourceController.getResources)
   .post(protect, resourceController.createResource);
 
+// Certificate Template Upload Route
+router.post('/certificate-template/upload', protect, resourceController.uploadCertificateTemplateFile);
+
+// New route for generating a specific certificate PDF for a registrant
+router.get('/events/:eventId/certificate-templates/:templateId/registrations/:registrationId/generate-pdf',
+    protect, // Or a more specific role/permission check if needed
+    resourceController.generateCertificatePdf
+);
+
 module.exports = router; 

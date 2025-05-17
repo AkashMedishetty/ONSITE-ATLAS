@@ -45,7 +45,7 @@ const abstractService = {
       // Debug logging for eventId, abstractId, and token
       const token = localStorage.getItem('atlas_registrant_token') || localStorage.getItem('registrantToken');
       console.log('[AbstractService][getAbstractById] eventId:', eventId, 'abstractId:', abstractId, 'token:', token ? token.substring(0, 16) + '...' : 'NOT FOUND');
-      const response = await apiRegistrant.get(`/events/${eventId}/abstracts/${abstractId}`);
+      const response = await api.get(`/events/${eventId}/abstracts/${abstractId}`);
       return response.data; // Assumes api instance returns data directly or it's handled in a wrapper
     } catch (error) {
       console.error('Error getting abstract by ID:', error.response?.data || error.message);
@@ -72,9 +72,10 @@ const abstractService = {
     const cleanedData = { ...abstractData };
     if (cleanedData.registration) cleanedData.registration = String(cleanedData.registration);
     if (cleanedData.category) cleanedData.category = String(cleanedData.category);
+    if (cleanedData.topic) cleanedData.topic = String(cleanedData.topic);
 
     const url = `/events/${eventId}/abstracts`;
-    console.log("[AbstractService] Creating abstract (registrant) for URL:", url);
+    console.log("[AbstractService] Creating abstract (registrant) for URL:", url, "with data:", cleanedData);
 
     try {
       const response = await apiRegistrant.post(url, cleanedData);

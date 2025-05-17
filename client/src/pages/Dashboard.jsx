@@ -105,11 +105,12 @@ const Dashboard = () => {
             firstEventId, // Pass eventId as the first argument
             { limit: 5, sortBy: 'createdAt', sortOrder: 'desc' } // Pass filters as the second argument
           );
-          // Check the response structure from registrationService/sendPaginated (from pagination.js)
-          if (registrationsData.success && Array.isArray(registrationsData.data)) {
-            setRecentRegistrations(registrationsData.data.slice(0, 5)); // Access the data array directly
-            // Access total count from pagination object
-            const totalRegistrations = registrationsData.pagination?.total || 0;
+          // Check the response structure from registrationService
+          // The actual API response data is nested in registrationsData.data
+          if (registrationsData && registrationsData.data && registrationsData.data.success && Array.isArray(registrationsData.data.data)) {
+            setRecentRegistrations(registrationsData.data.data.slice(0, 5));
+            // Access total count from pagination object within registrationsData.data.meta
+            const totalRegistrations = registrationsData.data.meta?.pagination?.total || 0;
             setStats(prev => ({ ...prev, registrations: totalRegistrations }));
           } else {
               console.error("Failed to fetch registrations or unexpected format:", registrationsData);

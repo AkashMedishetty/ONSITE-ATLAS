@@ -2,13 +2,19 @@ const mongoose = require('mongoose');
 const Resource = require('../models/Resource');
 const ResourceSetting = require('../models/ResourceSetting');
 const Event = require('../models/Event');
+const Registration = require('../models/Registration');
+const Abstract = require('../models/Abstract');
+const Workshop = require('../models/Workshop');
 const { createApiError } = require('../middleware/error');
 const asyncHandler = require('../middleware/async');
-const Registration = require('../models/Registration');
 const Category = require('../models/Category');
 const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
 const logger = require('../utils/logger');
 const ExcelJS = require('exceljs');
+const fs = require('fs');
+const path = require('path');
+const pdfkit = require('pdfkit');
+const pdfToPng = require('pdf-to-png');
 
 /**
  * @desc    Get resource settings
@@ -75,27 +81,54 @@ const getResourceSettings = asyncHandler(async (req, res) => {
 
     let settingsData;
     let message;
+    let isEnabledFlag;
 
     if (resourceSettingDoc) {
       console.log(`[getResourceSettings] Found existing ResourceSetting document.`);
-      // Use the settings from the found document
-      settingsData = resourceSettingDoc.settings || defaultResourceSettings(dbQueryType); // Use normalized type for default fallback
-      message = `${type} settings retrieved successfully`; // Use original request type in success message
+      isEnabledFlag = resourceSettingDoc.isEnabled;
+      if (dbQueryType === 'certificatePrinting') {
+        // For certificatePrinting, templates are stored directly on the document
+        settingsData = { templates: resourceSettingDoc.certificatePrintingTemplates || [] }; 
+        // Include other general settings if they exist under resourceSettingDoc.settings
+        if (resourceSettingDoc.settings && Object.keys(resourceSettingDoc.settings).length > 0) {
+          settingsData = { ...settingsData, ...resourceSettingDoc.settings };
+        }
+      } else {
+        // For other types, settings are under the .settings property
+        settingsData = resourceSettingDoc.settings || defaultResourceSettings(dbQueryType);
+      }
+      message = `${type} settings retrieved successfully`;
     } else {
       console.log(`[getResourceSettings] No ResourceSetting document found. Returning default.`);
-      // No specific setting found, return the default for the type
-      settingsData = defaultResourceSettings(dbQueryType); // Use normalized type for default
-      message = `Default ${type} settings returned (no specific config found)`; // Use original request type in message
+      isEnabledFlag = true; // Default to true if no document exists
+      if (dbQueryType === 'certificatePrinting') {
+        settingsData = { templates: defaultResourceSettings(dbQueryType).templates || [] };
+      } else {
+        settingsData = defaultResourceSettings(dbQueryType);
+      }
+      message = `Default ${type} settings returned (no specific config found)`;
     }
 
     // 3. Return Response in Expected Format
-    console.log(`[getResourceSettings] Responding with settings for ${type}:`, settingsData);
+    let responseDataPayload;
+    if (dbQueryType === 'certificatePrinting') {
+      responseDataPayload = {
+        certificatePrintingTemplates: settingsData.templates,
+        settings: settingsData, // Keep this for any other general settings under .settings
+        isEnabled: isEnabledFlag
+      };
+    } else {
+      responseDataPayload = {
+        settings: settingsData,
+        isEnabled: isEnabledFlag
+      };
+    }
+
+    console.log(`[getResourceSettings] Responding with settings for ${type}:`, responseDataPayload);
     return res.status(200).json({
       success: true,
       message: message,
-      data: { 
-        settings: settingsData 
-      } 
+      data: responseDataPayload
     });
 
   } catch (error) {
@@ -118,6 +151,8 @@ const getResourceSettings = asyncHandler(async (req, res) => {
 exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
   const { eventId, type } = req.query;
   const { settings, isEnabled } = req.body;
+
+  console.log(`[updateResourceSettings] Incoming req.body for type ${type}:`, JSON.stringify(req.body, null, 2));
 
   if (!eventId) {
     return res.status(400).json({
@@ -160,42 +195,72 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
 
   try {
     // Find settings using the DB type
-    let resourceSettings = await ResourceSetting.findOne({
+    let resourceSettingsDoc = await ResourceSetting.findOne({
       event: eventId,
       type: dbType // Use normalized DB type
     });
 
     // If settings don't exist, create new settings using DB type
-    if (!resourceSettings) {
-      resourceSettings = new ResourceSetting({
+    if (!resourceSettingsDoc) {
+      resourceSettingsDoc = new ResourceSetting({
         event: eventId,
         type: dbType, // Use normalized DB type
-        settings: settings || {},
         isEnabled: isEnabled !== undefined ? isEnabled : true, // Default to true when creating
         createdBy: req.user._id,
         updatedBy: req.user._id
       });
+      if (dbType === 'certificatePrinting') {
+        resourceSettingsDoc.certificatePrintingTemplates = settings?.templates || [];
+        // Store other potential general settings for certificatePrinting if any, excluding templates
+        const generalSettings = { ...settings };
+        delete generalSettings.templates;
+        resourceSettingsDoc.settings = generalSettings; 
+      } else {
+        resourceSettingsDoc.settings = settings || {};
+      }
       console.log(`[updateResourceSettings] Creating new ResourceSetting for type: ${dbType}`);
     } else {
       // Update existing settings
       console.log(`[updateResourceSettings] Updating existing ResourceSetting for type: ${dbType}`);
-      if (settings !== undefined) {
-        resourceSettings.settings = settings;
+      if (dbType === 'certificatePrinting') {
+        console.log('[updateResourceSettings] CERTPRINT_UPDATE: Current doc.certificatePrintingTemplates BEFORE change:', JSON.stringify(resourceSettingsDoc.certificatePrintingTemplates, null, 2));
+        console.log('[updateResourceSettings] CERTPRINT_UPDATE: Incoming settings.templates FROM CLIENT:', JSON.stringify(settings.templates, null, 2));
+        
+        if (settings?.templates !== undefined) {
+          resourceSettingsDoc.certificatePrintingTemplates = settings.templates;
+          console.log('[updateResourceSettings] CERTPRINT_UPDATE: Current doc.certificatePrintingTemplates AFTER assignment:', JSON.stringify(resourceSettingsDoc.certificatePrintingTemplates, null, 2));
+        }
+        // For certificatePrinting, we explicitly manage certificatePrintingTemplates.
+        // We should clear or carefully manage the generic 'settings' field to avoid conflicts.
+        // If 'settings' on the client for certificatePrinting ONLY contains 'enabled' and 'templates',
+        // we can just ignore it here for the 'settings' field on the DB document for this type.
+        // Or, if there are other general settings unrelated to templates, they would be handled here.
+        // For now, let's ensure settings.templates doesn't pollute resourceSettingsDoc.settings.templates
+        resourceSettingsDoc.settings = { enabled: settings?.enabled }; // Only store enabled, or other general non-template settings
+
+      } else {
+        // Logic for other types (food, kitBag, certificate)
+        if (settings !== undefined) {
+          resourceSettingsDoc.settings = settings;
+        }
       }
+      // Update isEnabled at the top level of the document for all types
       if (isEnabled !== undefined) {
-        resourceSettings.isEnabled = isEnabled;
+        resourceSettingsDoc.isEnabled = isEnabled;
       }
-      resourceSettings.updatedBy = req.user._id;
+      resourceSettingsDoc.updatedBy = req.user._id;
     }
 
+    console.log(`[updateResourceSettings] Document details BEFORE save for type ${dbType}:`, JSON.stringify(resourceSettingsDoc.toObject(), null, 2));
     // Save the settings
-    await resourceSettings.save();
+    await resourceSettingsDoc.save();
+    console.log(`[updateResourceSettings] Document details AFTER save for type ${dbType} (refetched might be needed to confirm DB state, but this is post-save call).`);
 
     // Return the updated settings
     return res.status(200).json({
       success: true,
       message: `${type} settings updated successfully`, // Use original request type in message
-      data: resourceSettings // Return the whole doc as before
+      data: resourceSettingsDoc // Return the whole doc as before
     });
   } catch (error) {
     console.error(`Error in updateResourceSettings for type ${dbType}: ${error.message}`);
@@ -1522,6 +1587,305 @@ const exportResourceUsage = asyncHandler(async (req, res, next) => {
   }
 });
 
+/**
+ * @desc    Upload a certificate template file for the resource settings.
+ * @route   POST /api/resources/certificate-template/upload
+ * @access  Private
+ */
+const uploadCertificateTemplateFile = asyncHandler(async (req, res, next) => {
+  const eventIdFromBody = req.body.eventId; // Extracted from form fields
+
+  if (!req.files || !req.files.templateFile) {
+    logger.warn('[uploadCertificateTemplateFile] No file uploaded. req.files is: %o', req.files);
+    return next(createApiError('No templateFile was uploaded in the form.', 400));
+  }
+  const templateFile = req.files.templateFile;
+
+  if (!eventIdFromBody) {
+    logger.warn('[uploadCertificateTemplateFile] Event ID is missing from the request body.');
+    return next(createApiError('Event ID is required to upload a template.', 400));
+  }
+  
+  if (!mongoose.Types.ObjectId.isValid(eventIdFromBody)) {
+      logger.warn(`[uploadCertificateTemplateFile] Invalid Event ID format: ${eventIdFromBody}`);
+      return next(createApiError('Invalid Event ID format.', 400));
+  }
+
+  // --- File Validation ---
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (templateFile.size > maxSize) {
+    logger.warn(`[uploadCertificateTemplateFile] File size (${templateFile.size}) exceeds max size (${maxSize})`);
+    return next(createApiError(`File size exceeds the ${maxSize / (1024 * 1024)}MB limit.`, 400));
+  }
+
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
+  const fileExt = path.extname(templateFile.name).toLowerCase();
+
+  if (!allowedMimeTypes.includes(templateFile.mimetype) || !allowedExtensions.includes(fileExt)) {
+    logger.warn(`[uploadCertificateTemplateFile] Invalid file type: ${templateFile.mimetype} or extension: ${fileExt}`);
+    return next(createApiError('Invalid file type. Only JPG, PNG, PDF are allowed.', 400));
+  }
+  // --- End File Validation ---
+
+  // --- File Saving Logic ---
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+  const newFileName = `template-${uniqueSuffix}${fileExt}`;
+  
+  // Corrected: Point to the /server/public/uploads/certificate_templates directory
+  const basePublicDir = path.join(__dirname, '..', '..', 'public');
+  const relativeUploadPath = path.join('uploads', 'certificate_templates'); // Relative path from public dir
+  const uploadDir = path.join(basePublicDir, relativeUploadPath); // Absolute path for fs operations
+  
+  const newFilePath = path.join(uploadDir, newFileName);
+
+  try {
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      logger.info(`[uploadCertificateTemplateFile] Created directory: ${uploadDir}`);
+    }
+
+    await templateFile.mv(newFilePath);
+    logger.info(`[uploadCertificateTemplateFile] File moved successfully to: ${newFilePath}`);
+
+    const templateUrl = `/${relativeUploadPath}/${newFileName}`.replace(/\\/g, '/');
+
+    logger.info(`[uploadCertificateTemplateFile] File uploaded for event ${eventIdFromBody}: ${newFileName}, Physical Path: ${newFilePath}, Constructed URL: ${templateUrl}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Certificate template uploaded successfully.',
+      data: {
+        templateUrl: templateUrl,
+        fileName: templateFile.name, 
+        fileSize: templateFile.size,
+        fileType: templateFile.mimetype
+      }
+    });
+
+  } catch (error) {
+    logger.error(`[uploadCertificateTemplateFile] Error during file saving process: ${error.message}`, error);
+    if (fs.existsSync(newFilePath)) {
+        fs.unlink(newFilePath, (unlinkErr) => {
+            if (unlinkErr) logger.error(`[uploadCertificateTemplateFile] Failed to delete partially uploaded file on error: ${newFilePath}`, unlinkErr);
+        });
+    }
+    return next(createApiError('File upload failed during server processing.', 500));
+  }
+  // --- End File Saving Logic ---
+});
+
+/**
+ * @desc    Generate Certificate PDF
+ * @route   GET /api/resources/events/:eventId/certificate-templates/:templateId/registrations/:registrationId/generate-pdf
+ * @access  Private
+ */
+exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
+    const { eventId, templateId, registrationId } = req.params;
+    // Optional: workshopId, abstractId from query if context is needed
+    const { workshopId, abstractId } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(eventId) ||
+        !mongoose.Types.ObjectId.isValid(templateId) || // templateId is the _id of the template object
+        !mongoose.Types.ObjectId.isValid(registrationId)) {
+        return next(createApiError(400, 'Invalid Event, Template, or Registration ID'));
+    }
+
+    // 1. Fetch ResourceSetting for certificatePrinting
+    const resourceSetting = await ResourceSetting.findOne({
+        event: eventId,
+        type: 'certificatePrinting',
+        isEnabled: true
+    });
+
+    if (!resourceSetting || !resourceSetting.certificatePrintingTemplates || resourceSetting.certificatePrintingTemplates.length === 0) {
+        return next(createApiError(404, 'Certificate printing settings not found or no templates configured for this event.'));
+    }
+
+    // 2. Find the specific template
+    // Mongoose subdocuments in an array have an _id field by default.
+    const template = resourceSetting.certificatePrintingTemplates.id(templateId);
+
+    if (!template) {
+        return next(createApiError(404, `Certificate template with ID ${templateId} not found in this event's settings.`));
+    }
+
+    // 3. Fetch Registration data
+    const registration = await Registration.findById(registrationId)
+        .populate('category', 'name') // Populate category name
+        .populate('event', 'name startDate endDate venue'); // Populate event details (though eventId is already available)
+
+    if (!registration) {
+        return next(createApiError(404, 'Registration not found.'));
+    }
+    if (registration.event._id.toString() !== eventId) {
+        return next(createApiError(400, 'Registration does not belong to the specified event.'));
+    }
+    
+    const event = registration.event; // Already populated
+
+    // 4. Fetch contextual data (Abstract, Workshop) if IDs are provided
+    let abstractData = null;
+    if (abstractId && mongoose.Types.ObjectId.isValid(abstractId)) {
+        abstractData = await Abstract.findById(abstractId).populate('registration');
+        if (abstractData && abstractData.registration._id.toString() !== registrationId) {
+             return next(createApiError(400, 'Abstract does not belong to the specified registration.'));
+        }
+    }
+
+    let workshopData = null;
+    if (workshopId && mongoose.Types.ObjectId.isValid(workshopId)) {
+        workshopData = await Workshop.findById(workshopId);
+        // Further validation: check if registration is part of this workshop's attendees/registrations
+        const isRegisteredForWorkshop = workshopData && 
+            (workshopData.registrations.some(rId => rId.toString() === registrationId) || 
+             workshopData.attendees.some(att => att.registration.toString() === registrationId));
+        if (!isRegisteredForWorkshop) {
+            return next(createApiError(400, 'Registration is not associated with the specified workshop.'));
+        }
+    }
+
+    try {
+        const doc = new pdfkit({
+            // layout: 'landscape', // Example: if your templates are landscape
+            // size: 'A4' // Example: specify size if needed
+            // autoFirstPage: false // Important if adding background first
+        });
+
+        // Pipe the PDF to the response
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="certificate-${registrationId}-${templateId}.pdf"`);
+        doc.pipe(res);
+
+        // Add background image if path exists
+        let absoluteBackgroundPath; // Define higher for broader scope
+        if (template.templateUrl) {
+            logger.info(`[generateCertificatePdf] Template URL found: ${template.templateUrl}`);
+            logger.info(`[generateCertificatePdf] Current __dirname: ${__dirname}`);
+            const serverBasePath = path.join(__dirname, '..', '..');
+            logger.info(`[generateCertificatePdf] Calculated server base path: ${serverBasePath}`);
+
+            if (template.templateUrl.startsWith('/')) {
+                const relativePathFromPublic = template.templateUrl.substring(1);
+                absoluteBackgroundPath = path.join(serverBasePath, 'public', relativePathFromPublic);
+                logger.info(`[generateCertificatePdf] Constructed absoluteBackgroundPath (from relative): ${absoluteBackgroundPath}`);
+            } else {
+                if (!template.templateUrl.startsWith('http')) {
+                    absoluteBackgroundPath = path.join(serverBasePath, 'public', template.templateUrl);
+                    logger.info(`[generateCertificatePdf] Constructed absoluteBackgroundPath (assumed relative, missing leading '/'): ${absoluteBackgroundPath}`);
+                } else {
+                    logger.warn(`[generateCertificatePdf] Template URL is an absolute URL: ${template.templateUrl}. Direct file system access not implemented for remote URLs.`);
+                    // Handle http/https URLs if necessary (e.g. download to temp file)
+                    // For now, this will lead to an error below if not handled.
+                }
+            }
+        } else {
+            logger.error(`[generateCertificatePdf] template.templateUrl is missing or empty.`);
+            // Send a valid PDF response indicating the error.
+            doc.fontSize(12).text('Error: Certificate template background image URL is missing. Please contact support.', 50, 50);
+            doc.end();
+            return; // Stop further processing
+        }
+        
+        const fileExists = absoluteBackgroundPath ? fs.existsSync(absoluteBackgroundPath) : false;
+        logger.info(`[generateCertificatePdf] Checking file existence for path "${absoluteBackgroundPath}": ${fileExists}`);
+
+        if (!absoluteBackgroundPath || !fileExists) {
+             logger.error(`[generateCertificatePdf] Certificate template background image not found or path is invalid. Checked Path: ${absoluteBackgroundPath}, Original TemplateURL: ${template.templateUrl}`);
+            // Send a valid PDF response indicating the error.
+            doc.fontSize(12).text(`Error: Certificate template background image not found. Path: ${absoluteBackgroundPath || 'not specified'}. Please contact support.`, 50, 50);
+            doc.end();
+            return; // Stop further processing
+        }
+        
+        try {
+            const imageSize = doc.openImage(absoluteBackgroundPath); // This gets dimensions
+            doc.options.size = [imageSize.width, imageSize.height]; // Set page size to image size
+            doc.image(absoluteBackgroundPath, 0, 0, { width: imageSize.width, height: imageSize.height });
+        } catch (bgImgError) {
+            logger.error(`[generateCertificatePdf] Error processing background image at ${absoluteBackgroundPath}: ${bgImgError.message}`, { stack: bgImgError.stack });
+            // Send a valid PDF response indicating the error.
+            doc.fontSize(12).text(`Error: Could not process certificate background image. Path: ${absoluteBackgroundPath}. Details: ${bgImgError.message}. Please contact support.`, 50, 50);
+            doc.end();
+            return; // Stop further processing
+        }
+
+
+        // --- Draw Fields ---
+        for (const field of template.fields) {
+            if (field.type !== 'text') continue; // Only handle text for now
+
+            doc.save(); // Save current state (transformations, styles)
+
+            const xPos = convertToPoints(field.position.x, template.templateUnit);
+            const yPos = convertToPoints(field.position.y, template.templateUnit);
+            const rotation = field.style?.rotation || 0; // Get rotation in degrees
+            
+            let textContent = field.staticText || '';
+            if (field.dataSource && !field.dataSource.toLowerCase().startsWith('static.')) {
+                 textContent = await getDataSourceValue(field.dataSource, registration, event, abstractData, workshopData);
+            } else if (field.dataSource && field.dataSource.toLowerCase().startsWith('static.')) {
+                textContent = field.dataSource.substring('static.'.length);
+            }
+
+            // Apply rotation if specified
+            if (rotation !== 0) {
+                // pdfkit rotates around the current origin (0,0 of the current transformation matrix)
+                // To rotate around the text's [xPos, yPos]:
+                // 1. Translate the origin to the text's position.
+                // 2. Rotate.
+                // 3. Translate the origin back.
+                // 4. Draw the text at (0,0) relative to this new rotated origin.
+                doc.translate(xPos, yPos);
+                doc.rotate(rotation); // Rotation in degrees
+                // After translate and rotate, text is drawn at (0,0) of this new context
+            } else {
+                // No rotation, but still need to ensure text is placed correctly if we always draw at 0,0 after translate
+                // However, if not rotating, we can draw directly at xPos, yPos without extra translates
+            }
+
+            let fontName = field.style.font || 'Helvetica';
+            if (field.style.fontWeight === 'bold' && !fontName.toLowerCase().includes('bold')) {
+                // Basic bold handling, assumes a corresponding "-Bold" font exists
+                if (fontName === 'Helvetica') fontName = 'Helvetica-Bold';
+                else if (fontName === 'Times-Roman') fontName = 'Times-Bold';
+                // Add more mappings or ensure exact font names are stored
+            }
+            
+            try {
+                 doc.font(fontName);
+            } catch (e) {
+                logger.warn(`Failed to set font: ${fontName} for field ${field.label}. Defaulting to Helvetica.`);
+                doc.font('Helvetica');
+            }
+            
+            doc.fontSize(field.style.fontSize || 12);
+            doc.fillColor(field.style.color || '#000000');
+
+            const textOptions = {
+                align: field.style.align || 'left',
+            };
+            if (field.style.maxWidth) {
+                textOptions.width = convertToPoints(field.style.maxWidth, template.templateUnit);
+            }
+
+            if (rotation !== 0) {
+                doc.text(textContent || '', 0, 0, textOptions); // Draw at (0,0) of the rotated/translated context
+            } else {
+                doc.text(textContent || '', xPos, yPos, textOptions); // Draw at original xPos, yPos
+            }
+
+            doc.restore(); // Restore from the field-specific save (rotation, font, color etc.)
+        }
+
+        doc.end();
+
+    } catch (error) {
+        logger.error('Error generating certificate PDF:', error);
+        return next(createApiError(500, 'Failed to generate certificate PDF.'));
+    }
+});
+
 module.exports = {
   getResourceSettings,
   getResources: exports.getResources,
@@ -1539,5 +1903,7 @@ module.exports = {
   updateResource: exports.updateResource,
   deleteResource: exports.deleteResource,
   voidResource: exports.voidResource,
-  exportResourceUsage
+  exportResourceUsage,
+  uploadCertificateTemplateFile,
+  generateCertificatePdf: exports.generateCertificatePdf
 }; 

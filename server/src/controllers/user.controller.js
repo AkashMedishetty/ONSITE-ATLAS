@@ -1,6 +1,9 @@
 const { User, Abstract } = require('../models');
 const { createApiError } = require('../middleware/error');
 const logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
+const archiver = require('archiver');
 
 /**
  * Get all users
@@ -235,6 +238,216 @@ const getUsersForEvent = async (req, res, next) => {
   }
 };
 
+// Helper function to generate CSV string (simplified)
+const generateCsvFromArray = (headers, dataArray) => {
+  let csvString = headers.join(',') + '\r\n';
+  dataArray.forEach(row => {
+    // Sanitize and quote each value
+    const line = headers.map(header => {
+      const value = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+      // Escape double quotes by doubling them, and wrap in double quotes if it contains comma, newline or double quote
+      if (value.includes(',') || value.includes('\"') || value.includes('\n') || value.includes('\r')) {
+        return `\"${value.replace(/\"/g, '\"\"')}\"`
+      }
+      return value;
+    }).join(',');
+    csvString += line + '\r\n';
+  });
+  return csvString;
+};
+
+// Implementation for exportReviewerAbstractDetails
+const exportReviewerAbstractDetails = async (req, res, next) => {
+  try {
+    const reviewerId = req.user._id; // Assuming req.user is populated by 'protect' middleware
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      return next(createApiError(400, 'Event ID is required'));
+    }
+
+    const abstracts = await Abstract.find({
+      event: eventId,
+      'reviewDetails.assignedTo': reviewerId
+    })
+    .populate('event', 'name')
+    .populate('category', 'name')
+    .populate('authors.user', 'name affiliation') // If authors are stored as references
+    .select('title submissionDate event category authors reviewDetails.reviews')
+    .lean();
+
+    if (!abstracts || abstracts.length === 0) {
+      // Send an empty CSV if no abstracts are found for this reviewer and event
+      const emptyCsvHeaders = ['Title', 'Author(s)', 'Submission Date', 'Your Review Status', 'Category'];
+      const emptyCsvString = generateCsvFromArray(emptyCsvHeaders, []);
+      const emptyFileName = `no_abstract_details_${reviewerId}_${eventId}_${Date.now()}.csv`;
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${emptyFileName}"`);
+      return res.status(200).end(emptyCsvString);
+    }
+
+    const csvHeaders = ['Title', 'Author(s)', 'Submission Date', 'Your Review Status', 'Category', 'Event Name'];
+    const csvData = abstracts.map(abs => {
+      const myReview = abs.reviewDetails && abs.reviewDetails.reviews
+        ? abs.reviewDetails.reviews.find(review => review.reviewer && String(review.reviewer) === String(reviewerId))
+        : null;
+      const myReviewStatus = myReview ? (myReview.isComplete ? myReview.decision : 'Pending Review') : 'Not Reviewed';
+      
+      let authorNames = 'N/A';
+      // Ensure abs.authors is an array and has elements before mapping
+      if (abs.authors && Array.isArray(abs.authors) && abs.authors.length > 0) {
+        authorNames = abs.authors.map(author => {
+            // Check if author itself is an object before trying to access properties
+            if (author && typeof author === 'object') {
+                if (author.user && typeof author.user === 'object' && author.user.name) {
+                    return author.user.name;
+                }
+                // Fallback if author.user is not populated or name is directly on author object
+                if (typeof author.name === 'string') {
+                    return author.name;
+                }
+            }
+            return ''; // Return empty string if author structure is not as expected
+        }).filter(name => name).join('; ');
+        
+        // If after mapping and filtering, authorNames is empty, set back to 'N/A'
+        if (!authorNames) {
+            authorNames = 'N/A';
+        }
+      }
+
+      return {
+        'Title': abs.title || 'N/A',
+        'Author(s)': authorNames,
+        'Submission Date': abs.submissionDate ? new Date(abs.submissionDate).toLocaleDateString() : 'N/A',
+        'Your Review Status': myReviewStatus,
+        'Category': abs.category?.name || 'N/A',
+        'Event Name': abs.event?.name || 'N/A'
+      };
+    });
+
+    const csvString = generateCsvFromArray(csvHeaders, csvData);
+    const fileName = `abstract_details_${reviewerId}_${eventId}_${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.status(200).end(csvString);
+
+  } catch (error) {
+    logger.error(`Error exporting abstract details for reviewer ${req.user?._id}, event ${req.params.eventId}: ${error.message}`);
+    next(error);
+  }
+};
+
+// Implementation for downloadReviewerAbstractFiles
+const downloadReviewerAbstractFiles = async (req, res, next) => {
+  try {
+    const reviewerId = req.user._id;
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      return next(createApiError(400, 'Event ID is required'));
+    }
+
+    const abstractsWithFiles = await Abstract.find({
+      event: eventId,
+      'reviewDetails.assignedTo': reviewerId,
+      fileUrl: { $exists: true, $ne: null, $ne: '' },
+      fileName: { $exists: true, $ne: null, $ne: '' }
+    }).select('_id title fileUrl fileName event').lean(); // Select event for naming convention
+
+    if (!abstractsWithFiles || abstractsWithFiles.length === 0) {
+      return next(createApiError(404, 'No downloadable files found for your assigned abstracts in this event.'));
+    }
+
+    const eventNameSlug = abstractsWithFiles[0].event?.name?.replace(/\s+/g, '_').substring(0,20) || eventId;
+    const zipFileName = `Reviewer_${reviewerId}_Event_${eventNameSlug}_Files_${Date.now()}.zip`;
+    
+    // Ensure temp directory exists
+    const tempZipDir = path.join(__dirname, '..', '..', 'uploads', 'temp'); // Adjusted path relative to controller file
+    if (!fs.existsSync(tempZipDir)) {
+      fs.mkdirSync(tempZipDir, { recursive: true });
+    }
+    const zipFilePath = path.join(tempZipDir, zipFileName);
+
+    const output = fs.createWriteStream(zipFilePath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    let headersSent = false;
+
+    output.on('close', () => {
+      if (headersSent) return;
+      headersSent = true;
+      logger.info(`ZIP archive created: ${zipFileName}, size: ${archive.pointer()} bytes`);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
+      res.status(200).download(zipFilePath, zipFileName, (err) => {
+        if (err) {
+          logger.error('Error sending ZIP file to client:', err);
+          // Cannot send another response if headers were already sent by res.download
+        }
+        // Clean up the temp file
+        fs.unlink(zipFilePath, unlinkErr => {
+          if (unlinkErr) logger.error('Error deleting temp ZIP file:', unlinkErr);
+        });
+      });
+    });
+
+    archive.on('warning', (err) => {
+      if (err.code === 'ENOENT') {
+        logger.warn('Archiver warning (file not found during zipping):', err);
+      } else {
+        logger.error('Archiver warning:', err);
+      }
+    });
+
+    archive.on('error', (err) => {
+      logger.error('Archiver critical error:', err);
+      fs.unlink(zipFilePath, () => {}); // Attempt to delete partial zip
+      if (!headersSent) {
+        headersSent = true;
+        return next(createApiError(500, 'Error creating ZIP archive'));
+      }
+    });
+
+    archive.pipe(output);
+    let filesAdded = 0;
+    for (const abstract of abstractsWithFiles) {
+      if (abstract.fileUrl && abstract.fileName) {
+        // Ensure abstract.fileUrl is treated as relative to the 'uploads' directory base
+        const relativeFileUrl = abstract.fileUrl.startsWith('/') ? abstract.fileUrl.substring(1) : abstract.fileUrl;
+        // Assuming process.cwd() is the /server directory if the script is run from there
+        const filePath = path.join(process.cwd(), 'public', relativeFileUrl);
+        
+        if (fs.existsSync(filePath)) {
+          // Sanitize file names for ZIP entry if necessary, though archiver might handle some of this.
+          // Using a simple prefix for uniqueness within the zip for now.
+          archive.file(filePath, { name: `${abstract._id}_${abstract.fileName}` });
+          filesAdded++;
+        } else {
+          logger.warn(`File not found for abstract ${abstract._id}: ${filePath}. Path from DB: ${abstract.fileUrl}. Skipping.`);
+        }
+      }
+    }
+    
+    if (filesAdded === 0) {
+        archive.abort(); // Abort if no files were actually added to prevent empty zip
+        fs.unlink(zipFilePath, () => {}); // Clean up empty zip file
+        if (!headersSent) {
+            headersSent = true;
+            return next(createApiError(404, 'No valid files could be found to include in the ZIP archive.'));
+        }
+        return; // Stop further processing
+    }
+
+    await archive.finalize();
+
+  } catch (error) {
+    logger.error(`Error downloading abstract files for reviewer ${req.user?._id}, event ${req.params.eventId}: ${error.message}`);
+    next(error);
+  }
+};
+
 module.exports = {
   getUsers,
   createUser,
@@ -242,5 +455,7 @@ module.exports = {
   updateUser,
   deleteUser,
   getAssignedAbstractsForReviewer,
-  getUsersForEvent
+  getUsersForEvent,
+  exportReviewerAbstractDetails,
+  downloadReviewerAbstractFiles
 }; 

@@ -153,11 +153,27 @@ const CertificatePrintingScanner = () => {
   const fetchTemplates = async () => {
     try {
       const response = await resourceService.getCertificatePrintingSettings(eventId);
-      if (response.success && response.data.settings?.templates) {
-        const templateList = response.data.settings.templates.map(template => ({
+      
+      // --- DETAILED LOGGING START ---
+      console.log('[FetchTemplates] Full API Response:', JSON.stringify(response, null, 2));
+      if (response && response.data) {
+        console.log('[FetchTemplates] response.data:', JSON.stringify(response.data, null, 2));
+        console.log('[FetchTemplates] typeof response.data.certificatePrintingTemplates:', typeof response.data.certificatePrintingTemplates);
+        console.log('[FetchTemplates] Array.isArray(response.data.certificatePrintingTemplates):', Array.isArray(response.data.certificatePrintingTemplates));
+        if (Array.isArray(response.data.certificatePrintingTemplates)) {
+          console.log('[FetchTemplates] response.data.certificatePrintingTemplates CONTENT:', JSON.stringify(response.data.certificatePrintingTemplates, null, 2));
+        }
+      } else {
+        console.log('[FetchTemplates] response or response.data is null/undefined.');
+      }
+      // --- DETAILED LOGGING END ---
+
+      if (response.success && Array.isArray(response.data?.certificatePrintingTemplates)) {
+        console.log('[FetchTemplates] Main condition met: Processing response.data.certificatePrintingTemplates');
+        const templateList = response.data.certificatePrintingTemplates.map(template => ({
           _id: template._id,
-          name: template.name || 'Certificate Template',
-          type: template.type || 'attendance',
+          name: template.name || 'Unnamed Template',
+          type: template.categoryType || template.type || 'general',
           fields: template.fields || []
         }));
         
@@ -165,9 +181,20 @@ const CertificatePrintingScanner = () => {
         if (templateList.length > 0 && !selectedTemplate) {
           setSelectedTemplate(templateList[0]._id);
         }
+      } else if (response.success && response.data.settings?.templates) {
+        console.warn('[FetchTemplates] Fallback condition met: Using response.data.settings.templates');
+        const templateList = response.data.settings.templates.map(template => ({
+          _id: template._id,
+          name: template.name || 'Certificate Template',
+          type: template.categoryType || template.type || 'attendance',
+          fields: template.fields || []
+        }));
+        setTemplates(templateList);
+        if (templateList.length > 0 && !selectedTemplate) {
+          setSelectedTemplate(templateList[0]._id);
+        }
       } else {
-        // Set default templates if API fails
-        console.warn('Using default certificate printing templates as API failed:', response);
+        console.warn('[FetchTemplates] None of the conditions met. Using default certificate printing templates. API Response was:', JSON.stringify(response, null, 2));
         const defaultTemplates = [
           { 
             _id: 'attendance', 
@@ -182,6 +209,24 @@ const CertificatePrintingScanner = () => {
             fields: [
               { name: 'name', displayName: 'Full Name', required: true },
               { name: 'presentationTitle', displayName: 'Presentation Title', required: false }
+            ] 
+          },
+          { 
+            _id: 'abstract', 
+            name: 'Abstract Presenter Certificate', 
+            type: 'abstract',
+            fields: [
+              { name: 'name', displayName: 'Presenter Name', required: true },
+              { name: 'abstractTitle', displayName: 'Abstract Title', required: true }
+            ] 
+          },
+          { 
+            _id: 'workshop', 
+            name: 'Workshop Certificate', 
+            type: 'workshop',
+            fields: [
+              { name: 'name', displayName: 'Participant Name', required: true },
+              { name: 'workshopTitle', displayName: 'Workshop Title', required: true }
             ] 
           }
         ];

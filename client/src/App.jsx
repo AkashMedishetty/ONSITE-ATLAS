@@ -253,6 +253,11 @@ const App = () => {
                     <Route path=":categoryId" element={<CategoryDetail />} />
                     <Route path=":categoryId/edit" element={<CategoryForm />} />
                   </Route>
+                  <Route path="sponsors">
+                    <Route index element={<SponsorsList />} />
+                    <Route path="new" element={<SponsorForm />} />
+                    <Route path=":sponsorId/edit" element={<SponsorForm />} />
+                  </Route>
                   <Route path="resources">
                     {/* Specific route first */}
                     <Route path="scanner" element={<ScannerStation />} />

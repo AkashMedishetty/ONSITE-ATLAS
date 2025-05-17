@@ -1029,20 +1029,22 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     return next(createApiError('Please provide a valid review decision (accept, reject, revise, undecided)', 400));
   }
 
-  const abstract = await Abstract.findById(abstractId).populate('event'); // Populate event for email settings
+  // Populate event for email settings and registration for author details upfront
+  const abstract = await Abstract.findById(abstractId)
+    .populate('event', 'name emailSettings')
+    .populate('registration', 'personalInfo email');
 
   if (!abstract) {
     return next(createApiError(`Abstract not found with id of ${abstractId}`, 404));
   }
 
-  const event = abstract.event;
+  const event = abstract.event; // Already populated
   if (!event) {
     logger.error(`[submitIndividualReview] Event not found for abstract ${abstractId}`);
-    // This case should be rare if abstract.event is always valid
     return next(createApiError('Associated event not found for this abstract.', 500));
   }
 
-  const isAssignedReviewer = abstract.reviewDetails && abstract.reviewDetails.assignedTo && 
+  const isAssignedReviewer = abstract.reviewDetails && abstract.reviewDetails.assignedTo &&
                            abstract.reviewDetails.assignedTo.some(id => id.equals(reviewerUser._id));
 
   if (reviewerUser.role !== 'admin' && !isAssignedReviewer) { // Admins can also submit/override reviews
@@ -1060,34 +1062,84 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     review => review.reviewer && review.reviewer.equals(reviewerUser._id)
   );
 
-  const reviewData = {
-    reviewer: reviewerUser._id,
-    score: score !== undefined ? Number(score) : null,
-    comments,
-    decision,
-    isComplete: true,
-    reviewedAt: Date.now()
-  };
-
   if (existingReviewIndex > -1) {
-    abstract.reviewDetails.reviews[existingReviewIndex] = reviewData;
-    logger.info(`[submitIndividualReview] Review updated by ${reviewerUser._id} for abstract ${abstractId}`);
+    // Update existing review
+    const reviewToUpdate = abstract.reviewDetails.reviews[existingReviewIndex];
+    reviewToUpdate.score = score !== undefined ? Number(score) : reviewToUpdate.score;
+    reviewToUpdate.comments = comments !== undefined ? comments : reviewToUpdate.comments;
+    reviewToUpdate.decision = decision;
+    reviewToUpdate.isComplete = true;
+    reviewToUpdate.reviewedAt = Date.now();
+    logger.info(`[submitIndividualReview] Review updated for abstract ${abstractId} by reviewer ${reviewerUser._id}`);
   } else {
-    abstract.reviewDetails.reviews.push(reviewData);
-    logger.info(`[submitIndividualReview] New review submitted by ${reviewerUser._id} for abstract ${abstractId}`);
+    // Add new review
+    abstract.reviewDetails.reviews.push({
+      reviewer: reviewerUser._id,
+      score: score !== undefined ? Number(score) : null,
+      comments,
+      decision,
+      isComplete: true,
+      reviewedAt: Date.now(),
+    });
+    logger.info(`[submitIndividualReview] New review added for abstract ${abstractId} by reviewer ${reviewerUser._id}`);
   }
 
-  // AUTOMATION: If reviewer decision is 'accept', set status to 'approved' and notify registrant and admins
-  if (decision === 'accept') {
-    abstract.status = 'approved';
-    logger.info(`[submitIndividualReview] Status auto-updated to 'approved' for abstract ${abstractId} due to reviewer decision.`);
+  // Calculate average score
+  const validScores = abstract.reviewDetails.reviews
+    .filter(r => r.isComplete && typeof r.score === 'number')
+    .map(r => r.score);
+  if (validScores.length > 0) {
+    abstract.reviewDetails.averageScore = validScores.reduce((acc, cur) => acc + cur, 0) / validScores.length;
+  } else {
+    abstract.reviewDetails.averageScore = null;
+  }
 
-    // Fetch registration with personalInfo for email
-    const registration = await Registration.findById(abstract.registration);
-    const authorEmail = registration?.personalInfo?.email;
-    const authorName = registration?.personalInfo?.firstName || 'Author';
+  // Update global abstract status based on this reviewer's decision
+  if (decision === 'revise') {
+    if (abstract.status !== 'revision-requested') {
+      abstract.status = 'revision-requested';
+      abstract.markModified('status'); // Explicitly mark as modified
+      logger.info(`[submitIndividualReview] Global status of abstract ${abstract._id} set to 'revision-requested' in memory prior to save.`);
+    }
+  } else if (decision === 'accept') {
+    // If one reviewer accepts, and we want to immediately mark as approved globally.
+    // Consider if this should only happen if ALL reviewers accept, or by admin action.
+    if (abstract.status !== 'approved') { // Or other statuses that shouldn't be overridden by a single accept
+        abstract.status = 'approved';
+        abstract.markModified('status');
+        logger.info(`[submitIndividualReview] Global status of abstract ${abstract._id} set to 'approved' in memory prior to save.`);
+    }
+  } else if (decision === 'reject') {
+    // If one reviewer rejects, and we want to immediately mark as rejected globally.
+    // Consider if this should only happen if ALL reviewers reject, or by admin action.
+    // For now, implementing direct change: one rejection updates global status.
+    if (abstract.status !== 'rejected') { // Or other statuses that shouldn't be overridden by a single reject
+        abstract.status = 'rejected';
+        abstract.markModified('status');
+        logger.info(`[submitIndividualReview] Global status of abstract ${abstract._id} set to 'rejected' in memory prior to save.`);
+    }
+  }
+  // Note: 'undecided' from a single reviewer does not change the global abstract.status here.
+  // Global rejection/approval might also be an admin action or based on aggregated reviews for 'accept'/'reject'.
 
-    // Send email to registrant/author if event email settings allow
+  // Single save operation for all changes
+  try {
+    await abstract.save();
+    logger.info(`[submitIndividualReview] Abstract ${abstract._id} saved successfully. Current status: ${abstract.status}`);
+  } catch (saveError) {
+    logger.error(`[submitIndividualReview] Error saving abstract ${abstractId}:`, saveError);
+    return next(createApiError('Failed to save review and update abstract status.', 500, saveError.stack));
+  }
+
+  // Post-save actions (e.g., email notifications)
+  // AUTOMATION: If reviewer decision was 'accept' AND global status is now 'approved', notify registrant and admins
+  if (decision === 'accept' && abstract.status === 'approved') {
+    logger.info(`[submitIndividualReview] Abstract ${abstractId} approved, proceeding with notifications.`);
+
+    const author = abstract.registration; // Already populated
+    const authorEmail = author?.personalInfo?.email;
+    const authorName = author?.personalInfo?.firstName || 'Author';
+
     if (authorEmail && event.emailSettings && event.emailSettings.enabled) {
       const emailSubject = `Abstract Approved - ${event.name}`;
       const emailBody = `<p>Dear ${authorName},</p>
@@ -1111,7 +1163,6 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
       }
     }
 
-    // Notify admins/staff if enabled
     if (event.emailSettings && event.emailSettings.enabled && event.emailSettings.automaticEmails && event.emailSettings.automaticEmails.reviewSubmittedNotificationToAdmin) {
       const adminsToNotify = await User.find({ role: { $in: ['admin', 'staff'] }, email: { $ne: null } });
       if (adminsToNotify.length > 0) {
@@ -1142,11 +1193,10 @@ exports.submitIndividualReview = asyncHandler(async (req, res, next) => {
     }
   }
 
-  await abstract.save();
-
+  // Populate for response
   const populatedAbstract = await Abstract.findById(abstract._id)
-    .populate('event', 'name emailSettings') // Ensure event is populated for response if needed elsewhere
-    .populate('registration', 'personalInfo')
+    .populate('event', 'name emailSettings') // Already populated but good to be explicit for response
+    .populate('registration', 'personalInfo email') // Already populated
     .populate('category', 'name')
     .populate('reviewDetails.assignedTo', 'name email')
     .populate('reviewDetails.reviews.reviewer', 'name email');

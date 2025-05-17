@@ -235,12 +235,14 @@ const AbstractPortal = () => {
   const [userAbstracts, setUserAbstracts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [fileUploading, setFileUploading] = useState(false);
+  const [selectedSubTopics, setSelectedSubTopics] = useState([]); // State for sub-topics of the selected category
   
   const [abstractForm, setAbstractForm] = useState({
     title: '',
     authors: '',
     affiliations: '',
-    category: '',
+    category: '', // This will store the selected category's value (e.g., name or ID)
+    subTopic: '', // This will store the selected sub-topic's value (e.g., name)
     content: '',
     file: null,
     existingAbstractId: null // To track if the form is for edit mode
@@ -261,7 +263,19 @@ const AbstractPortal = () => {
         if (details.success) {
           setEventDetails(details.data);
           if (details.data.abstractSettings?.categories?.length > 0) {
-            setCategories(details.data.abstractSettings.categories.map(cat => ({ value: cat._id, label: cat.name })));
+            // Store the full category object, including subTopics
+            // Ensure each category object has a unique 'value' for the Select component,
+            // using its _id.
+            setCategories(details.data.abstractSettings.categories.map((cat, index) => {
+              if (!cat._id) {
+                console.warn(`Category "${cat.name}" at index ${index} is missing an _id. Submission might fail. Using name as fallback value.`);
+              }
+              return {
+                value: cat._id || cat.name, // Use _id if available, fallback to name (and log warning)
+                label: cat.name,
+                subTopics: cat.subTopics || [] // Ensure subTopics is an array
+              };
+            }));
           }
         } else {
           toast.error(details.message || 'Failed to fetch event details.');
@@ -280,6 +294,7 @@ const AbstractPortal = () => {
       authors: '',
       affiliations: '',
       category: eventDetails?.abstractSettings?.defaultCategory || categories[0]?.value || '',
+      subTopic: '',
       content: '',
       file: null,
       existingAbstractId: null
@@ -367,14 +382,33 @@ const AbstractPortal = () => {
   const handleSelectChange = (value, { name }) => {
     setAbstractForm(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
+      // If the main category is changing, reset the subTopic field in the form
+      ...(name === 'category' && { subTopic: '' })
     }));
+
+    // If the category select itself was changed, update the available sub-topics
+    if (name === 'category') {
+      const selectedCategoryData = categories.find(cat => cat.value === value);
+      if (selectedCategoryData && selectedCategoryData.subTopics && selectedCategoryData.subTopics.length > 0) {
+        setSelectedSubTopics(selectedCategoryData.subTopics.map(st => ({ value: st.name, label: st.name })));
+      } else {
+        setSelectedSubTopics([]); // No sub-topics for this category, or category not found
+      }
+    }
     
     // Clear error for this field
     if (formErrors[name]) {
       setFormErrors(prev => ({
         ...prev,
         [name]: null
+      }));
+    }
+    // If category changed, also clear any existing subTopic error
+    if (name === 'category' && formErrors.subTopic) {
+      setFormErrors(prev => ({
+        ...prev,
+        subTopic: null
       }));
     }
   };
@@ -423,6 +457,18 @@ const AbstractPortal = () => {
       errors.category = 'Please select a category';
     }
     
+    // Validate subTopic if the selected category has sub-topics and sub-topic selection is required
+    // This logic assumes a convention or a specific setting (e.g., requireSubTopicPerCategory in abstractSettings)
+    const selectedCategoryData = categories.find(cat => cat.value === abstractForm.category);
+    if (selectedCategoryData && selectedCategoryData.subTopics && selectedCategoryData.subTopics.length > 0) {
+      // Example: Make subTopic required if eventDetails.abstractSettings.requireSubTopic is true
+      // You might have a more granular setting, e.g. category.requireSubTopic
+      const subTopicIsRequired = eventDetails?.abstractSettings?.requireSubTopicForEnabledCategories; // Hypothetical setting
+      if (subTopicIsRequired && !abstractForm.subTopic) {
+        errors.subTopic = 'Please select a sub-topic for the chosen category';
+      }
+    }
+    
     // Validate content
     if (!abstractForm.content || !abstractForm.content.trim()) {
       errors.content = 'Abstract content is required';
@@ -466,47 +512,87 @@ const AbstractPortal = () => {
     e.preventDefault();
     if (!validateAbstractForm()) return;
     setSubmitMessage({ type: '', text: '' });
-    const submittingInProgressState = true; // Replace setLoading(true) with a more specific state if needed
-    if (submittingInProgressState) console.log('Submitting...'); // Placeholder for actual UI update
+    console.log('Submitting abstract data (raw form values):', abstractForm);
 
-    const dataToSend = { ...abstractForm, event: eventId, registration: userInfo?._id };
-    // Remove file from dataToSend if it's handled by a separate upload call later
-    const hasFile = dataToSend.file;
-    if (hasFile) delete dataToSend.file; // Assuming file is uploaded after abstract creation/update
+    // Prepare data to send: ensure both category and topic are sent with the same ID value.
+    // AND include subTopic
+    const { file, category, subTopic, ...formData } = abstractForm; 
+    const categoryId = category; // Assuming abstractForm.category holds the ID/name used as value
+
+    const dataToSend = {
+       ...formData, 
+       topic: categoryId,    // Main category ID/name (ensure backend expects this as 'topic')
+       category: categoryId, // Also send as 'category' for compatibility or specific backend needs
+       subTopic: subTopic || null, // Include selected subTopic, send null if none selected
+       event: eventId,
+       registration: userInfo?._id
+    };
+    console.log('Data being sent to backend:', dataToSend);
+
+    const hasFile = !!dataToSend.file; 
 
     try {
       let response;
-      if (abstractForm.existingAbstractId) {
-        response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, dataToSend);
-      } else {
-        response = await abstractService.createAbstract(dataToSend); // createAbstract expects eventId within data
+      // Create a payload for the service, excluding the file object itself
+      const payloadForService = { ...dataToSend };
+      if (payloadForService.file) { // abstractForm.file might be null
+        delete payloadForService.file; // Remove if it's just a placeholder or null
       }
 
-      if (response.success) {
-        const abstractId = response.data._id;
-        if (hasFile && abstractForm.file) {
+      if (abstractForm.existingAbstractId) {
+        console.log('Attempting to update abstract:', abstractForm.existingAbstractId);
+        response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, payloadForService);
+      } else {
+        console.log('Attempting to create new abstract.');
+        response = await abstractService.createAbstract(eventId, payloadForService); 
+      }
+
+      console.log('API Response:', response);
+
+      if (response && response.success) {
+        const abstractData = response.data;
+        if (!abstractData || !abstractData._id) {
+          console.error('API success response is missing data or data._id:', response);
+          toast.error('Submission successful but response data is incomplete.');
+          return;
+        }
+        const abstractId = abstractData._id;
+
+        if (hasFile && abstractForm.file) { // Use hasActualFile and abstractForm.file
+          console.log('Uploading file for abstract:', abstractId);
           const fileUploadResponse = await abstractService.uploadAbstractFile(eventId, abstractId, abstractForm.file);
-            if (!fileUploadResponse.success) {
-            toast.error(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} but file upload failed: ${fileUploadResponse.message}`);
-            // Decide how to proceed: let user stay on form, or go to list with a warning?
-            } else {
+          console.log('File Upload Response:', fileUploadResponse);
+          if (!fileUploadResponse || !fileUploadResponse.success) {
+            const fileErrorMessage = fileUploadResponse?.message || 'File upload failed after abstract submission.';
+            toast.error(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} but file upload failed: ${fileErrorMessage}`);
+          } else {
             toast.success(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} and file uploaded successfully!`);
           }
         } else {
           toast.success(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} successfully!`);
         }
         resetAbstractForm();
-        await fetchUserAbstracts(userInfo._id);
+        if (userInfo && userInfo._id) {
+            await fetchUserAbstracts(userInfo._id);
+        }
         setCurrentView('list');
       } else {
-        setSubmitMessage({ type: 'error', text: response.message || 'Submission failed.' });
-        toast.error(response.message || 'Submission failed.');
+        // Handle failed API response
+        console.error('Abstract submission failed. API Response:', response);
+        const errorMessage = response?.message || 'Submission failed due to an unknown server error.';
+        setSubmitMessage({ type: 'error', text: errorMessage });
+        toast.error(String(errorMessage)); // Ensure it's a string
       }
-    } catch (error) {
-      setSubmitMessage({ type: 'error', text: error.message || 'An error occurred.' });
-      toast.error(error.message || 'An error occurred.');
+    } catch (err) {
+      // Handle exceptions during the API call or subsequent logic
+      console.error('Error during abstract submission process:', err);
+      let clientErrorMessage = 'An unexpected error occurred during submission.';
+      if (err && typeof err.message === 'string') {
+        clientErrorMessage = err.message;
+      }
+      setSubmitMessage({ type: 'error', text: clientErrorMessage });
+      toast.error(clientErrorMessage);
     }
-    // setLoading(false); // Or setIsSubmitting(false)
   };
   
   const handleDeleteAbstract = async (abstractIdToDelete) => {
@@ -547,6 +633,7 @@ const AbstractPortal = () => {
       authors: abstractToEdit.authors || '',
       affiliations: abstractToEdit.authorAffiliations || '',
       category: abstractToEdit.category?._id || abstractToEdit.category || '', // Handle populated vs ID
+      subTopic: abstractToEdit.subTopic || '',
       content: abstractToEdit.content || '',
       file: null, // File needs separate handling - show current, allow replace
       existingAbstractId: abstractToEdit._id // Set ID for update logic
@@ -1046,19 +1133,39 @@ const AbstractPortal = () => {
                   <Input id="affiliations" name="affiliations" value={abstractForm.affiliations} onChange={handleInputChange} error={formErrors.affiliations} />
                       </div>
               
-                {/* Category Field */} 
+                {/* Category Field */}
                 <div>
-                  <label htmlFor="category">Category <span className="text-red-500">*</span></label>
-                          <Select
-                            id="category"
-                            name="category"
-                            value={abstractForm.category}
-                            onChange={handleSelectChange}
-                            error={formErrors.category}
-                    options={[{ value: '', label: 'Select... ' }, ...categories]} 
-                          />
-                        </div>
-                        
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
+                  <Select
+                    id="category"
+                    name="category"
+                    value={abstractForm.category}
+                    onChange={handleSelectChange}
+                    options={categories} // Populated from eventDetails.abstractSettings.categories
+                    placeholder="Select a category"
+                    error={formErrors.category}
+                    required
+                  />
+                </div>
+
+                {/* Sub-Topic Field - Conditionally Rendered */}
+                {selectedSubTopics && selectedSubTopics.length > 0 && (
+                  <div>
+                    <label htmlFor="subTopic" className="block text-sm font-medium text-gray-700 mb-1">Sub-Topic {eventDetails?.abstractSettings?.requireSubTopic ? <span className="text-red-500">*</span> : <span className="text-xs text-gray-500">(Optional)</span>}</label>
+                    <Select
+                      id="subTopic"
+                      name="subTopic"
+                      value={abstractForm.subTopic}
+                      onChange={handleSelectChange} // Uses the same handler as category
+                      options={selectedSubTopics} // Populated based on selected category
+                      placeholder="Select a sub-topic (if applicable)"
+                      error={formErrors.subTopic}
+                      // Add 'required' prop if sub-topics are mandatory for the selected category
+                      // This might need more complex logic based on eventDetails.abstractSettings
+                    />
+                  </div>
+                )}
+                
                 {/* Content Field */} 
                         <div>
                   <label htmlFor="content">Content <span className="text-red-500">*</span></label>

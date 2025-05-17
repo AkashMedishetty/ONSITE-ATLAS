@@ -20,7 +20,10 @@ const app = express();
 
 // Set security HTTP headers
 app.use(helmet({
-  contentSecurityPolicy: false // Disable for development
+  contentSecurityPolicy: false, // Disable for development
+  crossOriginResourcePolicy: false, // Explicitly disable Helmet's CORP middleware
+  frameguard: false, // Disable X-Frame-Options header
+  crossOriginEmbedderPolicy: false // Disable COEP header from backend (for testing)
 }));
 
 // Set up rate limiting
