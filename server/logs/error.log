@@ -6248,3 +6248,14 @@
     at Layer.handle [as handle_request] (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\express\lib\router\layer.js:95:5)
     at trim_prefix (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\express\lib\router\index.js:328:13)
     at D:\Projects\ONSITE ATLAS - Copy\server\node_modules\express\lib\router\index.js:286:9
+2025-05-18 22:15:16 [31merror[39m: StrictPopulateError: Cannot populate path `resourceSetting` because it is not in your schema. Set the `strictPopulate` option to false to override.
+    at getModelsMapForPopulate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:50:12)
+    at populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4394:21)
+    at _populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4354:5)
+    at D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4326:5
+    at new Promise (<anonymous>)
+    at Function.populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4325:10)
+    at model.Query._find (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\query.js:2316:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async model.Query.exec (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\query.js:4447:11)
+    at async D:\Projects\ONSITE ATLAS - Copy\server\src\controllers\registrantPortalController.js:744:25
