@@ -106,7 +106,7 @@ const AbstractEdit = () => {
       
       // Simulate successful submission
       alert('Abstract updated successfully!');
-      navigate(`/registrant-portal/abstracts/${id}`);
+      navigate(`/registrant-portal/events/${formData.event}/abstracts/${id}`);
     } catch (error) {
       setErrors({
         submit: 'Failed to update abstract. Please try again.'
@@ -152,7 +152,7 @@ const AbstractEdit = () => {
         </div>
         <div className="mt-4">
           <Link
-            to={`/registrant-portal/abstracts/${id}`}
+            to={`/registrant-portal/events/${initialData.event}/abstracts/${id}`}
             className="text-blue-600 hover:underline"
           >
             &larr; Back to Abstract Details
@@ -280,7 +280,7 @@ const AbstractEdit = () => {
           
           <div className="flex justify-between">
             <Link
-              to={`/registrant-portal/abstracts/${id}`}
+              to={`/registrant-portal/events/${formData.event}/abstracts/${id}`}
               className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
             >
               Cancel

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { REGISTRANT_TOKEN_KEY } from '../config';
 import apiRegistrant from '../services/apiRegistrant';
 import { login as registrantLogin, logout as registrantLogout } from '../services/registrantPortalService';
+import registrantPortalService from '../services/registrantPortalService';
 
 // Create the context
 const RegistrantAuthContext = createContext(null);
@@ -192,12 +193,19 @@ export const RegistrantAuthProvider = ({ children }) => {
       setCurrentRegistrant(null);
       setRegistrantEventId(null);
       setError(null);
+      // Preserve event context on logout
+      let eventId = registrantEventId || (currentRegistrant && currentRegistrant.defaultEventId) || localStorage.getItem('registrantEventId') || localStorage.getItem('activeEventId');
+      if (eventId) {
+        window.location.replace(`/registrant-portal/auth/login?event=${eventId}`);
+      } else {
+        window.location.replace('/registrant-portal/auth/login');
+      }
       return { success: true };
     } catch (err) {
       console.error('Logout error:', err);
       return { success: false, error: err.message };
     }
-  }, []);
+  }, [registrantEventId, currentRegistrant]);
 
   // Signup function
   const signup = async (name, email, password) => {
@@ -293,6 +301,32 @@ export const RegistrantAuthProvider = ({ children }) => {
     }
   };
 
+  // Fetch latest registrant data from backend and update context/localStorage
+  const fetchRegistrantData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await registrantPortalService.getCurrentRegistrant();
+      if (response && response.status === 'success' && response.data && response.data.registration) {
+        const updatedRegistrant = {
+          ...response.data.registration,
+          token: localStorage.getItem(REGISTRANT_TOKEN_KEY) // preserve token
+        };
+        setCurrentRegistrant(updatedRegistrant);
+        localStorage.setItem('registrantData', JSON.stringify(updatedRegistrant));
+        return updatedRegistrant;
+      } else {
+        setError('Failed to fetch registrant data.');
+        return null;
+      }
+    } catch (err) {
+      setError(err.message || 'Error fetching registrant data.');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Memoize context value to prevent unnecessary renders
   const value = {
     currentRegistrant,
@@ -302,6 +336,7 @@ export const RegistrantAuthProvider = ({ children }) => {
     signup,
     logout,
     updateProfile,
+    fetchRegistrantData,
     forgotPassword,
     resetPassword,
     hasEventAccess,

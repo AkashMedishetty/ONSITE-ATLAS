@@ -187,6 +187,16 @@ const formatDate = (dateString) => {
   }
 };
 
+// Helper for safe stringifying, even if obj is undefined
+const safeJsonStringify = (obj) => {
+  if (obj === undefined) return 'undefined';
+  try {
+    return JSON.stringify(obj);
+  } catch (e) {
+    return `Error stringifying object: ${e.message}`;
+  }
+};
+
 /**
  * Enhanced Abstract Portal Component
  * Features:
@@ -241,6 +251,7 @@ const AbstractPortal = () => {
     authors: '',
     affiliations: '',
     category: '',
+    subTopic: '',
     content: '',
     file: null,
     existingAbstractId: null // To track if the form is for edit mode
@@ -251,6 +262,7 @@ const AbstractPortal = () => {
   // Controls the main view of the portal for authors
   const [currentView, setCurrentView] = useState('login'); // Possible values: 'login', 'list', 'form'
   const [editingAbstract, setEditingAbstract] = useState(null); // Holds the abstract object if in edit mode
+  const [availableSubTopics, setAvailableSubTopics] = useState([]); // For storing subtopics based on selected category
 
   // Fetch Event Details
   useEffect(() => {
@@ -279,12 +291,14 @@ const AbstractPortal = () => {
       title: '',
       authors: '',
       affiliations: '',
-      category: eventDetails?.abstractSettings?.defaultCategory || categories[0]?.value || '',
+      category: '',
+      subTopic: '',
       content: '',
       file: null,
       existingAbstractId: null
     });
     setFormErrors({});
+    setAvailableSubTopics([]);
     setEditingAbstract(null);
   };
 
@@ -318,22 +332,35 @@ const AbstractPortal = () => {
   };
 
   const fetchUserAbstracts = async (registrationMongoId) => {
-    if (!registrationMongoId || !eventId) return;
-    setLoading(true); // Consider a different loading state for abstract list
+    if (!registrationMongoId || !eventId) {
+      console.error("Missing registration ID or event ID for fetching abstracts");
+      return;
+    }
+    
+    setLoading(true);
     try {
       // Assuming abstractService.getAbstracts can be filtered by registration Mongo ID and eventId
       // The backend controller for getAbstracts was shown to handle query.registration = mongoId
       const params = { registration: registrationMongoId }; 
+      console.log("Fetching abstracts with params:", params);
       const response = await abstractService.getAbstracts(eventId, params);
-      if (response.success) {
+      
+      console.log("API response for abstracts:", response);
+      
+      if (response && response.success) {
+        console.log("Raw abstracts data:", response.data);
         setUserAbstracts(response.data || []);
       } else {
-        toast.error(response.message || 'Failed to fetch your abstracts.');
+        toast.error(response && response.message ? response.message : 'Failed to fetch your abstracts.');
+        setUserAbstracts([]);
       }
     } catch (err) {
-      toast.error('Error fetching your abstracts: ' + err.message);
-    }
+      console.error("Error fetching abstracts:", err);
+      toast.error(err && err.message ? `Error fetching your abstracts: ${err.message}` : 'Error fetching your abstracts.');
+      setUserAbstracts([]);
+    } finally {
       setLoading(false);
+    }
   };
   
   const handleLogout = () => {
@@ -367,8 +394,21 @@ const AbstractPortal = () => {
   const handleSelectChange = (value, { name }) => {
     setAbstractForm(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
+      // Clear subtopic when category changes
+      ...(name === 'category' ? { subTopic: '' } : {})
     }));
+    
+    // Update available subtopics when category changes
+    if (name === 'category') {
+      const selectedCategory = eventDetails?.abstractSettings?.categories?.find(cat => cat._id === value);
+      setAvailableSubTopics(selectedCategory?.subTopics?.map(subTopic => ({
+        value: subTopic._id || subTopic.id || subTopic.value || subTopic,
+        label: subTopic.name || subTopic.label || subTopic
+      })) || []);
+      
+      console.log("Category changed, updating subtopics:", selectedCategory?.subTopics);
+    }
     
     // Clear error for this field
     if (formErrors[name]) {
@@ -396,6 +436,7 @@ const AbstractPortal = () => {
   
   const validateAbstractForm = () => {
     const errors = {};
+    const isEditMode = formErrors.edit === true;
     
     // Validate title
     if (!abstractForm.title || !abstractForm.title.trim()) {
@@ -413,25 +454,47 @@ const AbstractPortal = () => {
       errors.authors = 'Authors field must be at least 2 characters long';
     }
     
-    // Validate affiliations
-    if (!abstractForm.affiliations || !abstractForm.affiliations.trim()) {
-      errors.affiliations = 'Affiliations are required';
-    }
-    
     // Validate category
     if (!abstractForm.category) {
       errors.category = 'Please select a category';
     }
     
-    // Validate content
+    // Validate topic (required by backend)
+    if (!abstractForm.category) {
+      errors.topic = 'Please select a category first';
+    }
+    
+    // Validate subtopic only if the selected category has subtopics
+    const selectedCategory = eventDetails?.abstractSettings?.categories?.find(
+      cat => cat._id === abstractForm.category
+    );
+    
+    if (selectedCategory?.subTopics?.length > 0 && !abstractForm.subTopic) {
+      errors.subTopic = 'Please select a subtopic';
+    }
+    
+    // Validate content (only required if no file is attached)
+    const hasFile = !!abstractForm.file;
+    
+    // If file upload is enabled in event settings
+    if (eventDetails?.abstractSettings?.allowFiles) {
+      // Content is optional if there's a file
+      if (!hasFile && (!abstractForm.content || !abstractForm.content.trim())) {
+        errors.content = 'Please either provide content or upload a file';
+      } else if (abstractForm.content && abstractForm.content.trim().length < 10 && !hasFile) {
+        errors.content = 'Abstract content must be at least 10 characters long';
+      }
+    } else {
+      // Content is always required if file upload is not enabled
     if (!abstractForm.content || !abstractForm.content.trim()) {
       errors.content = 'Abstract content is required';
     } else if (abstractForm.content.trim().length < 10) {
       errors.content = 'Abstract content must be at least 10 characters long';
+      }
     }
     
-    // Check word count
-    if (abstractForm.content) {
+    // Check word count if content is provided
+    if (abstractForm.content && abstractForm.content.trim()) {
       const wordCount = abstractForm.content.trim().split(/\s+/).length;
       const maxWords = eventDetails?.abstractSettings?.maxLength || 500;
       
@@ -441,10 +504,13 @@ const AbstractPortal = () => {
     }
     
     // Check for existing abstract in this category, but only if we're not in edit mode
-    if (!formErrors.edit) {
-      // Only check for duplicate categories if we're NOT editing an existing abstract
+    if (!isEditMode && userAbstracts && Array.isArray(userAbstracts)) {
+      // Find any abstract that matches the current category and isn't the one being edited
       const existingAbstract = userAbstracts.find(
-        abstract => abstract.category === abstractForm.category
+        abstract => abstract && 
+                   abstract.category && 
+                   (abstract.category === abstractForm.category || abstract.category._id === abstractForm.category) &&
+                   (!abstractForm.existingAbstractId || abstract._id !== abstractForm.existingAbstractId)
       );
       
       if (existingAbstract) {
@@ -452,61 +518,98 @@ const AbstractPortal = () => {
       }
     }
     
-    setFormErrors(prev => ({
-      ...prev,
-      ...errors,
       // Preserve the edit flag if it exists
-      edit: prev.edit
-    }));
+    if (isEditMode) {
+      errors.edit = true;
+    }
     
-    return Object.keys(errors).length === 0;
+    setFormErrors(errors);
+    console.log("Form validation errors:", errors);
+    
+    return Object.keys(errors).length === (isEditMode ? 1 : 0); // If in edit mode, we expect the edit flag
   };
   
   const handleSubmitAbstract = async (e) => {
     e.preventDefault();
     if (!validateAbstractForm()) return;
     setSubmitMessage({ type: '', text: '' });
-    const submittingInProgressState = true; // Replace setLoading(true) with a more specific state if needed
-    if (submittingInProgressState) console.log('Submitting...'); // Placeholder for actual UI update
-
-    const dataToSend = { ...abstractForm, event: eventId, registration: userInfo?._id };
-    // Remove file from dataToSend if it's handled by a separate upload call later
-    const hasFile = dataToSend.file;
-    if (hasFile) delete dataToSend.file; // Assuming file is uploaded after abstract creation/update
+    console.log('Submitting...');
 
     try {
-      let response;
-      if (abstractForm.existingAbstractId) {
-        response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, dataToSend);
-      } else {
-        response = await abstractService.createAbstract(dataToSend); // createAbstract expects eventId within data
+      if (!userInfo || !userInfo._id) {
+        throw new Error('User information is missing. Please log in again.');
       }
 
-      if (response.success) {
+      // Add category name for reference and a default content if only a file is being submitted
+      const dataToSend = { 
+        ...abstractForm,
+        // Set topic to match category name for backend validation
+        topic: getCategoryNameById(abstractForm.category),
+        // If content is empty but there's a file, use a placeholder for content
+        content: abstractForm.content?.trim() ? abstractForm.content.trim() : (abstractForm.file ? '[See attached file]' : ''),
+        event: eventId, 
+        registration: userInfo._id 
+      };
+      
+      console.log("Preparing to submit abstract data:", dataToSend);
+      
+    // Remove file from dataToSend if it's handled by a separate upload call later
+    const hasFile = dataToSend.file;
+      if (hasFile) delete dataToSend.file;
+
+      let response;
+      if (abstractForm.existingAbstractId) {
+        console.log("Updating existing abstract:", abstractForm.existingAbstractId);
+        response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, dataToSend);
+      } else {
+        console.log("Creating new abstract with data:", JSON.stringify(dataToSend, null, 2));
+        response = await abstractService.createAbstract(eventId, dataToSend); 
+      }
+
+      console.log("Abstract submission response:", response);
+
+      if (response && response.success && response.data) {
         const abstractId = response.data._id;
         if (hasFile && abstractForm.file) {
+          console.log("Uploading file for abstract:", abstractId);
           const fileUploadResponse = await abstractService.uploadAbstractFile(eventId, abstractId, abstractForm.file);
-            if (!fileUploadResponse.success) {
-            toast.error(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} but file upload failed: ${fileUploadResponse.message}`);
-            // Decide how to proceed: let user stay on form, or go to list with a warning?
+          console.log("File upload response:", fileUploadResponse);
+          
+          if (!fileUploadResponse || !fileUploadResponse.success) {
+            toast.error(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} but file upload failed: ${fileUploadResponse ? fileUploadResponse.message : 'Unknown error'}`);
             } else {
             toast.success(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} and file uploaded successfully!`);
           }
         } else {
           toast.success(`Abstract ${abstractForm.existingAbstractId ? 'updated' : 'created'} successfully!`);
         }
+        
         resetAbstractForm();
+        
+        // Track the state changes
+        console.log("Before fetching updated abstracts, userInfo:", userInfo);
+        if (userInfo && userInfo._id) {
+          console.log("Fetching updated abstracts after submission");
         await fetchUserAbstracts(userInfo._id);
+        }
+        
+        console.log("Setting view to list");
         setCurrentView('list');
       } else {
-        setSubmitMessage({ type: 'error', text: response.message || 'Submission failed.' });
-        toast.error(response.message || 'Submission failed.');
+        setSubmitMessage({ 
+          type: 'error', 
+          text: response && response.message ? response.message : 'Submission failed.' 
+        });
+        toast.error(response && response.message ? response.message : 'Submission failed.');
       }
     } catch (error) {
-      setSubmitMessage({ type: 'error', text: error.message || 'An error occurred.' });
-      toast.error(error.message || 'An error occurred.');
+      console.error("Error in handleSubmitAbstract:", error);
+      setSubmitMessage({ 
+        type: 'error', 
+        text: error && error.message ? error.message : 'An error occurred.' 
+      });
+      toast.error(error && error.message ? error.message : 'An error occurred.');
     }
-    // setLoading(false); // Or setIsSubmitting(false)
   };
   
   const handleDeleteAbstract = async (abstractIdToDelete) => {
@@ -539,23 +642,72 @@ const AbstractPortal = () => {
   };
 
   const handleEditAbstract = (abstractToEdit) => {
-    // Set the abstract being edited
+    console.log("[handleEditAbstract] Called with abstractToEdit:", safeJsonStringify(abstractToEdit));
+    if (!abstractToEdit) {
+      console.error("[handleEditAbstract] Attempted to edit undefined abstract");
+      toast.error("Cannot edit abstract: missing data");
+      return;
+    }
+
     setEditingAbstract(abstractToEdit);
-    // Pre-populate the form fields from the abstract data
-    setAbstractForm({
+
+    // --- Category Handling --- 
+    let categoryIdToSet = '';
+    // Ensure abstractToEdit.category is not null before trying to access _id
+    if (abstractToEdit.category && typeof abstractToEdit.category === 'object' && abstractToEdit.category._id) {
+      categoryIdToSet = abstractToEdit.category._id;
+    } else if (typeof abstractToEdit.category === 'string') {
+      categoryIdToSet = abstractToEdit.category;
+    } else if (abstractToEdit.category === null) {
+      console.warn("[handleEditAbstract] abstractToEdit.category is null.");
+      // categoryIdToSet remains ''
+    }
+    console.log("[handleEditAbstract] Resolved categoryIdToSet for form:", categoryIdToSet);
+
+    const selectedCategoryFull = categoryIdToSet 
+      ? eventDetails?.abstractSettings?.categories?.find(cat => cat._id === categoryIdToSet)
+      : undefined; // If no categoryIdToSet, selectedCategoryFull is undefined
+    console.log("[handleEditAbstract] selectedCategoryFull from eventDetails:", safeJsonStringify(selectedCategoryFull));
+
+    const currentAvailableSubTopics = selectedCategoryFull?.subTopics?.map(subTopic => ({
+      value: subTopic._id || subTopic.id || subTopic.value || subTopic, 
+      label: subTopic.name || subTopic.label || subTopic
+    })) || [];
+    setAvailableSubTopics(currentAvailableSubTopics);
+    console.log("[handleEditAbstract] Populated availableSubTopics:", safeJsonStringify(currentAvailableSubTopics));
+
+    // --- SubTopic Handling ---
+    let subTopicIdToSet = '';
+    if (abstractToEdit.subTopic && typeof abstractToEdit.subTopic === 'object' && abstractToEdit.subTopic._id) {
+      subTopicIdToSet = abstractToEdit.subTopic._id;
+    } else if (typeof abstractToEdit.subTopic === 'string') {
+      const foundSubTopicByNameOrId = currentAvailableSubTopics.find(st => st.label === abstractToEdit.subTopic || st.value === abstractToEdit.subTopic);
+      if (foundSubTopicByNameOrId) {
+        subTopicIdToSet = foundSubTopicByNameOrId.value;
+      } else {
+        subTopicIdToSet = abstractToEdit.subTopic; 
+      }
+    } else if (abstractToEdit.subTopic === null){
+      console.warn("[handleEditAbstract] abstractToEdit.subTopic is null.");
+      // subTopicIdToSet remains ''
+    }
+    console.log("[handleEditAbstract] Resolved subTopicIdToSet for form:", subTopicIdToSet);
+
+    const formToSet = {
       title: abstractToEdit.title || '',
       authors: abstractToEdit.authors || '',
-      affiliations: abstractToEdit.authorAffiliations || '',
-      category: abstractToEdit.category?._id || abstractToEdit.category || '', // Handle populated vs ID
+      affiliations: abstractToEdit.authorAffiliations || abstractToEdit.affiliations || '',
+      category: categoryIdToSet, 
+      subTopic: subTopicIdToSet, 
       content: abstractToEdit.content || '',
-      file: null, // File needs separate handling - show current, allow replace
-      existingAbstractId: abstractToEdit._id // Set ID for update logic
-    });
-    // Clear any previous form errors
-    setFormErrors({});
-    // Clear any previous submission status message
+      file: null, 
+      existingAbstractId: abstractToEdit._id
+    };
+    setAbstractForm(formToSet);
+    console.log("[handleEditAbstract] Setting abstractForm state to:", safeJsonStringify(formToSet));
+    
+    setFormErrors(prev => ({ ...prev, edit: true }));
     setSubmitMessage({ type: '', text: '' });
-    // Switch the view to the form
     setCurrentView('form');
   };
 
@@ -568,12 +720,21 @@ const AbstractPortal = () => {
 
   // Function to handle viewing an abstract's details
   const handleViewAbstract = (abstract) => {
+    // Safety check for undefined abstract
+    if (!abstract) {
+      console.error("Attempted to view undefined abstract");
+      toast.error("Cannot view abstract: missing data");
+      return;
+    }
+    
     console.log("Viewing abstract:", abstract);
     
     // Create modal for viewing abstract details
     const modalDiv = document.createElement('div');
     modalDiv.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
-    modalDiv.innerHTML = `
+    
+    // Use null coalescing and optional chaining for safer property access
+    const modalContent = `
       <div class="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
         <div class="flex justify-between items-center p-4 border-b">
           <h3 class="text-lg font-medium">Abstract Details</h3>
@@ -584,6 +745,11 @@ const AbstractPortal = () => {
           </button>
         </div>
         <div class="p-4">
+          <div class="mb-3">
+            <p class="text-sm font-semibold text-gray-700">Abstract Number:</p>
+            <p class="text-lg font-medium">${abstract.abstractNumber || 'N/A'}</p>
+          </div>
+
           <div class="mb-3">
             <p class="text-sm font-semibold text-gray-700">Title:</p>
             <p class="text-lg font-medium">${abstract.title || 'Untitled'}</p>
@@ -601,7 +767,12 @@ const AbstractPortal = () => {
           
           <div class="mb-3">
             <p class="text-sm font-semibold text-gray-700">Category:</p>
-            <p>${abstract.topic || abstract.abstractCategory || 'General'}</p>
+            <p>${getCategoryNameById(abstract.category) || 'Not specified'}</p>
+          </div>
+          
+          <div class="mb-3">
+            <p class="text-sm font-semibold text-gray-700">Subtopic:</p>
+            <p>${abstract.subTopic || 'Not specified'}</p>
           </div>
           
           <div class="mb-3">
@@ -643,6 +814,8 @@ const AbstractPortal = () => {
       </div>
     `;
     
+    modalDiv.innerHTML = modalContent;
+    
     document.body.appendChild(modalDiv);
     
     // Add event listeners for closing the modal
@@ -659,6 +832,62 @@ const AbstractPortal = () => {
         document.body.removeChild(modalDiv);
       }
     });
+  };
+
+  // Helper function to get category name by ID
+  const getCategoryNameById = (categoryId) => {
+    // console.log(`[getCategoryNameById] Called with categoryId: ${categoryId}`);
+    // console.log(`[getCategoryNameById] Event Details:`, eventDetails);
+    // console.log(`[getCategoryNameById] Abstract Settings:`, eventDetails?.abstractSettings);
+    // console.log(`[getCategoryNameById] Categories in eventDetails:`, eventDetails?.abstractSettings?.categories);
+
+    if (!categoryId) {
+      // console.log("[getCategoryNameById] No categoryId provided, returning 'None'");
+      return 'None';
+    }
+    if (!eventDetails || !eventDetails.abstractSettings || !Array.isArray(eventDetails.abstractSettings.categories)) {
+      // console.log("[getCategoryNameById] Event details or categories array not available. CategoryId:", categoryId);
+      // Return the ID itself or a placeholder if categories are not loaded yet
+      return categoryId; // Or 'Loading Category...' or 'Unknown Category'
+    }
+
+    const category = eventDetails.abstractSettings.categories.find(cat => cat._id === categoryId);
+    
+    // console.log(`[getCategoryNameById] Found category for ID ${categoryId}:`, category);
+    return category ? category.name : 'Unknown Category'; // Or return categoryId if not found
+  };
+
+  // Helper function to get sub-topic name by ID
+  const getSubTopicNameById = (subTopicId) => {
+    console.log("[getSubTopicNameById] Received subTopicId:", subTopicId);
+    console.log("[getSubTopicNameById] Current 'availableSubTopics' state:", safeJsonStringify(availableSubTopics));
+
+    if (!subTopicId) {
+      console.log("[getSubTopicNameById] Returning 'None' due to empty subTopicId.");
+      return 'None';
+    }
+    
+    // Find the subtopic in the `availableSubTopics` state
+    const subtopicFromState = availableSubTopics.find(st => st.value === subTopicId);
+    if (subtopicFromState) {
+      console.log("[getSubTopicNameById] Found in 'availableSubTopics' state:", subtopicFromState.label);
+      return subtopicFromState.label;
+    }
+
+    // If subTopicId is an object
+    if (typeof subTopicId === 'object' && subTopicId !== null && subTopicId.name) {
+      console.log("[getSubTopicNameById] subTopicId is an object, returning its name property:", subTopicId.name);
+      return subTopicId.name;
+    }
+    
+    // Fallback for strings that don't look like IDs but might be names
+    if (typeof subTopicId === 'string' && !subTopicId.match(/^[0-9a-fA-F]{24}$/)) {
+      console.warn("[getSubTopicNameById] subTopicId is a non-ID string, returning as is (fallback):", subTopicId);
+      return subTopicId;
+    }
+    
+    console.warn("[getSubTopicNameById] Could not find name for ID. Returning 'Unknown Subtopic'. ID:", subTopicId);
+    return 'Unknown Subtopic';
   };
 
   // Fix the filter function to be more aggressive and debug more thoroughly
@@ -985,26 +1214,32 @@ const AbstractPortal = () => {
           {userAbstracts.length > 0 && (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul role="list" className="divide-y divide-gray-200">
-                {userAbstracts.map((abs) => (
+                {console.log("About to render abstracts:", JSON.stringify(userAbstracts))}
+                {userAbstracts.filter(Boolean).map((abs, index) => {
+                  console.log(`Abstract ${index}:`, abs);
+                  return (
                   <li key={abs._id} className="px-4 py-4 sm:px-6">
                     <div className="flex items-center justify-between">
-                      <p className="text-lg font-medium text-indigo-600 truncate">{abs.title}</p>
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${ abs.status === 'approved' ? 'bg-green-100 text-green-800' : abs.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                         {abs.status}
+                      <div>
+                        <p className="text-lg font-medium text-indigo-600 truncate">{abs && abs.title ? abs.title : 'Untitled Abstract'}</p>
+                        <p className="text-sm text-gray-500">Abstract Number: {abs.abstractNumber || 'N/A'}</p>
+                      </div>
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${ abs && abs.status === 'approved' ? 'bg-green-100 text-green-800' : abs && abs.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                         {abs && abs.status ? abs.status : 'No Status'}
                       </span>
                   </div>
                     <div className="mt-2 sm:flex sm:justify-between">
-                      <p className="text-sm text-gray-500">Submitted: {formatDate(abs.submissionDate || abs.createdAt)}</p>
+                      <p className="text-sm text-gray-500">Submitted: {formatDate(abs && (abs.submissionDate || abs.createdAt))}</p>
                       <div className="mt-2 sm:mt-0 space-x-2">
-                         <Button variant="outline" size="sm" onClick={() => handleViewAbstract(abs)}>View</Button>
-                         {(abs.status === 'draft' || abs.status === 'submitted') && (
-                             <Button variant="secondary" size="sm" onClick={() => handleEditAbstract(abs)}>Edit</Button>
+                         <Button variant="outline" size="sm" onClick={() => abs && handleViewAbstract(abs)}>View</Button>
+                         {(abs && (abs.status === 'draft' || abs.status === 'submitted')) && (
+                             <Button variant="secondary" size="sm" onClick={() => abs && handleEditAbstract(abs)}>Edit</Button>
                          )}
-                         <Button variant="danger" size="sm" onClick={() => handleDeleteAbstract(abs._id)}>Delete</Button>
+                         <Button variant="danger" size="sm" onClick={() => abs && abs._id && handleDeleteAbstract(abs._id)}>Delete</Button>
                     </div>
                             </div>
                   </li>
-                          ))}
+                          )})}
               </ul>
                         </div>
           )}
@@ -1040,30 +1275,77 @@ const AbstractPortal = () => {
                   <Input id="authors" name="authors" value={abstractForm.authors} onChange={handleInputChange} error={formErrors.authors} />
                       </div>
                       
-                {/* Affiliations Field */} 
+                {/* Affiliations Field (Now Optional) */} 
                       <div>
-                  <label htmlFor="affiliations">Affiliations <span className="text-red-500">*</span></label>
+                  <label htmlFor="affiliations">Affiliations</label>
                   <Input id="affiliations" name="affiliations" value={abstractForm.affiliations} onChange={handleInputChange} error={formErrors.affiliations} />
                       </div>
               
-                {/* Category Field */} 
+                {/* Category Field - Read-only in edit mode */}
                 <div>
                   <label htmlFor="category">Category <span className="text-red-500">*</span></label>
+                  {abstractForm.existingAbstractId ? (
+                    <Input 
+                      id="category" 
+                      name="category" 
+                      value={getCategoryNameById(abstractForm.category)} 
+                      disabled={true} 
+                    />
+                  ) : (
                           <Select
                             id="category"
                             name="category"
                             value={abstractForm.category}
                             onChange={handleSelectChange}
                             error={formErrors.category}
-                    options={[{ value: '', label: 'Select... ' }, ...categories]} 
+                      options={[{ value: '', label: 'Select a category' }, ...categories]} 
                           />
+                  )}
                         </div>
                         
+                {/* Subtopic Field - Only show if category has subtopics */}
+                {(() => {
+                  const selectedCategory = eventDetails?.abstractSettings?.categories?.find(
+                    cat => cat._id === abstractForm.category
+                  );
+                  
+                  if (selectedCategory?.subTopics?.length > 0) {
+                    return (
+                      <div>
+                        <label htmlFor="subTopic">Subtopic <span className="text-red-500">*</span></label>
+                        {abstractForm.existingAbstractId ? (
+                          <Input 
+                            id="subTopic" 
+                            name="subTopic" 
+                            value={getSubTopicNameById(abstractForm.subTopic)} 
+                            disabled={true} 
+                          />
+                        ) : (
+                          <Select
+                            id="subTopic"
+                            name="subTopic"
+                            value={abstractForm.subTopic}
+                            onChange={handleSelectChange}
+                            error={formErrors.subTopic}
+                            options={[{ value: '', label: 'Select a subtopic' }, ...availableSubTopics]} 
+                          />
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                
                 {/* Content Field */} 
                         <div>
-                  <label htmlFor="content">Content <span className="text-red-500">*</span></label>
+                  <label htmlFor="content">Content {!eventDetails?.abstractSettings?.allowFiles && <span className="text-red-500">*</span>}</label>
                   <Textarea id="content" name="content" value={abstractForm.content} onChange={handleInputChange} error={formErrors.content} rows={10} />
-                   {/* Add word count display if needed */}
+                  {abstractForm.content && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Word count: {abstractForm.content.trim().split(/\s+/).length} / 
+                      {eventDetails?.abstractSettings?.maxLength || 500}
+                    </p>
+                  )}
                         </div>
                         
                 {/* File Upload Field */} 

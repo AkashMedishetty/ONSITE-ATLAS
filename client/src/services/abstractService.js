@@ -45,7 +45,8 @@ const abstractService = {
       // Debug logging for eventId, abstractId, and token
       const token = localStorage.getItem('atlas_registrant_token') || localStorage.getItem('registrantToken');
       console.log('[AbstractService][getAbstractById] eventId:', eventId, 'abstractId:', abstractId, 'token:', token ? token.substring(0, 16) + '...' : 'NOT FOUND');
-      const response = await apiRegistrant.get(`/events/${eventId}/abstracts/${abstractId}`);
+      // Use the event-scoped registrant portal route
+      const response = await apiRegistrant.get(`/registrant-portal/events/${eventId}/abstracts/${abstractId}`);
       return response.data; // Assumes api instance returns data directly or it's handled in a wrapper
     } catch (error) {
       console.error('Error getting abstract by ID:', error.response?.data || error.message);
@@ -65,8 +66,19 @@ const abstractService = {
    */
   createAbstract: async (eventId, abstractData) => {
     if (!eventId) return { success: false, message: 'Missing event ID' };
-    if (!abstractData.title || !abstractData.authors || !abstractData.content) {
-        return { success: false, message: 'Missing required fields (title, authors, content)' };
+    
+    // Log what we're receiving
+    console.log("[AbstractService] createAbstract received:", { eventId, abstractData });
+    
+    // Check for missing required fields
+    const missingFields = [];
+    if (!abstractData.title) missingFields.push('title');
+    if (!abstractData.authors) missingFields.push('authors');
+    // if (!abstractData.content) missingFields.push('content'); // Removed: Content is no longer mandatory client-side
+    
+    if (missingFields.length > 0) {
+      console.error(`[AbstractService] Missing required fields:`, missingFields);
+      return { success: false, message: `Missing required fields (${missingFields.join(', ')})` };
     }
 
     const cleanedData = { ...abstractData };
@@ -75,6 +87,7 @@ const abstractService = {
 
     const url = `/events/${eventId}/abstracts`;
     console.log("[AbstractService] Creating abstract (registrant) for URL:", url);
+    console.log("[AbstractService] Data being sent:", cleanedData);
 
     try {
       const response = await apiRegistrant.post(url, cleanedData);
@@ -98,12 +111,19 @@ const abstractService = {
    * @returns {Promise} - API response with updated abstract
    */
   updateAbstract: async (eventId, abstractId, abstractData) => {
+    // This function is called by registrants from AbstractPortal.jsx
+    // Therefore, it should use apiRegistrant
     try {
-      const response = await api.put(`/events/${eventId}/abstracts/${abstractId}`, abstractData);
+      console.log(`[AbstractService] Updating abstract (registrant): ${abstractId} in event ${eventId}`);
+      const response = await apiRegistrant.put(`/events/${eventId}/abstracts/${abstractId}`, abstractData);
       return response.data;
     } catch (error) {
-      console.error('Error updating abstract:', error.response?.data || error.message);
-      return { success: false, message: error.response?.data?.message || 'Failed to update abstract', data: null };
+      console.error('[AbstractService] Exception updating abstract (registrant):', error.response?.data || error.message);
+      return { 
+        success: false, 
+        message: error.response?.data?.message || 'Failed to update abstract for registrant',
+        data: null 
+      };
     }
   },
 
@@ -131,53 +151,40 @@ const abstractService = {
    * @returns {Promise<object>} - API response object { success: boolean, message?: string }
    */
   deleteAbstract: async (eventId, abstractId) => {
-    const url = `${API_URL}/events/${eventId}/abstracts/${abstractId}`;
-    console.log(`[AbstractService] Attempting to delete abstract: DELETE ${url}`);
+    const relativeUrl = `/events/${eventId}/abstracts/${abstractId}`;
+    console.log(`[AbstractService] Attempting to delete abstract (registrant): DELETE ${relativeUrl}`);
     
     try {
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers: {
-          ...getRegistrantAuthHeader() // Use registrant header
-        }
-      });
+      // Use apiRegistrant.delete for consistency and to leverage Axios interceptors
+      const response = await apiRegistrant.delete(relativeUrl);
 
-      // Check if the response indicates success (e.g., 200 OK or 204 No Content)
-      if (response.ok) {
-        let responseData = { success: true, message: 'Abstract deleted successfully.' };
-        // Try to parse JSON if content type suggests it, otherwise assume success based on status
-        try {
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                const data = await response.json();
-                // Merge backend response message if available
-                responseData = { ...responseData, ...data }; 
-            }
-        } catch(e) { /* Ignore parsing errors on success */ }
-
-        console.log('[AbstractService] Delete successful:', responseData);
-        return responseData;
-      } else {
-        // Handle error response
-        let errorData = { message: `HTTP error! status: ${response.status}` };
-        try {
-            const data = await response.json();
-            errorData = data; // Use error data from backend if available
-        } catch(e) { /* Ignore parsing errors on error */ }
-        
-        console.error(`[AbstractService] Error deleting abstract (${response.status}):`, errorData);
-        const error = new Error(errorData?.message || `HTTP error! status: ${response.status}`);
-        error.status = response.status;
-        error.responseBody = errorData;
-        throw error; // Throw error to be caught by the outer catch
+      // Axios typically puts the response data in response.data
+      // And handles non-2xx statuses as errors, caught by the catch block.
+      // The backend should ideally return a success:true message or just a 200/204.
+      // If response.data directly contains the success status and message:
+      if (response.data && typeof response.data.success !== 'undefined') {
+          console.log('[AbstractService] Delete successful (from response.data):', response.data);
+          return response.data; // e.g., { success: true, message: "..." }
       }
+      
+      // If the backend returns 204 No Content on successful delete, 
+      // response.data might be undefined or empty.
+      // Axios considers 204 a success.
+      if (response.status === 204) {
+          console.log('[AbstractService] Delete successful (204 No Content)');
+          return { success: true, message: 'Abstract deleted successfully.' };
+      }
+      
+      // Fallback for other 2xx responses that might not fit the above
+      console.log('[AbstractService] Delete request completed (status 2xx), assuming success based on status:', response.status);
+      return { success: true, message: 'Abstract deleted successfully (assumed from 2xx status).', data: response.data };
+
     } catch (error) {
-      console.error('[AbstractService] Exception deleting abstract:', error);
-      // Return a consistent error structure
+      console.error('[AbstractService] Exception deleting abstract (registrant):', error.response?.data || error.message);
       return {
         success: false,
-        message: error.message || 'Failed to delete abstract due to a network or parsing error.',
-        status: error.status
+        message: error.response?.data?.message || 'Failed to delete abstract.',
+        status: error.response?.status
       };
     }
   },

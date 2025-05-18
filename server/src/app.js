@@ -7,6 +7,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const fileUpload = require('express-fileupload');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const routes = require('./routes');
 const { errorConverter, errorHandler } = require('./middleware/error');
 const { protect } = require('./middleware/auth.middleware');
@@ -65,6 +66,8 @@ app.use(express.json({ limit: '10mb' }));
 // Parse URL-encoded request body
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+app.use(cookieParser());
+
 // Add File Upload Middleware
 app.use(fileUpload());
 
@@ -110,7 +113,7 @@ const eventRoutes = require('./routes/event.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 
 // Mount eventRoutes to handle all /api/events paths
-app.use('/api/events', eventRoutes);
+// app.use('/api/events', eventRoutes); // Commented out potential conflict
 
 // Direct route registration for key API endpoints that need to be accessible at the root level
 app.use('/api/resources', resourceRoutes);

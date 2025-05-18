@@ -62,7 +62,7 @@ const logger = require('../config/logger');
  *         description: Event not found.
  */
 exports.createAnnouncement = asyncHandler(async (req, res, next) => {
-  const { eventId } = req.params;
+  const { id: eventId } = req.params;
   const { title, content, deadline, isActive } = req.body;
   const postedBy = req.user.id; // Assuming req.user.id is populated by auth middleware
 
@@ -142,32 +142,53 @@ exports.createAnnouncement = asyncHandler(async (req, res, next) => {
  *         description: Event not found.
  */
 exports.getAnnouncementsByEvent = asyncHandler(async (req, res, next) => {
-  const { eventId } = req.params;
+  const { id: eventId } = req.params;
   let query = { eventId };
+  logger.info(`[ANNOUNCEMENT_CONTROLLER] getAnnouncementsByEvent called for eventId: ${eventId}`);
 
   // Check if the event exists
   const event = await Event.findById(eventId);
   if (!event) {
+    logger.warn(`[ANNOUNCEMENT_CONTROLLER] Event not found with id: ${eventId}`);
     return next(new ApiError(`Event not found with id of ${eventId}`, 404));
   }
+  logger.info(`[ANNOUNCEMENT_CONTROLLER] Event found: ${event._id}`);
 
   // Filtering by isActive status if provided in query
   if (req.query.isActive !== undefined) {
     query.isActive = req.query.isActive === 'true';
   }
+  logger.info(`[ANNOUNCEMENT_CONTROLLER] Mongoose query object: ${JSON.stringify(query)}`);
 
   // Basic pagination
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 10;
   const startIndex = (page - 1) * limit;
   const endIndex = page * limit;
-  const total = await Announcement.countDocuments(query);
+  
+  let total;
+  try {
+    total = await Announcement.countDocuments(query);
+    logger.info(`[ANNOUNCEMENT_CONTROLLER] Announcement.countDocuments result: ${total}`);
+  } catch (err) {
+    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.countDocuments:', err);
+    // Rethrow the error to be caught by asyncHandler
+    throw err; 
+  }
 
-  const announcements = await Announcement.find(query)
-    .populate('postedBy', 'name email') // Populate user details
-    .sort({ createdAt: -1 }) // Show newest first
-    .skip(startIndex)
-    .limit(limit);
+  let announcements;
+  try {
+    announcements = await Announcement.find(query)
+      .populate('postedBy', 'name email') // Populate user details
+      .sort({ createdAt: -1 }) // Show newest first
+      .skip(startIndex)
+      .limit(limit);
+    logger.info(`[ANNOUNCEMENT_CONTROLLER] Announcement.find result count: ${announcements.length}`);
+  } catch (err) {
+    logger.error('[ANNOUNCEMENT_CONTROLLER] Error from Announcement.find:', err);
+    // Rethrow the error to be caught by asyncHandler
+    throw err;
+  }
 
   // Pagination result
   const pagination = {};
@@ -221,7 +242,7 @@ exports.getAnnouncementsByEvent = asyncHandler(async (req, res, next) => {
  *               $ref: '#/components/responses/NotFound'
  */
 exports.getAnnouncementById = asyncHandler(async (req, res, next) => {
-  const { eventId, announcementId } = req.params;
+  const { id: eventId, announcementId } = req.params;
 
   const announcement = await Announcement.findOne({ _id: announcementId, eventId: eventId }).populate('postedBy', 'name email');
 
@@ -284,7 +305,7 @@ exports.getAnnouncementById = asyncHandler(async (req, res, next) => {
  *               $ref: '#/components/responses/NotFound'
  */
 exports.updateAnnouncement = asyncHandler(async (req, res, next) => {
-  const { eventId, announcementId } = req.params;
+  const { id: eventId, announcementId } = req.params;
   const { title, content, deadline, isActive } = req.body;
 
   let announcement = await Announcement.findOne({ _id: announcementId, eventId: eventId });
@@ -346,7 +367,7 @@ exports.updateAnnouncement = asyncHandler(async (req, res, next) => {
  *               $ref: '#/components/responses/NotFound'
  */
 exports.deleteAnnouncement = asyncHandler(async (req, res, next) => {
-  const { eventId, announcementId } = req.params;
+  const { id: eventId, announcementId } = req.params;
 
   const announcement = await Announcement.findOne({ _id: announcementId, eventId: eventId });
 

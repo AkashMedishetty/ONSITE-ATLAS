@@ -27,6 +27,8 @@ const { validate, schemas } = require('../middleware/validator');
 const registrationRouter = require('./registrations.routes');
 // --- Import Resource Router ---
 const resourceRouter = require('./resource.routes');
+// --- Import Announcement Router ---
+const announcementRouter = require('./announcementRoutes.js');
 
 // --- Import Category Router (if not already done elsewhere) ---
 // Assuming category routes are handled here or imported as needed
@@ -76,6 +78,10 @@ router.use('/:eventId/abstracts', require('./abstracts.routes'));
 
 // Mount the landing page router
 router.use('/:eventId/landing-pages', require('./landingPages.routes'));
+
+// Mount the announcement router for paths starting with /:id/announcements
+// Note: Ensure :id parameter name consistency with other event-specific routes.
+router.use('/:id/announcements', announcementRouter);
 
 // --- End Mount Nested Routers --- 
 

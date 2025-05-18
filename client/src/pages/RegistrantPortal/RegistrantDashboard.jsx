@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Table, Badge, Button, ListGroup, Alert, Spinner, Modal } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { 
+  FaBullhorn, // Icon for Announcements
   FaFileAlt, FaCalendarAlt, FaUser, FaMapMarkerAlt, FaCheckCircle, FaClock, FaInfoCircle, FaCreditCard, 
   FaTicketAlt, FaUtensils, FaEnvelope, FaEdit, FaDownload, FaIdBadge, FaListUl, FaMoneyBillWave, FaExclamationTriangle, FaBoxOpen,
   FaPhone, FaBuilding, FaBriefcase, FaGlobe, FaCalendarCheck, FaHistory, FaSignInAlt, FaUserSlash, FaRegFileAlt,
-  FaFileInvoice
+  FaFileInvoice, FaPrint, FaQrcode, FaBars, FaChevronRight
 } from 'react-icons/fa';
 import { useRegistrantAuth } from '../../contexts/RegistrantAuthContext';
 import { useActiveEvent } from '../../contexts/ActiveEventContext';
@@ -13,110 +14,110 @@ import apiRegistrant from '../../services/apiRegistrant';
 import { abstractService } from '../../services';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'react-hot-toast';
+import './RegistrantDashboard.css';
 
-// Styles - More refined and aligned with project aesthetics
+// Updated Styles Object
 const styles = {
   container: {
-    backgroundColor: '#f8f9fa', // Lighter background for a cleaner look
+    backgroundColor: '#f8f9fa',
     minHeight: 'calc(100vh - 56px)',
-    padding: '2rem' // Increased padding
+    padding: '1.5rem' // Reduced padding
   },
   card: {
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)', // Softer, more modern shadow
-    border: 'none',
-    borderRadius: '0.75rem', // Slightly more rounded corners
-    marginBottom: '2rem', // Increased margin between cards
-    overflow: 'hidden' // Ensures content respects border radius
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)', // More subtle shadow
+    border: '1px solid #e9ecef', // Added a light border for definition
+    borderRadius: '0.5rem', // Crisper radius
+    marginBottom: '1.5rem', // Slightly reduced margin
+    overflow: 'hidden',
+    backgroundColor: '#ffffff' // Ensure card background is white
   },
   cardHeader: {
-    backgroundColor: '#ffffff', // White header for contrast
-    borderBottom: '1px solid #e9ecef', // Lighter border
-    padding: '1.25rem 1.5rem',
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #e9ecef',
+    padding: '1rem 1.25rem', // Adjusted padding
     display: 'flex',
     alignItems: 'center'
   },
   cardTitle: {
-    color: '#343a40', // Darker title for better readability
+    color: '#2A4365', // Primary dark blue for titles
     fontWeight: 600,
-    fontSize: '1.15rem',
+    fontSize: '1.1rem', // Adjusted font size
     marginBottom: 0
   },
   welcomeSection: {
-    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+    background: 'linear-gradient(135deg, #556AC3 0%, #7B4FB6 100%)', // Adjusted gradient to be a bit deeper/less vibrant if #6366f1 was too light
     color: '#ffffff',
     padding: '1.5rem 2rem',
-    borderRadius: '0.75rem',
+    borderRadius: '0.5rem',
     marginBottom: '2rem',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
   },
-  welcomeFlexContainer: { // New style for the main flex container in welcome section
+  welcomeFlexContainer: { 
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap' // Allow wrapping on smaller screens
+    flexWrap: 'wrap' 
   },
-  welcomeTextContent: { // For the left side (Event Name, Welcome msg)
-    flex: '1 1 60%', // Takes more space
-    marginRight: '1rem' // Space to the badge preview
+  welcomeTextContent: { 
+    flex: '1 1 60%', 
+    marginRight: '1rem' 
   },
   welcomeTitle: {
     color: '#ffffff',
     fontWeight: 700,
-    fontSize: '1.75rem',
+    fontSize: '1.65rem', // Slightly adjusted
     marginBottom: '0.25rem'
   },
   welcomeSubtitle: {
     color: '#e0e7ff',
-    fontSize: '1.1rem',
+    fontSize: '1rem', // Slightly adjusted
     marginBottom: 0
   },
-  badgePreview: { // Styles for the new badge preview block
-    backgroundColor: 'rgba(255, 255, 255, 0.9)', // Semi-transparent white
-    color: '#343a40', // Dark text for contrast
-    padding: '1rem 1.25rem',
-    borderRadius: '0.5rem',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-    minWidth: '280px', // Minimum width for the badge
+  badgePreview: { 
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Slightly more opaque
+    color: '#343a40',
+    padding: '1rem 1.25rem', // Adjusted padding
+    borderRadius: '0.375rem', // 6px radius
+    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+    minWidth: '260px',
     textAlign: 'left',
-    border: '1px solid rgba(0,0,0,0.1)',
-    flex: '0 0 auto' // Prevents it from shrinking too much
+    border: '1px solid rgba(0,0,0,0.05)',
+    flex: '0 0 auto'
   },
   badgeFieldName: {
-    fontWeight: 600,
-    fontSize: '0.85rem',
-    color: '#495057',
+    fontWeight: 500, // Normal weight for label
+    fontSize: '0.8rem',
+    color: '#4A5568', // Grayer
     display: 'block',
     marginBottom: '0.1rem'
   },
   badgeFieldValue: {
-    fontSize: '1rem',
-    color: '#212529',
+    fontSize: '0.9rem',
+    fontWeight: 600, // Bolder value
+    color: '#1A202C',
     display: 'block',
-    marginBottom: '0.6rem',
+    marginBottom: '0.5rem',
     wordBreak: 'break-word'
   },
-  badgeStatusValue: { // Specific style for status to include the Bootstrap badge
+  badgeStatusValue: { 
     fontSize: '1rem',
     display: 'block',
     marginBottom: '0.6rem'
   },
-  welcomeIcon: {
-    color: '#ffffff',
-    fontSize: '1.1em', // Slightly adjust icon size if needed
-    // marginRight: '0.5rem', // Removed, using gap in welcomeInfoItem instead
-  },
-  badge: {
-    padding: '0.4em 0.8em',
-    borderRadius: '50rem',
+  badge: { // For general badge styling if used via styles object
+    padding: '0.3em 0.6em',
+    borderRadius: '0.25rem',
     fontWeight: 500,
-    fontSize: '0.8rem'
+    fontSize: '0.75rem'
   },
-  button: {
-    borderRadius: '0.375rem', // Standard button radius
-    padding: '0.6rem 1.25rem',
+  button: { // For buttons styled via this object (e.g., in Quick Actions)
+    borderRadius: '0.375rem', 
+    padding: '0.6rem 1rem', // Adjusted padding for default button size
     fontWeight: 500,
-    margin: '0.3rem',
-    transition: 'all 0.2s ease-in-out'
+    margin: '0.25rem', // Reduced margin if they are in a d-grid
+    transition: 'all 0.2s ease-in-out',
+    letterSpacing: '0.025em',
+    textTransform: 'capitalize' // Softer look than uppercase
   },
   buttonPrimary: {
     backgroundColor: '#6366f1',
@@ -127,40 +128,45 @@ const styles = {
     borderColor: '#6c757d',
   },
   buttonLink: {
-     color: '#6366f1',
+     color: '#4263EB', // A slightly different blue for links if primary is too dark
      textDecoration: 'none',
      fontWeight: 500,
+     fontSize: '0.9rem'
   },
   listItem: {
-    padding: '1rem 0',
-    borderBottom: '1px solid #f1f3f5', // Very light separator
+    padding: '0.85rem 0.25rem', // Adjusted padding, assumes ListGroup adds some its own
+    borderBottom: '1px solid #e9ecef',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    backgroundColor: 'transparent' // Ensure ListGroup items are transparent
   },
   listItemLabel: {
-    color: '#495057', // Slightly lighter label color
-    fontWeight: 500
+    color: '#4A5568',
+    fontWeight: 400,
+    fontSize: '0.9rem'
   },
   listItemValue: {
-    color: '#212529',
+    color: '#1A202C',
+    fontWeight: 500,
+    fontSize: '0.9rem',
     textAlign: 'right'
   },
   emptyState: {
     textAlign: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: '2.5rem',
+    backgroundColor: '#f0f2f5',
+    padding: '2rem',
     borderRadius: '0.5rem',
     margin: '1rem 0',
-    border: '1px dashed #dee2e6'
+    border: '1px solid #e0e0e0'
   },
   emptyStateIcon: {
     color: '#adb5bd',
-    fontSize: '2rem',
-    marginBottom: '1rem'
+    fontSize: '1.8rem',
+    marginBottom: '0.75rem'
   },
-  primaryText: {
-    color: '#6366f1'
+  primaryText: { // Used for icons in headers etc.
+    color: '#2A4365' // Primary dark blue
   },
   tableHeader: {
     backgroundColor: '#f8f9fa',
@@ -175,8 +181,40 @@ const styles = {
     backgroundColor: '#f8f9fa'
   },
   spinner: {
-    width: '3.5rem',
-    height: '3.5rem'
+    width: '3rem',
+    height: '3rem'
+  },
+  announcementCard: {
+    marginTop: '1.5rem',
+  },
+  announcementItem: {
+    padding: '1rem',
+    borderBottom: '1px solid #e9ecef',
+    backgroundColor: '#fff',
+    borderRadius: '0.375rem',
+    marginBottom: '0.75rem',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+  },
+  announcementTitle: {
+    fontWeight: 'bold',
+    color: '#333',
+    fontSize: '1.05rem',
+    marginBottom: '0.3rem'
+  },
+  announcementContent: {
+    fontSize: '0.9rem',
+    color: '#555',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap' // To respect newlines from textarea input
+  },
+  announcementMeta: {
+    fontSize: '0.8rem',
+    color: '#777',
+    marginTop: '0.75rem'
+  },
+  announcementDeadline: {
+    fontWeight: '500',
+    color: '#D9534F' // A reddish color for deadlines
   }
 };
 
@@ -199,8 +237,8 @@ const formatDate = (dateString, includeTime = true) => {
 };
 
 const EmptyState = ({ message, icon }) => (
-  <div style={styles.emptyState}>
-    <div style={styles.emptyStateIcon}>{icon || <FaInfoCircle />}</div>
+  <div className="empty-state">
+    <div className="empty-state-icon">{icon || <FaInfoCircle />}</div>
     <p className="mb-0 text-muted">{message}</p>
   </div>
 );
@@ -212,82 +250,36 @@ const BadgePreviewModal = ({ show, handleClose, registrationData, eventInfo, han
   const { personalInfo, category, status, registrationId } = registrationData;
   const eventName = eventInfo?.name || "Event";
 
-  const modalStyles = {
-    badgeContainer: {
-      padding: '2rem',
-      textAlign: 'center',
-      backgroundColor: '#ffffff',
-      border: '1px solid #dee2e6',
-      borderRadius: '0.5rem',
-      boxShadow: '0 0.5rem 1rem rgba(0,0,0,0.15)',
-      maxWidth: '400px', // Typical badge width
-      margin: 'auto'
-    },
-    registrantName: {
-      fontSize: '1.75rem',
-      fontWeight: 700,
-      color: styles.primaryText.color, // Using existing primary color
-      marginBottom: '0.5rem'
-    },
-    eventName: {
-      fontSize: '1rem',
-      color: '#495057',
-      marginBottom: '1rem'
-    },
-    detailRow: {
-      fontSize: '0.95rem',
-      color: '#212529',
-      marginBottom: '0.6rem',
-      display: 'flex',
-      justifyContent: 'space-between',
-      padding: '0.25rem 0',
-      borderBottom: '1px solid #f1f3f5'
-    },
-    detailLabel: { fontWeight: 600, color: '#495057' },
-    qrDisplayBox: {
-      margin: '1.5rem auto 1rem',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }
-  };
-
   return (
     <Modal show={show} onHide={handleClose} size="md" centered>
       <Modal.Header closeButton>
-        <Modal.Title style={{fontSize: '1.25rem'}}>Badge Preview</Modal.Title>
+        <Modal.Title className="fs-5">Badge Preview</Modal.Title>
       </Modal.Header>
-      <Modal.Body style={{padding: '2rem', backgroundColor: '#f8f9fa'}}>
-        <div style={modalStyles.badgeContainer}>
-            <div style={modalStyles.registrantName}>{personalInfo.firstName} {personalInfo.lastName}</div>
-            <div style={modalStyles.eventName}>{eventName}</div>
+      <Modal.Body className="p-4 bg-light">
+        <div className="badge-preview-container">
+          <div className="badge-preview-name">{personalInfo.firstName} {personalInfo.lastName}</div>
+          <div className="badge-preview-event">{eventName}</div>
             
-            <div style={modalStyles.detailRow}>
-                <span style={modalStyles.detailLabel}>ID:</span>
+          <div className="badge-preview-detail">
+            <span className="badge-preview-label">ID:</span>
                 <span>{registrationId || 'N/A'}</span>
             </div>
-            <div style={modalStyles.detailRow}>
-                <span style={modalStyles.detailLabel}>Category:</span>
+          <div className="badge-preview-detail">
+            <span className="badge-preview-label">Category:</span>
                 <span>{category?.name || 'N/A'}</span>
             </div>
-             <div style={modalStyles.detailRow}>
-                <span style={modalStyles.detailLabel}>Status:</span>
+          <div className="badge-preview-detail">
+            <span className="badge-preview-label">Status:</span>
                 <span><Badge bg={status === 'active' ? 'success' : 'secondary'}>{status || 'N/A'}</Badge></span>
             </div>
             
-            <div style={modalStyles.qrDisplayBox}>
+          <div className="badge-preview-qr">
                 {registrationData.registrationId ? (
                     <QRCodeSVG 
                         value={registrationData.registrationId} 
-                        size={128} // Standard QR size, can be adjusted
-                        level={"H"} // Error correction level: L, M, Q, H
+                size={128}
+                level={"H"}
                         includeMargin={true}
-                        // imageSettings={{ // Optional: to embed an image in the QR, e.g., a small logo
-                        //   src: "logo_url_here",
-                        //   height: 24,
-                        //   width: 24,
-                        //   excavate: true,
-                        // }}
                     />
                 ) : (
                     <p>No Registration ID available for QR Code.</p>
@@ -295,24 +287,49 @@ const BadgePreviewModal = ({ show, handleClose, registrationData, eventInfo, han
             </div>
         </div>
       </Modal.Body>
-      <Modal.Footer style={{padding: '1rem 1.5rem', justifyContent: 'space-between'}}>
-        <Button variant="outline-secondary" onClick={handleClose} style={styles.button}>
+      <Modal.Footer className="d-flex justify-content-between">
+        <Button variant="outline-secondary" onClick={handleClose}>
           Close
         </Button>
         <Button 
           variant="primary" 
           onClick={handleDownloadBadgeClick}
-          style={{...styles.button, ...styles.buttonPrimary}}
         >
-          <FaIdBadge className="me-2" />Print Badge
+          <FaPrint className="me-2" />Print Badge
         </Button>
       </Modal.Footer>
     </Modal>
   );
 };
 
+// Helper for status badges
+const StatusBadge = ({ status }) => {
+  const getStatusBadgeVariant = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'active':
+      case 'approved':
+      case 'completed':
+        return 'success';
+      case 'pending':
+      case 'in progress':
+        return 'warning';
+      case 'cancelled':
+      case 'rejected':
+        return 'danger';
+      default:
+        return 'secondary';
+    }
+  };
+
+  return (
+    <Badge bg={getStatusBadgeVariant(status)} className="status-badge">
+      {status || 'N/A'}
+    </Badge>
+  );
+};
+
 const RegistrantDashboard = () => {
-  const { currentRegistrant: authContextRegistrant, currentRegistrant } = useRegistrantAuth();
+  const { currentRegistrant, fetchRegistrantData: fetchAuthData } = useRegistrantAuth();
   const { activeEventId } = useActiveEvent();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -322,14 +339,31 @@ const RegistrantDashboard = () => {
     payments: [],
     resourceUsage: [],
     registeredEvents: [], 
+    eventDetails: null,
     upcomingDeadlines: [],
     schedule: [],
-    eventCountdown: null
+    eventCountdown: null,
+    announcements: []
   });
   const [showBadgeModal, setShowBadgeModal] = useState(false);
-  const [isDownloadingBadge, setIsDownloadingBadge] = useState(false); // State for download loading
+  const [isDownloadingBadge, setIsDownloadingBadge] = useState(false);
 
-  const fetchDashboardData = async (eventId) => {
+  // Helper function for abstract status badge variant
+  const getAbstractStatusBadgeVariant = (status) => {
+    const statusLower = status?.toLowerCase();
+    if (statusLower === 'approved' || statusLower === 'accepted') {
+      return 'success';
+    } else if (statusLower === 'submitted' || statusLower === 'under-review' || statusLower === 'pending') {
+      return 'warning';
+    } else if (statusLower === 'rejected') {
+      return 'danger';
+    } else if (statusLower === 'draft' || statusLower === 'revision-requested') {
+      return 'info';
+    }
+    return 'secondary';
+  };
+
+  const fetchDashboardData = useCallback(async (eventId) => {
     setLoading(true);
     setError(null);
     try {
@@ -338,13 +372,15 @@ const RegistrantDashboard = () => {
         const apiData = response.data.data;
         setDashboardData({
           registration: apiData.registration || null,
-          abstracts: [],
+          abstracts: apiData.abstracts || [],
           payments: apiData.payments || [],
           resourceUsage: apiData.resourceUsage || [],
           registeredEvents: apiData.registeredEvents || [], 
+          eventDetails: apiData.registration?.event || apiData.eventDetails || null,
           upcomingDeadlines: apiData.upcomingDeadlines || [],
           schedule: apiData.schedule || [],
-          eventCountdown: apiData.eventCountdown || null
+          eventCountdown: apiData.eventCountdown || null,
+          announcements: apiData.announcements || []
         });
 
         if (currentRegistrant && currentRegistrant._id && eventId) {
@@ -364,33 +400,48 @@ const RegistrantDashboard = () => {
             console.error('[RegistrantDashboard] Error fetching abstracts separately:', abstractsError);
           }
         }
-
       } else {
         setError('No data structure returned from API for dashboard.');
-        setDashboardData(prev => ({ ...prev, registration: null, abstracts: [], payments: [], resourceUsage: [] }));
+        setDashboardData(prev => ({ 
+          ...prev, 
+          registration: null, 
+          abstracts: [], 
+          payments: [], 
+          resourceUsage: [], 
+          eventDetails: null,
+          upcomingDeadlines: []
+        }));
       }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError(`Failed to load dashboard data: ${err.response?.data?.message || err.message}`);
-      setDashboardData(prev => ({ ...prev, registration: null, abstracts: [], payments: [], resourceUsage: [] }));
+      setDashboardData(prev => ({ 
+        ...prev, 
+        registration: null, 
+        abstracts: [], 
+        payments: [], 
+        resourceUsage: [], 
+        eventDetails: null,
+        upcomingDeadlines: []
+      }));
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentRegistrant]);
 
   useEffect(() => {
     if (activeEventId) {
+      console.log("[RegistrantDashboard] ActiveEventId available:", activeEventId);
       fetchDashboardData(activeEventId);
     } else {
-      setError("No active event selected. Please access via an event link.");
-      setLoading(false);
+      console.warn("[RegistrantDashboard] ActiveEventId not available on mount/update. Dashboard might not load correctly.");
     }
-  }, [activeEventId]);
+  }, [activeEventId, fetchDashboardData]);
 
-  // --- New Function: Handle Badge Download ---
+  // --- Handle Badge Download ---
   const handleDownloadBadge = async () => {
     const registrantId = dashboardData.registration?._id;
-    const eventId = activeEventId; // Use eventId from context
+    const eventId = activeEventId;
 
     if (!registrantId || !eventId) {
       toast.error("Missing information required to download badge.");
@@ -399,17 +450,15 @@ const RegistrantDashboard = () => {
     }
 
     setIsDownloadingBadge(true);
-    const loadingToastId = toast.loading("Generating badge..."); // Use toast.loading()
+    const loadingToastId = toast.loading("Generating badge...");
 
     try {
-      // Use apiRegistrant which should have the base URL and auth configured
       const response = await apiRegistrant.get(`/registrant-portal/events/${eventId}/registrants/${registrantId}/badge`, {
-        responseType: 'blob', // Important for file downloads
+        responseType: 'blob',
       });
 
-      // Extract filename from content-disposition header if available
       const contentDisposition = response.headers['content-disposition'];
-      let filename = `badge-${registrantId}.pdf`; // Default filename
+      let filename = `badge-${registrantId}.pdf`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
         if (filenameMatch && filenameMatch.length === 2) {
@@ -417,7 +466,6 @@ const RegistrantDashboard = () => {
         }
       }
 
-      // Create a blob URL and trigger download
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
@@ -431,7 +479,6 @@ const RegistrantDashboard = () => {
     } catch (err) {
       console.error('Error downloading badge:', err);
       const errorMsg = err.response?.data?.message || err.response?.statusText || err.message || 'Failed to download badge. Please try again later.';
-      // Since the response might be blob, try to parse it as text if it's an error
       let detailMsg = errorMsg;
       if (err.response?.data instanceof Blob) {
         try {
@@ -443,311 +490,405 @@ const RegistrantDashboard = () => {
       }
       toast.error(`Badge Download Failed: ${detailMsg}`);
     } finally {
-      toast.dismiss(loadingToastId); // Dismiss the loading toast
+      toast.dismiss(loadingToastId);
       setIsDownloadingBadge(false);
     }
   };
 
   if (loading) {
     return (
-      <Container fluid style={styles.loadingContainer}>
-        <Spinner animation="border" variant="primary" style={styles.spinner} />
+      <div className="loading-container">
+        <Spinner animation="border" variant="primary" className="large-spinner" />
         <span className="ms-3 fs-5 text-primary">Loading Dashboard...</span>
-      </Container>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Container style={{padding: '2rem'}}>
-        <Alert variant="danger" style={styles.card}>
-          <Alert.Heading style={{display: 'flex', alignItems: 'center'}}><FaExclamationTriangle style={{...styles.icon, color: '#dc3545'}} />Error Loading Dashboard</Alert.Heading>
-          <hr/>
+      <Container className="py-4">
+        <Alert variant="danger" className="dashboard-error">
+          <Alert.Heading className="d-flex align-items-center mb-3">
+            <FaExclamationTriangle className="me-2 text-danger" />Error Loading Dashboard
+          </Alert.Heading>
           <p>{error}</p>
-          {activeEventId && <Button onClick={() => fetchDashboardData(activeEventId)} variant="danger" style={styles.button}>Try Again</Button>}
+          {activeEventId && 
+            <Button 
+              onClick={() => fetchDashboardData(activeEventId)} 
+              variant="danger" 
+              className="mt-2 dashboard-btn"
+            >
+              Try Again
+            </Button>
+          }
         </Alert>
       </Container>
     );
   }
 
-  const { registration, abstracts, payments, resourceUsage } = dashboardData;
-  const personalInfo = registration?.personalInfo || {};
-  const eventInfo = registration?.event || {};
+  if (!dashboardData || !dashboardData.registration) {
+    return (
+      <Container style={styles.container}>
+        <Alert variant="warning">No dashboard data available. The event might not be configured for your registration yet or there was an issue fetching data.</Alert>
+      </Container>
+    );
+  }
 
-  const DetailItem = ({ label, value, icon, badgeBg, badgeText }) => (
-    <div style={{...styles.listItem, paddingLeft: 0, paddingRight: 0}}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {icon && React.cloneElement(icon, { style: {...styles.icon, fontSize: '1rem', color: '#6c757d'} })}
-        <span style={styles.listItemLabel}>{label}</span>
-      </div>
-      {badgeText ? 
-        <Badge pill bg={badgeBg || 'primary'} style={styles.badge}>{value || 'N/A'}</Badge> : 
-        <span style={styles.listItemValue}>{value || <span className="text-muted fst-italic">N/A</span>}</span>
-      }
-    </div>
-  );
-  
+  const { registration, abstracts, eventDetails, payments, upcomingDeadlines: deadlines, announcements } = dashboardData;
+
   return (
-    <Container fluid style={styles.container}>
-      {/* Welcome and Event Info with Badge Preview */}
-      <div style={styles.welcomeSection}>
-        <div style={styles.welcomeFlexContainer}> {/* Flex container for text and badge */}
-          <div style={styles.welcomeTextContent}> {/* Left side: Event Name & Welcome */}
-            <h1 style={styles.welcomeTitle}>{eventInfo.name || 'Event Dashboard'}</h1>
-            <p style={styles.welcomeSubtitle}>Welcome, {personalInfo.firstName || authContextRegistrant?.name || 'Registrant'}!</p>
-          </div>
-
-          {registration && (
-            <div style={styles.badgePreview}> {/* Right side: Badge Preview on dashboard */}
-              <div style={{textAlign: 'center', marginBottom: '0.75rem'}}>
-                 <h5 style={{fontWeight: 600, color: styles.primaryText.color, marginBottom: '0.2rem' }}>{personalInfo.firstName} {personalInfo.lastName || ''}</h5>
-                 <span style={{fontSize: '0.8rem', color: '#6c757d'}}>{eventInfo.name || 'Current Event'}</span>
+    <Container fluid style={styles.container} className="registrant-dashboard-container p-lg-4 p-md-3 p-2">
+      {/* Welcome Banner & Quick Badge */}
+      <Row className="mb-4 welcome-banner-row">
+        <Col>
+          <Card style={styles.welcomeSection} className="welcome-banner-card">
+            <Card.Body style={styles.welcomeFlexContainer}>
+              <div style={styles.welcomeTextContent} className="welcome-text-content">
+                <h1 style={styles.welcomeTitle} className="welcome-event-name">
+                  {eventDetails?.basicInfo?.eventName || eventDetails?.name || 'Your Event Dashboard'}
+                </h1>
+                <p style={styles.welcomeSubtitle} className="welcome-registrant-name">
+                  Welcome, {registration?.personalInfo?.firstName || 'Registrant'}!
+                </p>
               </div>
-              <div>
-                <span style={styles.badgeFieldName}>Registration ID:</span>
-                <span style={styles.badgeFieldValue}>{registration.registrationId || 'N/A'}</span>
-              </div>
-              <div>
-                <span style={styles.badgeFieldName}>Category:</span>
-                <span style={styles.badgeFieldValue}>{registration.category?.name || 'N/A'}</span>
-              </div>
-              <div>
-                <span style={styles.badgeFieldName}>Status:</span>
-                <span style={styles.badgeStatusValue}>
-                  <Badge 
-                    pill 
-                    bg={registration.status === 'active' ? 'success' : 'secondary'} 
-                    style={styles.badge}
+              {registration && (
+                <div style={styles.badgePreview} className="quick-badge-preview">
+                  <span style={styles.badgeFieldName}>Name:</span>
+                  <span style={styles.badgeFieldValue}>
+                    {registration.personalInfo?.firstName} {registration.personalInfo?.lastName}
+                  </span>
+                  <span style={styles.badgeFieldName}>Reg ID:</span>
+                  <span style={styles.badgeFieldValue}>{registration.registrationId}</span>
+                  <span style={styles.badgeFieldName}>Category:</span>
+                  <span style={styles.badgeFieldValue}>{registration.category?.name || 'N/A'}</span>
+                  <Button 
+                    variant="outline-primary" 
+                    size="sm" 
+                    className="mt-2 w-100 view-badge-btn"
+                    onClick={() => setShowBadgeModal(true)}
                   >
-                    {registration.status || 'N/A'}
-                  </Badge>
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      <Row>
-        <Col lg={7} className="mb-4 mb-lg-0">
-          <Card style={styles.card}>
-            <Card.Header style={styles.cardHeader}>
-              <FaUser style={styles.icon} /><h5 style={styles.cardTitle}>My Profile Overview</h5>
-            </Card.Header>
-            <Card.Body className="p-4">
-              {registration ? (
-                <ListGroup variant="flush">
-                  <DetailItem icon={<FaUser />} label="Full Name" value={`${personalInfo.firstName} ${personalInfo.lastName}`} />
-                  <DetailItem icon={<FaEnvelope />} label="Email" value={personalInfo.email} />
-                  <DetailItem icon={<FaPhone />} label="Phone" value={personalInfo.phone} />
-                  <DetailItem icon={<FaBuilding />} label="Organization" value={personalInfo.organization} />
-                  <DetailItem icon={<FaBriefcase />} label="Designation" value={personalInfo.designation} />
-                  <DetailItem icon={<FaGlobe />} label="Country" value={personalInfo.country} />
-                  <DetailItem icon={<FaCalendarCheck />} label="Registered On" value={formatDate(registration.createdAt)} />
-                  <DetailItem icon={<FaHistory />} label="Last Updated" value={formatDate(registration.updatedAt)} />
-                  <DetailItem icon={<FaSignInAlt />} label="Checked-In" 
-                    value={registration.checkIn?.isCheckedIn ? `Yes (${formatDate(registration.checkIn.checkedInAt)})` : 'No'} 
-                    badgeText={true} 
-                    badgeBg={registration.checkIn?.isCheckedIn ? 'success' : 'secondary'} />
-                  <DetailItem icon={<FaIdBadge />} label="Badge Printed" 
-                    value={registration.badgePrinted ? `Yes ${registration.printedAt ? formatDate(registration.printedAt) : ''}`.trim() : 'No'} 
-                    badgeText={true} 
-                    badgeBg={registration.badgePrinted ? 'success' : 'secondary'} />
-                </ListGroup>
-              ) : <EmptyState message="Profile details not available." icon={<FaUserSlash />} />}
+                    <FaIdBadge className="me-1" /> View Full Badge
+                  </Button>
+                </div>
+              )}
             </Card.Body>
-            {registration?.customFields && Object.keys(registration.customFields).length > 0 && (
-              <Card.Footer style={{...styles.cardHeader, borderTop: '1px solid #e9ecef', backgroundColor: '#f8f9fa'}}>
-                <h6 className="fw-semibold text-dark mb-3">Custom Fields:</h6>
-                <ListGroup variant="flush">
-                  {Object.entries(registration.customFields).map(([key, value]) => (
-                    <ListGroup.Item key={key} style={{...styles.listItem, backgroundColor: 'transparent', paddingLeft:0, paddingRight:0}}>
-                      <span style={styles.listItemLabel}>{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                      <span style={styles.listItemValue}>{String(value) || <span className="text-muted fst-italic">N/A</span>}</span>
-                    </ListGroup.Item>
-                  ))}
-                </ListGroup>
-              </Card.Footer>
-            )}
           </Card>
+        </Col>
+      </Row>
 
-          <Card style={styles.card}>
+      {/* Announcements Section - NEW */}
+      {announcements && announcements.length > 0 && (
+        <Row className="mb-4">
+          <Col>
+            <Card style={{...styles.card, ...styles.announcementCard}} className="dashboard-card">
+              <Card.Header style={styles.cardHeader}>
+                <FaBullhorn size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+                <Card.Title style={styles.cardTitle}>Latest Announcements</Card.Title>
+              </Card.Header>
+              <Card.Body className="p-0">
+                {announcements.map((ann, index) => (
+                  <div key={ann._id || index} style={styles.announcementItem} className={`announcement-item ${index === 0 ? 'first-announcement' : ''}`}>
+                    <h5 style={styles.announcementTitle}>{ann.title}</h5>
+                    <p style={styles.announcementContent}>{ann.content}</p>
+                    <div style={styles.announcementMeta}>
+                      Posted by: {ann.postedBy?.name || 'Event Staff'} on {formatDate(ann.createdAt, true)}
+                      {ann.deadline && (
+                        <span className="ms-2"> | <FaClock className="me-1" /> Deadline: <span style={styles.announcementDeadline}>{formatDate(ann.deadline, false)}</span></span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      <Row className="gy-4 gx-lg-4 gx-md-3 gx-2 dashboard-cards-row">
+        {/* Registration Status Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
             <Card.Header style={styles.cardHeader}>
-              <FaTicketAlt style={styles.icon} /><h5 style={styles.cardTitle}>Actions & Downloads</h5>
+              <FaIdBadge size={22} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>Registration Status</Card.Title>
             </Card.Header>
-            <Card.Body className="p-4 d-flex flex-wrap justify-content-start align-items-center">
+            <ListGroup variant="flush" className="p-3">
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Status:</span>
+                <span style={styles.listItemValue}><StatusBadge status={registration?.status} /></span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Reg. ID:</span>
+                <span style={styles.listItemValue}>{registration?.registrationId || 'N/A'}</span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Category:</span>
+                <span style={styles.listItemValue}>{registration?.category?.name || 'N/A'}</span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Registered On:</span>
+                <span style={styles.listItemValue}>{formatDate(registration?.createdAt, false)}</span>
+              </ListGroup.Item>
+            </ListGroup>
+          </Card>
+        </Col>
+
+        {/* Quick Actions Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
+            <Card.Header style={styles.cardHeader}>
+              <FaBars size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>Quick Actions</Card.Title>
+            </Card.Header>
+            <Card.Body className="d-grid gap-2 p-3">
+              {/* Corrected "Submit Abstract" button routing */}
+              {activeEventId && (
+                <Button 
+                  as={Link} 
+                  to={`/registrant-portal/abstracts/new`} 
+                  variant="primary" 
+                  style={styles.button} 
+                  className="action-btn submit-abstract-btn"
+                >
+                  <FaFileAlt className="me-2" /> Submit New Abstract
+                </Button>
+              )}
+              {/* Corrected "Edit Profile" button routing */}
               <Button 
-                variant="primary" 
-                style={{...styles.button, ...styles.buttonPrimary}}
+                as={Link} 
+                to="/registrant-portal/profile" 
+                variant="outline-secondary" 
+                style={styles.button} 
+                className="action-btn edit-profile-btn"
+              >
+                <FaUser className="me-2" /> Edit Profile
+              </Button>
+              <Button 
+                variant="outline-info" 
+                style={styles.button} 
+                className="action-btn view-badge-modal-btn" 
                 onClick={() => setShowBadgeModal(true)}
-                disabled={!registration}
               >
-                <FaIdBadge className="me-2" /> View/Print Badge
+                <FaQrcode className="me-2" /> View/Download Badge
               </Button>
-              <Button 
-                variant="secondary" 
-                style={{...styles.button, ...styles.buttonSecondary}}
-                onClick={() => alert('Download Certificate(s) functionality coming soon!')}
-              >
-                <FaDownload className="me-2" /> Download Certificate(s)
-              </Button>
-              <Button 
-                variant="info" 
-                style={styles.button}
-                onClick={() => alert('Raise a Support Ticket functionality coming soon!')}
-              >
-                <FaEnvelope className="me-2" /> Raise a Support Ticket
-              </Button>
-              <Button 
-                variant="success"
-                style={{...styles.button, backgroundColor: '#198754', borderColor: '#198754'}}
-                onClick={() => alert('Download Invoice functionality coming soon!')}
-              >
-                <FaFileInvoice className="me-2" /> Download Invoice
-              </Button>
-              <Link 
-                to={`/registrant-portal/profile/edit?event=${activeEventId}`} 
-                style={{...styles.button, ...styles.buttonLink, color: styles.buttonLink.color, marginLeft: '0.3rem', display: 'inline-flex', alignItems: 'center'}}
-                className="btn btn-outline-primary"
-              >
-                <FaEdit className="me-2" /> Edit Profile
-              </Link>
+              {/* "View Schedule" button REMOVED */}
             </Card.Body>
           </Card>
         </Col>
 
-        <Col lg={5}>
-          {/* Abstract Submissions */}
-          <Card style={styles.card}>
+        {/* My Profile Snippet Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
             <Card.Header style={styles.cardHeader}>
-              <FaFileAlt style={styles.icon}/><h5 style={styles.cardTitle}>My Abstract Submissions</h5>
+              <FaUser size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>My Profile</Card.Title>
             </Card.Header>
-            <Card.Body className="p-4">
+            <ListGroup variant="flush" className="p-3">
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Name:</span>
+                <span style={styles.listItemValue}>{registration?.personalInfo?.firstName} {registration?.personalInfo?.lastName}</span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Email:</span>
+                <span style={styles.listItemValue}>{registration?.personalInfo?.email}</span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Phone:</span>
+                <span style={styles.listItemValue}>{registration?.personalInfo?.mobileNumber || 'N/A'}</span>
+              </ListGroup.Item>
+              <ListGroup.Item style={styles.listItem}>
+                <span style={styles.listItemLabel}>Institution:</span>
+                <span style={styles.listItemValue}>{registration?.professionalInfo?.institution || 'N/A'}</span>
+              </ListGroup.Item>
+            </ListGroup>
+            <Card.Body className="p-3 pt-0">
+              {/* "View Complete Profile" button REMOVED */}
+               <Button 
+                as={Link} 
+                to="/registrant-portal/profile" 
+                variant="link" 
+                style={styles.buttonLink}
+                className="mt-2 p-0 profile-link-btn"
+              >
+                Go to Profile Page <FaChevronRight size={12} />
+              </Button>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* My Abstracts Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
+            <Card.Header style={styles.cardHeader}>
+              <FaFileAlt size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>My Abstracts</Card.Title>
+            </Card.Header>
+            <Card.Body className="p-3">
               {abstracts && abstracts.length > 0 ? (
-                <ListGroup variant="flush">
-                  {abstracts.map((abstract, index) => {
-                    let badgeBg = 'secondary'; // Default
-                    const statusLower = abstract.status?.toLowerCase();
-
-                    if (statusLower === 'approved' || statusLower === 'accepted') {
-                      badgeBg = 'success';
-                    } else if (statusLower === 'submitted' || statusLower === 'under-review' || statusLower === 'pending' || statusLower === 'revised-pending-review') {
-                      badgeBg = 'warning';
-                    } else if (statusLower === 'rejected') {
-                      badgeBg = 'danger';
-                    } else if (statusLower === 'draft' || statusLower === 'revision-requested') {
-                      badgeBg = 'info';
-                    }
-
-                    return (
-                      <ListGroup.Item key={index} style={styles.listItem}>
-                        <div>
-                          <strong style={{color: styles.primaryText.color}}>{abstract.title || 'N/A'}</strong>
-                          <br />
-                          <small className="text-muted">
-                            ID: {abstract.submissionId || abstract._id || 'N/A'} | Submitted: {formatDate(abstract.submissionDate)}
-                          </small>
+                <div className="abstracts-list">
+                  {abstracts.map((abstract, index) => (
+                    <div key={index} className="abstract-item">
+                      <div className="abstract-details">
+                        <div className="abstract-title">{abstract.title || 'N/A'}</div>
+                        <div className="abstract-meta">
+                          ID: {abstract.submissionId || abstract._id || 'N/A'}
                         </div>
-                        <Badge pill bg={badgeBg} style={styles.badge}>
+                        <div className="abstract-date">
+                          Submitted: {formatDate(abstract.submissionDate)}
+                        </div>
+                      </div>
+                      <div className="abstract-status">
+                        <Badge bg={getAbstractStatusBadgeVariant(abstract.status)} className="status-badge">
                           {abstract.status || 'N/A'}
                         </Badge>
-                      </ListGroup.Item>
-                    );
-                  })}
-                </ListGroup>
+                        {/* Corrected individual abstract view link */}
+                        {activeEventId && abstract._id && (
+                          <Link 
+                            to={`/registrant-portal/events/${activeEventId}/abstracts/${abstract._id}`} 
+                            className="btn btn-sm btn-outline-primary mt-2 view-btn"
+                          >
+                            View
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Corrected "View All Abstracts" link */}
+                  {activeEventId && (
+                    <Link 
+                      to={`/registrant-portal/abstracts`} 
+                      className="view-all-link d-inline-flex align-items-center mt-3"
+                    >
+                      View All Abstracts <FaChevronRight className="ms-1" size={12}/>
+                    </Link>
+                  )}
+                </div>
               ) : (
-                <EmptyState message="No abstract submissions found for this event." icon={<FaRegFileAlt />} />
+                <div className="empty-abstracts text-center">
+                  <EmptyState message="No abstract submissions found." icon={<FaRegFileAlt />} />
+                  {/* Ensure "Submit New Abstract" in empty state also uses correct path */}
+                  {activeEventId && (
+                    <Button
+                      variant="primary"
+                      className="action-btn mt-3"
+                      as={Link}
+                      to={`/registrant-portal/abstracts/new`}
+                    >
+                      <FaFileAlt className="me-2" />
+                      Submit New Abstract
+                    </Button>
+                  )}
+                </div>
               )}
             </Card.Body>
           </Card>
+        </Col>
 
-          {/* Payment History */}
-          <Card style={styles.card}>
+        {/* Payment History Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
             <Card.Header style={styles.cardHeader}>
-              <FaMoneyBillWave style={styles.icon}/><h5 style={styles.cardTitle}>Payment History</h5>
+              <FaMoneyBillWave size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>Payment History</Card.Title>
             </Card.Header>
-            <Card.Body className="p-4">
+            <Card.Body className="p-3">
               {payments && payments.length > 0 ? (
-                <Table responsive hover style={{fontSize: '0.9rem'}}>
-                  <thead style={styles.tableHeader}>
-                    <tr>
-                      <th>Invoice ID</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((payment, index) => (
-                      <tr key={index}>
-                        <td>{payment.invoiceId || 'N/A'}</td>
-                        <td>{payment.currency || '$'}{payment.amount?.toFixed(2) || '0.00'}</td>
-                        <td>
-                          <Badge pill bg={payment.status === 'Paid' ? 'success' : 'warning'} style={styles.badge}>
-                            {payment.status || 'N/A'}
-                          </Badge>
-                        </td>
-                        <td>{formatDate(payment.date)}</td>
+                <div className="table-responsive">
+                  <table className="payment-table">
+                    <thead>
+                      <tr>
+                        <th>Invoice ID</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </Table>
+                    </thead>
+                    <tbody>
+                      {payments.map((payment, index) => (
+                        <tr key={index}>
+                          <td data-label="Invoice ID">{payment.invoiceId || 'N/A'}</td>
+                          <td data-label="Amount">{payment.currency || '$'}{payment.amount?.toFixed(2) || '0.00'}</td>
+                          <td data-label="Status">
+                            <Badge bg={payment.status === 'Paid' ? 'success' : 'warning'} className="status-badge">
+                              {payment.status || 'N/A'}
+                            </Badge>
+                          </td>
+                          <td data-label="Date">{formatDate(payment.date)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <EmptyState message="No payment history available." icon={<FaCreditCard />} />
               )}
             </Card.Body>
           </Card>
-           {/* Event Information */}
-           <Card style={styles.card}>
+        </Col>
+
+        {/* Event Details Card */}
+        <Col lg={4} md={6} xs={12}>
+          <Card style={styles.card} className="dashboard-card h-100">
             <Card.Header style={styles.cardHeader}>
-              <FaInfoCircle style={styles.icon}/><h5 style={styles.cardTitle}>Event Information</h5>
+              <FaCalendarAlt size={20} className="me-2" style={{ color: styles.primaryText.color }} />
+              <Card.Title style={styles.cardTitle}>Event Details</Card.Title>
             </Card.Header>
-            <Card.Body className="p-4">
-                <ListGroup variant="flush">
-                  <ListGroup.Item style={{...styles.listItem, borderTop: 'none'}}> {/* No top border for the first item */}
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <FaCalendarAlt style={{...styles.icon, fontSize: '1rem', color: '#6c757d', marginRight: '0.5rem'}} />
-                      <span style={styles.listItemLabel}>Upcoming Deadlines</span>
+            <Card.Body className="p-3">
+              {eventDetails ? (
+                <div className="event-details">
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FaCalendarCheck className="detail-icon" />
+                      <span>Start Date</span>
                     </div>
-                    {dashboardData.upcomingDeadlines && dashboardData.upcomingDeadlines.length > 0 ?
-                      dashboardData.upcomingDeadlines.map((deadline, i) => (
-                        <span key={i} style={{...styles.listItemValue, display: 'block', textAlign: 'right', marginTop: i > 0 ? '0.3rem' : '0'}}>
-                          {deadline.name}: {formatDate(deadline.date, false)}
-                        </span>
-                      )) :
-                      <span style={styles.listItemValue}><em className="text-muted">No upcoming deadlines for this event. (Configured by Admin)</em></span>
-                    }
-                  </ListGroup.Item>
-                  <ListGroup.Item style={styles.listItem}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <FaClock style={{...styles.icon, fontSize: '1rem', color: '#6c757d', marginRight: '0.5rem'}} />
-                      <span style={styles.listItemLabel}>Event Schedule Details</span>
+                    <div className="detail-value">{formatDate(eventDetails.startDate, false)}</div>
+                  </div>
+                  
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FaCalendarCheck className="detail-icon" />
+                      <span>End Date</span>
                     </div>
-                    <span style={styles.listItemValue}>
-                      {dashboardData.schedule && dashboardData.schedule.length > 0 ? 
-                        "View Schedule" /* Placeholder for actual schedule link/modal */ : 
-                        <em className="text-muted">Event schedule details will be available here soon.</em>
-                      }
-                    </span>
-                  </ListGroup.Item>
-                </ListGroup>
+                    <div className="detail-value">{formatDate(eventDetails.endDate, false)}</div>
+                  </div>
+                  
+                  <div className="detail-item">
+                    <div className="detail-label">
+                      <FaMapMarkerAlt className="detail-icon" />
+                      <span>Location</span>
+                    </div>
+                    <div className="detail-value">{eventDetails.location || 'N/A'}</div>
+                  </div>
+                  
+                  {deadlines && deadlines.length > 0 && (
+                    <div className="deadlines-section mt-3">
+                      <h3 className="deadlines-title">Upcoming Deadlines</h3>
+                      {deadlines.map((deadline, i) => (
+                        <div key={i} className="deadline-item">
+                          <div className="deadline-name">{deadline.name}</div>
+                          <div className="deadline-date">{formatDate(deadline.date, false)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <EmptyState message="Event details are currently unavailable." icon={<FaInfoCircle />} />
+              )}
             </Card.Body>
           </Card>
-
         </Col>
       </Row>
 
-      {/* Badge Preview Modal Render */}
-      {registration && (
-        <BadgePreviewModal 
-          show={showBadgeModal} 
-          handleClose={() => setShowBadgeModal(false)} 
-          registrationData={registration} 
-          eventInfo={eventInfo} 
-          handleDownloadBadgeClick={handleDownloadBadge}
-        />
-      )}
-
+      {/* Badge Preview Modal */}
+      <BadgePreviewModal 
+        show={showBadgeModal} 
+        handleClose={() => setShowBadgeModal(false)}
+        registrationData={registration}
+        eventInfo={eventDetails}
+        handleDownloadBadgeClick={handleDownloadBadge}
+      />
     </Container>
   );
 };

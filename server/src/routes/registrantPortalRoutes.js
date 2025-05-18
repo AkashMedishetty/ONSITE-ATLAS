@@ -4,6 +4,7 @@ const registrantPortalController = require('../controllers/registrantPortalContr
 const registrantAuth = require('../middleware/registrantAuth');
 const validateBody = require('../middleware/validate');
 const registrantSchema = require('../validation/registrantSchema');
+const logger = require('../config/logger');
 
 // Public routes (no authentication required)
 router.post('/login', validateBody(registrantSchema.login), registrantPortalController.login);
@@ -35,6 +36,11 @@ router.post('/workshops/:id/register', registrantAuth, registrantPortalControlle
 // Adjusted abstract routes to be event-specific
 router.get('/events/:eventId/abstracts', registrantAuth, registrantPortalController.getAbstractsForEvent);
 router.post('/events/:eventId/abstracts', registrantAuth, validateBody(registrantSchema.submitAbstract), registrantPortalController.submitAbstractForEvent);
+
+// Log before defining the specific abstract GET route
+console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!! DEFINING ROUTE: GET /events/:eventId/abstracts/:abstractId IN registrantPortalRoutes.js !!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!! Using LOGGER: DEFINING ROUTE: GET /events/:eventId/abstracts/:abstractId IN registrantPortalRoutes.js !!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
 router.get('/events/:eventId/abstracts/:abstractId', registrantAuth, registrantPortalController.getAbstractByIdForEvent);
 router.put('/events/:eventId/abstracts/:abstractId', registrantAuth, validateBody(registrantSchema.updateAbstract), registrantPortalController.updateAbstractForEvent);
 

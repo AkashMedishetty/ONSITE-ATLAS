@@ -52,4 +52,15 @@
 
 - 2024-06-09: Populate category for reviewer-assigned abstracts in backend and display category in reviewer dashboard.
 - [x] 2024-06-09: Implement backend and frontend support for filtering abstracts by review score (minScore, maxScore) in export. Added UI for export filters (mode, category, topic, score) and updated backend endpoint to support score filtering.
-- [x] 2024-06-09: Add reviewer filtering to abstract export (backend and frontend). Reviewer dropdown in export UI, backend supports reviewer query param. 
+- [x] 2024-06-09: Add reviewer filtering to abstract export (backend and frontend). Reviewer dropdown in export UI, backend supports reviewer query param.
+- [x] 2024-06-09: Update backend controller to accept eventId from both params and query, and ensure robust category/sub-topic name resolution for registrant abstract detail endpoint
+  - Controller now robustly handles eventId from both params and query, and category/sub-topic resolution is aligned with getAbstractByIdForEvent logic.
+
+## Post-Event
+- [ ] Digital certificate generation
+- [ ] Email distribution to attendees
+- [ ] Comprehensive reporting
+- [ ] Data export and archiving
+
+### Discovered During Work
+*   **(Ongoing) Bug: Abstract Category/Sub-Topic Not Displaying** - Investigating why category and sub-topic names are not appearing in `AbstractDetail.jsx`. Current focus is on backend controller `registrant.abstract.controller.js` log visibility and data lookup logic. (Date: Current Date) 

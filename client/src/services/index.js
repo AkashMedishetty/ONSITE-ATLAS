@@ -5,6 +5,7 @@ import eventService from './eventService';
 import categoryService from './categoryService';
 import resourceService from './resourceService';
 import abstractService from './abstractService';
+import { announcementService } from './announcementService';
 
 export {
   api,
@@ -13,5 +14,6 @@ export {
   eventService,
   categoryService,
   resourceService,
-  abstractService
+  abstractService,
+  announcementService
 }; 

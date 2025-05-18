@@ -4,6 +4,7 @@
 
 // API configuration
 export const API_URL = 'http://localhost:5000/api';
+export const API_BASE_URL_STATIC = 'http://localhost:5000';
 
 // App configuration
 export const APP_NAME = 'ONSITE ATLAS';

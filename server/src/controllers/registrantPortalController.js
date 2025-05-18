@@ -28,6 +28,8 @@ const registrantController = require('./registrant.controller'); // Contains get
 const paymentController = require('./paymentController'); // Contains getInvoice
 const resourceController = require('./resource.controller'); // Contains getResources (list version)
 
+const Announcement = require('../models/Announcement'); // Import Announcement model
+
 // Generate JWT token for registrant
 const generateToken = (registrantId) => {
   return jwt.sign(
@@ -47,7 +49,8 @@ const createSendToken = (registrant, statusCode, res, defaultEventId) => {
       Date.now() + config.jwt.refreshExpirationDays * 24 * 60 * 60 * 1000
     ),
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production'
+    secure: process.env.NODE_ENV === 'production',
+    path: '/' // Make cookie available to all paths
   };
 
   res.cookie('jwt', token, cookieOptions);
@@ -120,7 +123,6 @@ exports.getCurrentRegistrant = asyncHandler(async (req, res, next) => {
   const registration = await Registration.findById(req.registrant.id)
     .populate('event', 'name startDate endDate')
     .populate('category', 'name color')
-    .populate('workshops', 'title startDateTime endDateTime location')
     .populate('customFields.field', 'label type options');
   
   if (!registration) {
@@ -139,67 +141,80 @@ exports.getCurrentRegistrant = asyncHandler(async (req, res, next) => {
  * Update profile information
  */
 exports.updateProfile = asyncHandler(async (req, res, next) => {
-  const { firstName, lastName, email, phone, organization, customFieldValues } = req.body;
+  const { 
+    firstName, 
+    lastName, 
+    email, 
+    phone, 
+    organization, 
+    designation,
+    country,
+    customFieldValues 
+  } = req.body;
   
-  // Only allow certain fields to be updated
-  const updateData = {};
-  
-  if (firstName) updateData.firstName = firstName;
-  if (lastName) updateData.lastName = lastName;
-  if (email) updateData.email = email;
-  if (phone) updateData.phone = phone;
-  if (organization) updateData.organization = organization;
-  
-  // Handle custom field updates if provided
-  if (customFieldValues) {
-    const registration = await Registration.findById(req.registrant.id);
+  const registration = await Registration.findById(req.registrant.id);
   
   if (!registration) {
     return next(new ApiError('Registration not found', 404));
   }
   
-    // Update custom field values
+  // Ensure personalInfo object exists
+  if (!registration.personalInfo) {
+    registration.personalInfo = {};
+  }
+
+  // Update personalInfo fields
+  if (firstName !== undefined) registration.personalInfo.firstName = firstName;
+  if (lastName !== undefined) registration.personalInfo.lastName = lastName;
+  if (email !== undefined) registration.personalInfo.email = email;
+  if (phone !== undefined) registration.personalInfo.phone = phone;
+  if (organization !== undefined) registration.personalInfo.organization = organization;
+  if (designation !== undefined) registration.personalInfo.designation = designation;
+  if (country !== undefined) registration.personalInfo.country = country;
+  
+  // Handle custom field updates if provided
+  if (customFieldValues && Array.isArray(customFieldValues)) {
     customFieldValues.forEach(item => {
       const existingFieldIndex = registration.customFields.findIndex(
-        field => field.field.toString() === item.fieldId
+        field => field.field && field.field.toString() === item.fieldId
       );
       
       if (existingFieldIndex >= 0) {
         registration.customFields[existingFieldIndex].value = item.value;
       } else {
-        registration.customFields.push({
-          field: item.fieldId,
-          value: item.value
-        });
-      }
-    });
-    
-    // Save registration with updated custom fields
-  await registration.save();
-  
-    // Return updated registration
-    return res.status(200).json({
-    status: 'success',
-    data: {
-        registration
+        // Ensure fieldId is a valid ObjectId if it's supposed to be
+        if (mongoose.Types.ObjectId.isValid(item.fieldId)) {
+          registration.customFields.push({
+            field: item.fieldId,
+            value: item.value
+          });
+        } else {
+          logger.warn(`Invalid fieldId provided for custom field update: ${item.fieldId}`);
+        }
       }
     });
   }
   
-  // Update and return registration
-  const registration = await Registration.findByIdAndUpdate(
-    req.registrant.id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate('event', 'name startDate endDate')
-    .populate('category', 'name color')
-    .populate('workshops', 'title startDateTime endDateTime location')
-    .populate('customFields.field', 'label type options');
+  await registration.save();
   
+  // Populate necessary fields for the response
+  const updatedRegistration = await Registration.findById(registration._id)
+    .populate('event', 'name startDate endDate')
+    .populate('category', 'name color')
+    .populate('customFields.field', 'label type options');
+
+  // Generate a new token for the registrant
+  const newToken = jwt.sign(
+    { id: updatedRegistration._id, type: 'registrant' },
+    config.jwt.secret,
+    { expiresIn: `${config.jwt.accessExpirationMinutes}m` }
+  );
+
   res.status(200).json({
     status: 'success',
+    token: newToken,
     data: {
-      registration
+      registration: updatedRegistration
     }
   });
 });
@@ -590,22 +605,100 @@ exports.getAbstractByIdForEvent = asyncHandler(async (req, res, next) => {
     return next(new ApiError('Invalid Event ID or Abstract ID format', 400));
   }
 
-  const abstract = await Abstract.findOne({
-    _id: abstractId,
-    event: eventId,
-    registration: registrantId // Ensure registrant owns this abstract for this event
-  });
+  try {
+    const abstract = await Abstract.findOne({
+      _id: abstractId,
+      event: eventId,
+      registration: registrantId
+    })
+      .populate('event', 'name startDate endDate abstractSettings')
+      .populate('category', 'name')
+      .lean();
 
-  if (!abstract) {
-    return next(new ApiError('Abstract not found or access denied', 404));
-  }
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      abstract
+    if (!abstract) {
+      return next(new ApiError('Abstract not found or access denied', 404));
     }
-  });
+
+    // Always include the category ObjectId as a string for frontend matching
+    let categoryIdString = null;
+    if (abstract.category && typeof abstract.category === 'object' && abstract.category._id) {
+      categoryIdString = String(abstract.category._id);
+    } else if (abstract.category && abstract.category.$oid) {
+      categoryIdString = String(abstract.category.$oid);
+    } else if (abstract.category && typeof abstract.category === 'string') {
+      categoryIdString = abstract.category;
+    } else if (abstract.category) {
+      categoryIdString = String(abstract.category);
+    }
+
+    let categoryName = null;
+    let subTopicName = null;
+
+    // Robustly match category by _id or $oid
+    if (
+      abstract.event &&
+      abstract.event.abstractSettings &&
+      Array.isArray(abstract.event.abstractSettings.categories)
+    ) {
+      const eventCategories = abstract.event.abstractSettings.categories;
+      let foundCategory = null;
+      let foundById = false;
+      // Try to match by ObjectId if present
+      if (categoryIdString) {
+        foundCategory = eventCategories.find(cat => String(cat._id && cat._id.$oid ? cat._id.$oid : cat._id) === categoryIdString);
+        foundById = !!foundCategory;
+      }
+      // Fallback: match by topic string if no ObjectId match and topic is present
+      if (!foundCategory && abstract.topic && typeof abstract.topic === 'string') {
+        foundCategory = eventCategories.find(cat => (cat.name || '').toLowerCase().trim() === abstract.topic.toLowerCase().trim());
+        if (foundCategory) {
+          categoryIdString = String(foundCategory._id && foundCategory._id.$oid ? foundCategory._id.$oid : foundCategory._id);
+        }
+      }
+      if (foundCategory) {
+        categoryName = foundCategory.name;
+        // Try to resolve subTopic name if present
+        if (abstract.subTopic && foundCategory.subTopics && Array.isArray(foundCategory.subTopics)) {
+          let foundSubTopic = null;
+          // Try to match by ObjectId
+          foundSubTopic = foundCategory.subTopics.find(st => String(st._id && st._id.$oid ? st._id.$oid : st._id) === String(abstract.subTopic && abstract.subTopic.$oid ? abstract.subTopic.$oid : abstract.subTopic));
+          // Fallback: match by subTopic string if no ObjectId match and subTopic is present
+          if (!foundSubTopic && typeof abstract.subTopic === 'string' && abstract.subTopic.length > 0) {
+            foundSubTopic = foundCategory.subTopics.find(st => (st.name || '').toLowerCase().trim() === abstract.subTopic.toLowerCase().trim());
+          }
+          if (foundSubTopic) {
+            subTopicName = foundSubTopic.name;
+          }
+        }
+      }
+    }
+
+    // Fallback: Try to get category name from populated category
+    if (!categoryName && abstract.category && abstract.category.name) {
+      categoryName = abstract.category.name;
+    }
+
+    // Always include the categoryIdString for frontend matching
+    const abstractToSend = {
+      ...abstract,
+      category: categoryIdString,
+      categoryName: categoryName || 'Not specified',
+      subTopicName: subTopicName || 'Not specified'
+    };
+
+    // Log the full object being sent to the frontend for debugging
+    console.log('[getAbstractByIdForEvent] FINAL abstractToSend:', JSON.stringify(abstractToSend, null, 2));
+
+    console.log(`[getAbstractByIdForEvent] Sending abstract with category: ${categoryIdString}, categoryName: ${categoryName}, subTopicName: ${subTopicName}`);
+
+    res.status(200).json({
+      success: true,
+      data: abstractToSend
+    });
+  } catch (error) {
+    console.error(`[getAbstractByIdForEvent] Error: ${error.message}`);
+    return next(new ApiError('Error processing abstract details', 500, error.stack));
+  }
 });
 
 /**
@@ -697,62 +790,85 @@ exports.downloadCertificate = asyncHandler(async (req, res, next) => {
   return next(new ApiError('Download certificate functionality is not yet implemented.', 501));
 });
 
-// Placeholder for Dashboard Data - TEMPORARILY SIMPLIFIED FOR DEBUGGING TIMEOUT
+// Placeholder for Dashboard Data
 exports.getDashboardData = asyncHandler(async (req, res, next) => {
-  console.log('[DashboardController] getDashboardData called.');
-  console.log('[DashboardController] req.registrant from auth middleware:', JSON.stringify(req.registrant, null, 2));
+  logger.info('[DashboardController] getDashboardData called.');
+  // logger.debug('[DashboardController] req.registrant from auth middleware:', JSON.stringify(req.registrant, null, 2));
   
   const registrantId = req.registrant ? req.registrant.id : null;
-  // ADJUSTED LOGIC FOR eventId EXTRACTION
-  const eventId = req.registrant ? (req.registrant._doc ? req.registrant._doc.event : req.registrant.event) : null;
+  const eventIdFromAuth = req.registrant ? (req.registrant._doc ? req.registrant._doc.event : req.registrant.event) : null;
+  const eventIdFromQuery = req.query.event; // Event ID passed in query by frontend
 
-  console.log(`[DashboardController] Extracted registrantId: ${registrantId}`);
-  console.log(`[DashboardController] Extracted eventId (after attempting _doc.event then .event): ${JSON.stringify(eventId, null, 2)}`);
-  console.log(`[DashboardController] Event ID from query (req.query.event): ${req.query.event}`);
+  // Prioritize eventId from query if available, otherwise use from auth context
+  const eventId = eventIdFromQuery || eventIdFromAuth;
 
-  if (!registrantId || !eventId) {
-    console.error(`[DashboardController] Critical: Missing registrantId (${registrantId}) or eventId (${JSON.stringify(eventId, null, 2)}) from req.registrant context.`);
-    return next(new ApiError('Registrant ID or Event ID context is missing for dashboard.', 400));
+  logger.info(`[DashboardController] Extracted registrantId: ${registrantId}`);
+  // logger.debug(`[DashboardController] Extracted eventId (from query or auth): ${JSON.stringify(eventId, null, 2)}`);
+
+  if (!registrantId) {
+    logger.error('[DashboardController] Critical: Missing registrantId from req.registrant context.');
+    return next(new ApiError('Registrant ID context is missing for dashboard.', 400));
+  }
+  if (!eventId) {
+    logger.error('[DashboardController] Critical: Missing eventId (either from query or auth context).');
+    return next(new ApiError('Event ID context is missing for dashboard.', 400));
   }
 
-  const queryEventId = (typeof eventId === 'object' && eventId !== null && eventId._id) ? eventId._id.toString() : eventId.toString(); // Added .toString() for safety
+  const queryEventId = (typeof eventId === 'object' && eventId !== null && eventId._id) 
+    ? eventId._id.toString() 
+    : eventId.toString();
 
-  if (!queryEventId) {
-    console.error(`[DashboardController] Critical: queryEventId is null or undefined after processing. Original eventId: ${JSON.stringify(eventId, null, 2)}`);
-    return next(new ApiError('Processed Event ID context is invalid for dashboard.', 400));
+  if (!mongoose.Types.ObjectId.isValid(queryEventId)) {
+    logger.error(`[DashboardController] Invalid Event ID format after processing: ${queryEventId}`);
+    return next(new ApiError('Invalid Event ID format for dashboard.', 400));
   }
-  console.log(`[DashboardController] Using queryEventId: ${queryEventId} for database lookups.`);
+
+  logger.info(`[DashboardController] Using queryEventId: ${queryEventId} for database lookups.`);
 
   // Fetch basic registration details
   const registration = await Registration.findById(registrantId)
-    .populate('event', 'name slug startDate endDate')
-    .populate('category', 'name')
+    .populate('event', 'name slug startDate endDate location venue timezone basicInfo registrationSettings') // Added more fields to event
+    .populate('category', 'name permissions') // Added permissions to category
     .lean();
 
   if (!registration) {
-    console.error(`[DashboardController] Registration not found for ID: ${registrantId}`);
+    logger.error(`[DashboardController] Registration not found for ID: ${registrantId}`);
     return next(new ApiError('Registration not found', 404));
+  }
+
+  // Ensure the registration's event matches the queryEventId to prevent data leakage if eventId in token is stale
+  if (registration.event && registration.event._id.toString() !== queryEventId) {
+    logger.warn(`[DashboardController] Mismatch: Registrant ${registrantId} event (${registration.event._id}) vs query/token event (${queryEventId}). Denying access.`);
+    return next(new ApiError('Access denied: Registration event does not match requested event.', 403));
   }
 
   // Fetch abstract submissions
   const abstracts = await Abstract.find({ registrant: registrantId, event: queryEventId }).lean();
 
   // Fetch payment information
-  const payments = await Payment.find({ registration: registrantId, event: queryEventId }).lean();
+  const payments = await Payment.find({ registration: registrantId, event: queryEventId }).sort({ createdAt: -1 }).lean();
 
   // Fetch resource usage
-  const resourceUsage = await Resource.find({ registration: registrantId, event: queryEventId })
-    .populate('resourceSetting', 'name type')
+  const resourceUsage = await Resource.find({ registration: registrantId, event: queryEventId }).lean();
+
+  // Fetch active announcements for the event, sorted by creation date (newest first)
+  const announcements = await Announcement.find({ eventId: queryEventId, isActive: true })
+    .sort({ createdAt: -1 })
+    .limit(10) // Limit to 10 most recent active announcements for the dashboard
+    .populate('postedBy', 'name') // Optionally populate who posted it
     .lean();
 
-  console.log('[DashboardController] Successfully fetched all data (excluding non-existent workshops).');
+  logger.info(`[DashboardController] Successfully fetched dashboard data for registrant ${registrantId}, event ${queryEventId}. Announcements found: ${announcements.length}`);
   res.status(200).json({
-    status: 'success',
+    success: true, // Changed from status: 'success' for consistency
     data: {
-      registration, // This will not have a workshops field
+      registration, 
       abstracts,
       payments,
       resourceUsage,
+      announcements, // Added announcements to the response
+      // upcomingDeadlines: [], // Placeholder for upcoming deadlines from event settings or specific deadlines model
+      // eventDetails: registration.event // Already part of registration.event but can be explicit if frontend expects it here
     },
   });
 });
@@ -764,7 +880,8 @@ exports.getDashboardData = asyncHandler(async (req, res, next) => {
  */
 const downloadBadge = asyncHandler(async (req, res, next) => {
   const { eventId, registrantId } = req.params;
-  const loggedInRegistrantId = req.registrant.id; // Correctly get ID from auth middleware
+  const { preview } = req.query; // Get preview query parameter
+  const loggedInRegistrantId = req.registrant.id;
 
   // 1. Validate inputs
   if (!mongoose.Types.ObjectId.isValid(eventId) || !mongoose.Types.ObjectId.isValid(registrantId)) {
@@ -987,7 +1104,9 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
       const pdfData = Buffer.concat(buffers);
       res.writeHead(200, {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="badge-${registration.registrationId || registration._id}.pdf"`,
+        'Content-Disposition': preview === 'true' 
+            ? `inline; filename="badge-${registration.registrationId || registration._id}.pdf"` 
+            : `attachment; filename="badge-${registration.registrationId || registration._id}.pdf"`,
         'Content-Length': pdfData.length
       });
       res.end(pdfData);

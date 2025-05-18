@@ -165,6 +165,9 @@ const App = () => {
                   <Route path=":abstractId" element={<RegistrantAbstractDetail />} />
                   <Route path=":abstractId/edit" element={<RegistrantAbstractSubmissionForm />} />
                 </Route>
+                {/* Event-scoped abstract detail and edit routes */}
+                <Route path="events/:eventId/abstracts/:abstractId" element={<RegistrantAbstractDetail />} />
+                <Route path="events/:eventId/abstracts/:abstractId/edit" element={<RegistrantAbstractSubmissionForm />} />
               </Route>
 
               {/* Reviewer Portal Routes */}

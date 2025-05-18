@@ -93,6 +93,16 @@ export const getProfile = async () => {
 
 export const updateProfile = async (profileData) => {
   const response = await api.put(`${baseUrl}/profile`, profileData, getAuthConfig());
+  // If a new token is returned, update localStorage and session
+  if (response.data && response.data.token) {
+    localStorage.setItem('registrantToken', response.data.token);
+    // Update registrantData with new token if present
+    const regData = response.data.data?.registration || response.data.data;
+    if (regData) {
+      const newData = { ...regData, token: response.data.token };
+      localStorage.setItem('registrantData', JSON.stringify(newData));
+    }
+  }
   return response.data;
 };
 

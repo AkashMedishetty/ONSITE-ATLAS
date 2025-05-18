@@ -829,20 +829,25 @@ const updatePortalSettings = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get list of potential reviewers (users with role 'reviewer')
+ * @desc    Get list of potential reviewers (users with role 'reviewer' and associated with the event)
  * @route   GET /api/events/:eventId/abstract-workflow/reviewers
  * @access  Protected (Admin/Staff)
  */
 const getEventReviewers = asyncHandler(async (req, res, next) => {
-  // const { eventId } = req.params; // EventId might be used later for event-specific reviewers
+  const { eventId } = req.params;
 
-  // For now, fetch all users with the 'reviewer' role
-  // Add .select('name email _id') if you only need these fields
-  const reviewers = await User.find({ role: 'reviewer' }).select('name email');
+  if (!eventId) {
+    return next(createApiError('Event ID is required', 400));
+  }
 
-  if (!reviewers) {
-    // This case is unlikely if User.find just returns an empty array
-    return next(createApiError('No reviewers found', 404));
+  // Fetch users with the 'reviewer' role and associated with the event
+  const reviewers = await User.find({
+    role: 'reviewer',
+    managedEvents: eventId
+  }).select('name email');
+
+  if (!reviewers || reviewers.length === 0) {
+    return next(createApiError('No reviewers found for this event', 404));
   }
 
   sendSuccess(res, 200, 'Reviewers retrieved successfully', reviewers);

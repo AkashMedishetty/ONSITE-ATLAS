@@ -10,6 +10,7 @@ const seedDatabase = require('./utils/seedData');
 const requestLogger = require('./middleware/requestLogger');
 const { responseFormatter } = require('./middleware/response.middleware');
 const fileUpload = require('express-fileupload');
+const announcementRoutes = require('./routes/announcementRoutes.js');
 
 // Load environment variables
 dotenv.config();
@@ -272,4 +273,6 @@ process.on('unhandledRejection', (err) => {
 console.log('Main thread continues...');
 setInterval(() => {
   // This keeps the Node.js process running
-}, 1000); 
+}, 1000);
+
+module.exports = app; 

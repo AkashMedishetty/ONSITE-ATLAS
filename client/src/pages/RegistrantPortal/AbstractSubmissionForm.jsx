@@ -3,13 +3,9 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   Box, Typography, TextField, Button, Select, MenuItem, FormControl,
   InputLabel, FormHelperText, CircularProgress, Alert as MuiAlert, Paper, Grid, Chip, IconButton,
-  List, ListItem, ListItemText, ListItemSecondaryAction, Divider
+  List, ListItem, ListItemText, ListItemSecondaryAction, Divider, Container
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import AddCircleOutline from '@mui/icons-material/AddCircleOutline';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
@@ -94,7 +90,7 @@ const VisuallyHiddenInput = styled('input')({
 const FileUploadControl = ({ onChange, error, accept, maxSize, currentFileName, onRemove, disabled }) => {
   const maxSizeMB = maxSize ? Math.round(maxSize / (1024 * 1024)) : 5; // Default 5MB
 
-  const handleFileChange = (event) => {
+  const handleFileChangeInternal = (event) => {
     const file = event.target.files[0];
     if (file) {
        const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -136,7 +132,7 @@ const FileUploadControl = ({ onChange, error, accept, maxSize, currentFileName, 
             {currentFileName ? 'Replace File' : 'Select File'}
             <VisuallyHiddenInput 
               type="file" 
-              onChange={handleFileChange} 
+              onChange={handleFileChangeInternal} 
               accept={accept} 
               disabled={disabled} 
               // Add specific ID if needed for resetAbstractForm
@@ -164,64 +160,82 @@ const FileUploadControl = ({ onChange, error, accept, maxSize, currentFileName, 
 };
 // --- End Helper Functions ---
 
+// Helper function to get category name by ID (similar to AbstractPortal)
+const getCategoryNameById = (categoryId, localCategories) => {
+  if (!categoryId || !localCategories || localCategories.length === 0) {
+    return 'N/A';
+  }
+  const category = localCategories.find(cat => cat.value === categoryId || cat._id === categoryId);
+  return category ? category.label : 'Unknown Category';
+};
+
 // --- Main Component ---
-function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, onCancel }) {
-  // Hooks
-  const { abstractId: abstractIdFromParams } = useParams(); // For edit mode via URL
+function AbstractSubmissionForm() {
+  const { abstractId: abstractIdFromParams } = useParams();
   const navigate = useNavigate();
-  const location = useLocation(); // To manage URL state/params
-  const { activeEventId } = useActiveEvent(); // Use context for eventId
-  const { currentRegistrant, loading: authLoading } = useRegistrantAuth(); // Get registrant info
+  const location = useLocation();
+  const { activeEventId } = useActiveEvent();
+  const { currentRegistrant, loading: authLoading } = useRegistrantAuth();
 
-  // State Variables (Adapted from AbstractPortal)
-  const [loading, setLoading] = useState(true); // General loading state (event details, abstracts)
+  const [loading, setLoading] = useState(true); // For event details and abstract (if editing)
   const [eventDetails, setEventDetails] = useState(null);
-  const [userAbstracts, setUserAbstracts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [settings, setSettings] = useState(null); // Abstract settings
+  const [settings, setSettings] = useState(null);
   const [submissionDeadlinePassed, setSubmissionDeadlinePassed] = useState(false);
-  const [formSubmitting, setFormSubmitting] = useState(false); // Specific state for submission process
+  const [formSubmitting, setFormSubmitting] = useState(false);
 
-  // Form state (managed manually, similar to AbstractPortal)
+  // editingAbstract stores the original abstract data when in edit mode
+  const [editingAbstract, setEditingAbstract] = useState(null); 
+
   const [abstractForm, setAbstractForm] = useState({
     title: '',
-    authors: '', // Simple string for now
-    affiliations: '', // Simple string
-    category: '', // Category ID
+    authors: '',
+    affiliations: '',
+    category: '',
     topic: '',
     content: '',
-    file: null, // Holds the File object for upload
-    existingAbstractId: null, // ID if editing
-    currentFileName: null, // Display name of existing/selected file
+    file: null,
+    currentFileName: null,
   });
-  const [formErrors, setFormErrors] = useState({}); // For validation errors
-  const [submitMessage, setSubmitMessage] = useState({ type: '', text: '' }); // For success/error messages
+  const [formErrors, setFormErrors] = useState({});
+  const [submitMessage, setSubmitMessage] = useState({ type: '', text: '' });
+  const [userAbstracts, setUserAbstracts] = useState([]); // For duplicate category check
 
-  // View control
-  const [currentView, setCurrentView] = useState('list'); // 'list' or 'form'
-  const [editingAbstract, setEditingAbstract] = useState(null); // Stores abstract being edited
-
-  // Derived State
-  const eventId = activeEventId; // Use eventId from context
-  const isEditMode = !!abstractForm.existingAbstractId;
+  const eventId = activeEventId;
+  const isEditMode = !!abstractIdFromParams; // Determine edit mode from URL param
 
   // Effect to fetch Event Details & Settings
   useEffect(() => {
     if (!eventId) {
       console.log("No activeEventId, cannot fetch event details.");
-      setLoading(false); // Stop loading if no event ID
+      toast.error("No active event selected. Please select an event first.");
+      setLoading(false);
+      navigate('/registrant-portal/events'); // Redirect if no eventId
       return;
     }
-    const fetchEventData = async () => {
+    const fetchInitialData = async () => {
       setLoading(true);
       try {
-        console.log(`Fetching event details for event: ${eventId}`);
-        const response = await eventService.getEventById(eventId);
-        if (response.success) {
-          setEventDetails(response.data);
-          const abstractSettings = response.data?.abstractSettings;
+        const eventResponse = await eventService.getEventById(eventId);
+        if (eventResponse.success) {
+          setEventDetails(eventResponse.data);
+          const abstractSettings = eventResponse.data?.abstractSettings;
           setSettings(abstractSettings);
-          console.log('Abstract settings loaded:', abstractSettings);
+          if (!abstractSettings?.enabled) {
+            toast.error("Abstract submissions are not enabled for this event.");
+            navigate(`/registrant-portal/abstracts?event=${eventId}`);
+            return;
+          }
+          const deadlineDate = parseAdminDateFormat(abstractSettings?.submissionDeadline || abstractSettings?.deadline);
+          const deadlinePassed = deadlineDate ? dayjs().isAfter(deadlineDate) : false;
+          setSubmissionDeadlinePassed(deadlinePassed);
+          if (deadlinePassed && !isEditMode) {
+            toast.warn("The submission deadline has passed. You cannot submit a new abstract.");
+            // Potentially navigate away or disable form for new submissions
+          } else if (deadlinePassed && isEditMode && editingAbstract?.status?.toLowerCase() !== 'revision-requested') {
+            toast.warn("The submission deadline has passed. Only abstracts requiring revision can be updated.");
+            // Potentially disable form fields if not revision-requested status
+          }
 
           if (abstractSettings?.categories?.length > 0) {
             setCategories(
@@ -229,241 +243,163 @@ function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, on
                 value: cat._id,
                 label: cat.name,
                 subTopics: cat.subTopics || [],
-                ...cat // preserve all other properties if needed
+                ...cat
               }))
             );
           } else {
              setCategories([]);
           }
-
-          // Check submission deadline
-          const deadlineDate = parseAdminDateFormat(abstractSettings?.submissionDeadline || abstractSettings?.deadline);
-          const deadlinePassed = deadlineDate ? dayjs().isAfter(deadlineDate) : false; // Default to not passed if no deadline
-          setSubmissionDeadlinePassed(deadlinePassed);
-           if (deadlinePassed) {
-            console.warn('Submission deadline has passed.');
-          }
+        } else {
+          toast.error(eventResponse.message || 'Failed to fetch event details.');
+          navigate('/registrant-portal/dashboard'); // Or a more appropriate fallback
+          return;
+        }
+        if (currentRegistrant?._id) {
+          const abstractsResponse = await abstractService.getAbstracts(eventId, { registration: currentRegistrant._id });
+          if (abstractsResponse.success) {
+            setUserAbstracts(abstractsResponse.data || []);
           } else {
-          toast.error(response.message || 'Failed to fetch event details.');
-          setEventDetails(null);
-          setSettings(null);
+            console.warn("Could not fetch user's existing abstracts for duplicate check:", abstractsResponse.message);
+            setUserAbstracts([]);
+          }
           }
         } catch (err) {
-        toast.error('Error fetching event details: ' + err.message);
-        setEventDetails(null);
-        setSettings(null);
+        toast.error('Error fetching initial data: ' + err.message);
+        navigate('/registrant-portal/dashboard');
+        return;
       } finally {
-         // Loading state is handled by fetchUserAbstracts finally block
+        if (!isEditMode) setLoading(false); 
       }
     };
-    fetchEventData();
-  }, [eventId]); // Re-run if eventId changes
+    fetchInitialData();
+  }, [eventId, isEditMode, currentRegistrant?._id, navigate]); // Removed editingAbstract from dep array here
 
-  // Effect to fetch User Abstracts
-  // Revised Effect to Fetch User Abstracts
+  // Effect to load abstract data if in edit mode
   useEffect(() => {
-    // Capture state available in this specific effect execution
-    const currentEventId = eventId;
-    const currentRegistrantObj = currentRegistrant; // Capture the object
-    const currentEventDetails = eventDetails;
-  
-    // --- Prerequisite Checks ---
-    // 1. Check for essential IDs
-    if (!currentEventId || !currentRegistrantObj?._id) {
-      console.log(`[Abstracts Effect] Waiting: Missing eventId (${currentEventId}) or registrantId (${currentRegistrantObj?._id}).`);
-      // If we are missing IDs, we depend on the main render logic's loading state
-      // which checks authLoading and registrant presence.
-      return; // Don't proceed further in this effect run
-    }
-  
-    // 2. Check if event details (containing settings) are loaded
-    if (!currentEventDetails) {
-      console.log("[Abstracts Effect] Waiting: EventDetails not loaded yet.");
-      // If IDs are present but details are missing, ensure a loading state is potentially shown
-      setLoading(true); // Indicate we are still loading something essential (event details/abstracts)
-      return; // Don't proceed further in this effect run
-    }
-  
-    // --- Prerequisites Met ---
-    // If we reach here, currentEventId, currentRegistrantObj._id, and currentEventDetails are all available
-  
-    const fetchUserAbstractsData = async () => {
-      // Use the confirmed non-null ID from the outer scope check
-      const registrantIdForFetch = currentRegistrantObj._id;
-  
-      console.log(`[Abstracts Effect] Prerequisites met. Fetching abstracts for event ${currentEventId}, user ${registrantIdForFetch}`);
-      setLoading(true); // Indicate abstract fetching is starting
-      try {
-        const params = { registration: registrantIdForFetch };
-        const response = await abstractService.getAbstracts(currentEventId, params);
-        if (response.success) {
-          setUserAbstracts(response.data || []);
-          console.log("[Abstracts Effect] Successfully fetched user abstracts:", response.data);
-        } else {
-          toast.error(response.message || 'Failed to fetch your abstracts.');
-          setUserAbstracts([]);
-          console.error("[Abstracts Effect] Failed to fetch abstracts:", response.message);
-        }
-      } catch (err) {
-        toast.error('Error fetching your abstracts: ' + err.message);
-        setUserAbstracts([]);
-        console.error("[Abstracts Effect] Catch error fetching abstracts:", err);
-      } finally {
-        setLoading(false); // Indicate abstract fetching is complete
-      }
-    };
-  
-    fetchUserAbstractsData();
-  
-    // Dependencies: Re-run if eventId, the registrant object reference, or eventDetails change.
-    // The internal checks handle the "wait" state.
-  }, [eventId, currentRegistrant, eventDetails]); // Using registrant object reference again
+    if (isEditMode && eventId && currentRegistrant?._id && eventDetails) { // Ensure eventDetails (for categories) is loaded
+      setLoading(true); 
+      const fetchAbstractToEdit = async () => {
+        try {
+          const response = await abstractService.getAbstractById(eventId, abstractIdFromParams);
+          if (response.success && response.data) {
+            const abstractData = response.data;
+            setEditingAbstract(abstractData);
+            
+            let categoryValue = '';
+            let validCategoryForEdit = null;
+            // Use categories from state, which are already processed
+            if (abstractData.category && categories.length > 0) { 
+                const catId = typeof abstractData.category === 'object' ? abstractData.category._id : abstractData.category;
+                validCategoryForEdit = categories.find(cat => cat.value === catId);
+                if (validCategoryForEdit) categoryValue = validCategoryForEdit.value;
+            }
 
-   // Effect to handle URL parameter for editing
-  useEffect(() => {
-         // Check if userAbstracts are loaded before attempting to find abstract
-        if (abstractIdFromParams && userAbstracts.length > 0) {
-            const abstractToEdit = userAbstracts.find(abs => abs._id === abstractIdFromParams);
-            if (abstractToEdit) {
-                 // Only call handleEditAbstract if not already editing this one
-                 if (editingAbstract?._id !== abstractToEdit._id) {
-                     handleEditAbstract(abstractToEdit);
+            let topicValue = ''; // This is for subTopic ID
+            if (validCategoryForEdit && (abstractData.subTopic || abstractData.topic)) { // Check original subTopic or topic
+                const subTopics = validCategoryForEdit.subTopics || [];
+                let subTopicIdToMatch = '';
+                if (typeof abstractData.subTopic === 'object' && abstractData.subTopic._id) {
+                  subTopicIdToMatch = abstractData.subTopic._id;
+                } else if (typeof abstractData.subTopic === 'string') {
+                  subTopicIdToMatch = abstractData.subTopic;
+                } else if (typeof abstractData.topic === 'object' && abstractData.topic._id) { // Fallback to old topic field if it was ID
+                  subTopicIdToMatch = abstractData.topic._id;
+                } else if (typeof abstractData.topic === 'string') { // Fallback to old topic field if it was ID string
+                   subTopicIdToMatch = abstractData.topic;
+                }
+                
+                const validSubTopic = subTopics.find(st => st._id === subTopicIdToMatch || st.value === subTopicIdToMatch);
+                if (validSubTopic) topicValue = validSubTopic._id || validSubTopic.value;
+            }
+
+            setAbstractForm({
+              title: abstractData.title || '',
+              authors: abstractData.authors || '',
+              affiliations: abstractData.authorAffiliations || abstractData.affiliations || '',
+              category: categoryValue,
+              topic: topicValue || '', // This state field holds subTopic ID
+              content: abstractData.content || '',
+              file: null, 
+              currentFileName: abstractData.fileName || null,
+            });
+             // Re-check deadline passed toast for edit mode after abstract is loaded
+            if (submissionDeadlinePassed && abstractData.status?.toLowerCase() !== 'revision-requested') {
+                toast.warn("Submission deadline has passed. Only abstracts requiring revision can be updated.", { duration: 5000 });
                  }
         } else {
-                console.warn(`Abstract ID ${abstractIdFromParams} from URL not found in user's abstracts.`);
-                // Navigate back to list view if abstract not found
-                if (currentView === 'form') { 
-                   toast.error('Abstract not found.');
+            toast.error(response.message || 'Failed to load abstract for editing.');
                    navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
                 }
-            }
-        } else if (!abstractIdFromParams && isEditMode) {
-             // If URL param is removed AND we were in edit mode, go back to list
-             console.log("URL parameter removed while editing, returning to list.");
-             resetAbstractForm();
-             setCurrentView('list');
+        } catch (error) {
+          toast.error('Error loading abstract: ' + error.message);
+          navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
+        } finally {
+          setLoading(false); 
         }
-        // No specific action needed if !abstractIdFromParams and not in edit mode (either list or new form)
-        
-   }, [abstractIdFromParams, userAbstracts, navigate, eventId, isEditMode, currentView, editingAbstract]); // Dependencies updated
-
-  useEffect(() => {
-    if (!abstract) return;
-    if (isEdit && Array.isArray(categories) && categories.length > 0) {
-      // --- CATEGORY MAPPING ---
-      let categoryValue = '';
-      let validCategory = null;
-      if (abstract.category) {
-        // Try to match by _id, value, or name (string or object)
-        const catId = typeof abstract.category === 'object' ? abstract.category._id : abstract.category;
-        const catName = typeof abstract.category === 'object' ? abstract.category.name : abstract.category;
-        validCategory = categories.find(cat =>
-          cat.value === catId || cat._id === catId || cat.label === catName || cat.name === catName
-        );
-        if (validCategory) {
-          categoryValue = validCategory.value;
-        }
+      };
+      
+      if (categories.length > 0 || (eventDetails && !settings?.categories?.length)) {
+          fetchAbstractToEdit();
+      } else if (!loading && eventDetails && categories.length === 0 && settings?.categories?.length > 0){
+          // This case means eventDetails loaded, settings show categories, but state `categories` isn't updated yet.
+          // This might indicate a race condition or a need to ensure `categories` state is set before this effect runs.
+          // Or, ensure fetchAbstractToEdit is robust enough if `categories` is temporarily empty.
+          console.warn("Trying to fetch abstract for edit, but categories state might not be fully populated yet.");
+          fetchAbstractToEdit(); // Attempt anyway, category mapping might be partial initially
       }
-
-      // --- TOPIC MAPPING ---
-      let topicValue = '';
-      if (validCategory && (abstract.topic || abstract.subTopic)) {
-        const subTopics = validCategory.subTopics || [];
-        let topicId = '';
-        let topicName = '';
-        if (typeof abstract.topic === 'object') {
-          topicId = abstract.topic._id;
-          topicName = abstract.topic.name;
-        } else if (typeof abstract.topic === 'string') {
-          topicName = abstract.topic;
-        }
-        if (!topicName && typeof abstract.subTopic === 'string') {
-          topicName = abstract.subTopic;
-        } else if (!topicName && typeof abstract.subTopic === 'object') {
-          topicId = abstract.subTopic._id;
-          topicName = abstract.subTopic.name;
-        }
-        // Try to match by _id or name
-        const validTopic = subTopics.find(st =>
-          st._id === topicId || st.name === topicName
-        );
-        if (validTopic) {
-          topicValue = validTopic._id;
-        }
-      }
-
-      setAbstractForm(prev => ({
-        ...prev,
-        title: abstract.title || '',
-        authors: abstract.authors || '',
-        affiliations: abstract.authorAffiliations || abstract.affiliations || '',
-        category: categoryValue,
-        topic: topicValue || '',
-        content: abstract.content || '',
-        file: null,
-        existingAbstractId: abstract._id,
-        currentFileName: abstract.fileName || null,
-      }));
+      
+    } else if (!isEditMode) {
+      resetAbstractForm();
+      if (eventDetails && !loading) setLoading(false); 
     }
-  }, [abstract, isEdit, categories]);
+  }, [isEditMode, abstractIdFromParams, eventId, currentRegistrant, navigate, categories, eventDetails, settings, submissionDeadlinePassed]); // Added submissionDeadlinePassed
 
-  // --- Form State Management ---
+
   const resetAbstractForm = useCallback(() => {
     setAbstractForm({
       title: '',
       authors: '',
       affiliations: '',
-      category: categories[0]?.value || '', // Default to first category or empty
+      category: categories[0]?.value || '',
       topic: '',
       content: '',
       file: null,
-      existingAbstractId: null,
       currentFileName: null,
     });
     setFormErrors({});
-    setEditingAbstract(null); // Clear the object being edited
-    setSubmitMessage({ type: '', text: '' }); // Clear submission message
-     // Reset file input visually
+    setEditingAbstract(null); 
+    setSubmitMessage({ type: '', text: '' });
      const fileInput = document.getElementById('file-upload-input'); 
      if (fileInput) fileInput.value = '';
-  }, [categories]); // Depend on categories for default value
+  }, [categories]);
+
+  useEffect(() => { // Ensure form is reset if categories change and it's a new form
+    if (!isEditMode) {
+        resetAbstractForm();
+    }
+  }, [categories, isEditMode, resetAbstractForm]);
+
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setAbstractForm(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    // Clear error for this field if it exists
-    if (formErrors[name]) {
-      setFormErrors(prev => ({ ...prev, [name]: null }));
-    }
+    setAbstractForm(prev => ({ ...prev, [name]: value }));
+    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: null }));
   };
 
-  // Specific handler for Select components in MUI
   const handleSelectChange = (e) => {
     const { name, value } = e.target;
-    setAbstractForm(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    if (formErrors[name]) {
-      setFormErrors(prev => ({ ...prev, [name]: null }));
-    }
+    setAbstractForm(prev => ({ ...prev, [name]: value, ...(name === 'category' && { topic: '' }) })); // Reset topic if category changes
+    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: null }));
+    if (name === 'category' && formErrors.topic) setFormErrors(prev => ({ ...prev, topic: null}));
   };
 
   const handleFileChange = (selectedFile) => {
-      // selectedFile is the File object or null
       setAbstractForm(prev => ({
           ...prev,
-          file: selectedFile, // Store the File object
-          // If a new file is selected, update currentFileName. If selection cancelled (null), keep existing name if editing.
-          currentFileName: selectedFile ? selectedFile.name : (editingAbstract?.fileName || null) 
+      file: selectedFile,
+      currentFileName: selectedFile ? selectedFile.name : (editingAbstract?.fileName && !selectedFile ? editingAbstract.fileName : null)
       }));
-      if (formErrors.file) {
-          setFormErrors(prev => ({ ...prev, file: null }));
-      }
-       // Clear the actual file input value if selection cancelled
+    if (formErrors.file) setFormErrors(prev => ({ ...prev, file: null }));
       if (!selectedFile) {
           const fileInput = document.getElementById('file-upload-input');
           if (fileInput) fileInput.value = '';
@@ -471,82 +407,63 @@ function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, on
   };
   
   const handleRemoveFile = () => {
-      setAbstractForm(prev => ({
-          ...prev,
-          file: null, // Clear the File object
-          currentFileName: null // Clear display name
-      }));
-      // Also clear potential file input value visually
-      const fileInput = document.getElementById('file-upload-input'); 
-      if (fileInput) fileInput.value = '';
-      console.log("File removed by user.");
-       // Clear file error if it exists
-       if (formErrors.file) {
-         setFormErrors(prev => ({ ...prev, file: null }));
+    setAbstractForm(prev => ({ ...prev, file: null, currentFileName: null }));
+    // If there was an initial file and we remove it, this state should be clear
+    if (isEditMode && editingAbstract?.filePath) {
+        // We might need a flag to indicate the original file should be deleted on submit
+        // For now, just clearing the selection. The backend will handle dissociation if a new file is (not) uploaded.
        }
   };
 
-  // --- Validation ---
   const validateAbstractForm = () => {
     const errors = {};
-    const { title, authors, affiliations, category, topic, content, file } = abstractForm;
-    const maxWords = settings?.maxLength || 500; // Default 500 words
-    const maxSize = (settings?.maxFileSize || 5) * 1024 * 1024; // Default 5MB
-    const allowedTypesString = settings?.allowedFileTypes || '.pdf,.doc,.docx'; // Use settings or default
-    const allowedTypesArray = allowedTypesString.split(',').map(t => t.trim().toLowerCase());
+    const { title, authors, category, affiliations, content, file } = abstractForm;
 
-    if (!title.trim()) errors.title = 'Title is required';
-    if (!authors.trim()) errors.authors = 'Authors are required';
-    if (!affiliations.trim()) errors.affiliations = 'Affiliations are required';
-    if (!category) errors.category = 'Please select a category';
-    if (!topic) errors.topic = 'Please select a topic';
-    if (!content.trim()) errors.content = 'Abstract content is required';
-    else {
-        const wordCount = content.trim().split(/\s+/).length;
-        if (wordCount > maxWords) {
-            errors.content = `Abstract exceeds maximum word count of ${maxWords} words (currently ${wordCount}).`;
-        }
-    }
+    if (!title?.trim()) errors.title = 'Title is required.';
+    if (!authors?.trim()) errors.authors = 'Authors are required.';
+    // Affiliations are no longer mandatory
+    // if (!affiliations?.trim()) errors.affiliations = 'Affiliations are required.';
+    if (!category) errors.category = 'Category is required.';
 
-     // File validation (only if file upload is enabled AND a file is selected)
-     // Don't validate if editing and no NEW file is selected
-     if (settings?.allowFiles && file) {
-       if (file.size > maxSize) {
-         errors.file = `File exceeds maximum size of ${settings?.maxFileSize || 5}MB.`;
-       }
-       // Basic type check based on extension
-       const fileExtension = `.${file.name.split('.').pop()?.toLowerCase()}`;
-        if (!allowedTypesArray.includes(fileExtension) && !allowedTypesArray.includes(file.type)) {
-           console.warn(`File extension/type check failed: ext=${fileExtension}, type=${file.type} vs allowed=${allowedTypesArray.join('/')}`);
-           errors.file = `Invalid file type. Allowed types: ${allowedTypesString.replace(/\./g, '')}`;
-        }
-     }
+    // The requirement for either content or a file is removed.
+    // const contentText = content?.replace(/<(.|\n)*?>/g, '').trim();
+    // if (!contentText && !file && !(isEditMode && editingAbstract?.filePath)) {
+    //   errors.contentOrFile = 'Either abstract content or a file is required.';
+    // }
 
-    // Duplicate category check (only for new submissions)
-    if (!isEditMode) {
-      // Find abstracts where the category ID matches the selected category
-      const existingAbstractInCategory = userAbstracts.find(abs => {
-          const absCategoryId = typeof abs.category === 'object' ? abs.category?._id : abs.category;
-          return absCategoryId === category;
+    // Client-side check for duplicate category submission by the same user for the same event
+    if (!isEditMode && userAbstracts && userAbstracts.length > 0 && eventDetails && eventId) {
+      const eventCategories = eventDetails?.abstractSettings?.categories || [];
+      // Ensure getCategoryNameById is available and correctly used
+      const selectedCategoryObject = eventCategories.find(cat => cat._id === category || cat.value === category);
+      const selectedCategoryName = selectedCategoryObject ? selectedCategoryObject.name : 'Unknown Category';
+
+      if (selectedCategoryName && selectedCategoryName !== 'Unknown Category') {
+        const hasSubmittedCategory = userAbstracts.some(abs => {
+          // Ensure comparison is robust, abs.category might be an ID
+          const abstractCategoryObject = eventCategories.find(cat => cat._id === abs.category || cat.value === abs.category);
+          const abstractCategoryName = abstractCategoryObject ? abstractCategoryObject.name : 'Unknown Category';
+          return abstractCategoryName === selectedCategoryName && abs.eventId === eventId;
       });
-      if (existingAbstractInCategory) {
-        errors.category = 'You have already submitted an abstract for this category.';
+        if (hasSubmittedCategory) {
+          errors.category = `You have already submitted an abstract for the category: ${selectedCategoryName}.`;
       }
     }
-
+    }
     setFormErrors(errors);
-    console.log("Validation errors:", errors); // Log validation results
     return Object.keys(errors).length === 0;
   };
 
-  // --- Actions ---
   const handleSubmitAbstract = async (e) => {
     e.preventDefault();
-    // Prevent submission/update if deadline passed (allow viewing though)
-    if (submissionDeadlinePassed) { 
-       toast.error("The submission deadline has passed. Cannot submit or update abstract.");
+    if (submissionDeadlinePassed && isEditMode && editingAbstract?.status?.toLowerCase() !== 'revision-requested') { 
+       toast.error("The submission deadline has passed. Only abstracts requiring revision can be updated.");
+        return;
+    } else if (submissionDeadlinePassed && !isEditMode) {
+        toast.error("The submission deadline has passed. Cannot submit new abstract.");
         return;
       }
+
     if (!validateAbstractForm()) {
         toast.error("Please fix the errors in the form.");
       return;
@@ -559,67 +476,77 @@ function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, on
     setFormSubmitting(true);
     setSubmitMessage({ type: '', text: '' });
 
-    // Use FormData for potential file upload
-    const formData = new FormData();
-    formData.append('title', abstractForm.title);
-    formData.append('authors', abstractForm.authors);
-    // Ensure backend field name matches (e.g., authorAffiliations or affiliations)
-    formData.append('authorAffiliations', abstractForm.affiliations); 
-    formData.append('category', abstractForm.category);
-    formData.append('topic', abstractForm.topic);
-    formData.append('content', abstractForm.content);
-    formData.append('event', eventId);
-    formData.append('registration', currentRegistrant._id); // Send registration ID
-
-    // Append file only if a new one is selected
-    if (abstractForm.file) {
-      formData.append('abstractFile', abstractForm.file);
-      console.log("Appending new file to FormData:", abstractForm.file.name);
-    } else if (isEditMode && !abstractForm.currentFileName && editingAbstract?.fileName) {
-       // Signal removal of existing file if file was explicitly removed in the form
-       // This requires backend support to check for this field
-       formData.append('removeExistingFile', 'true');
-       console.log("Signalling removal of existing file.");
+    // Construct metadata payload (JSON)
+    const metadataPayload = {
+      title: abstractForm.title,
+      authors: abstractForm.authors,
+      authorAffiliations: abstractForm.affiliations, // Ensure backend handles 'authorAffiliations'
+      category: abstractForm.category, // This is category ID
+      subTopic: abstractForm.topic, // abstractForm.topic stores subTopic ID
+      topic: getCategoryNameById(abstractForm.category, categories), // This sends Category Name as 'topic'
+      content: abstractForm.content,
+      event: eventId,
+      registration: currentRegistrant._id,
+      // Do not include file info in metadata payload
+    };
+    
+    // If content is empty and file is present, mimic AbstractPortal's behavior (optional)
+    if (!metadataPayload.content && abstractForm.file) {
+        metadataPayload.content = '[See attached file]';
     }
 
+
     try {
-      let response;
+      let abstractIdToUse = abstractIdFromParams;
+      let metadataResponse;
+
       if (isEditMode) {
-        console.log(`Updating abstract ${abstractForm.existingAbstractId} for event ${eventId}`);
-        // Ensure service handles FormData correctly for updates
-        response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, formData);
+        metadataResponse = await abstractService.updateAbstract(eventId, abstractIdToUse, metadataPayload);
       } else {
-        console.log(`Creating new abstract for event ${eventId}`);
-        response = await abstractService.createAbstract(eventId, formData); // Pass eventId separately if needed by service
+        metadataResponse = await abstractService.createAbstract(eventId, metadataPayload);
+        if (metadataResponse.success && metadataResponse.data?._id) {
+          abstractIdToUse = metadataResponse.data._id; // Get new abstract ID for file upload
+        }
       }
       
-      if (response.success) {
-        toast.success(`Abstract ${isEditMode ? 'updated' : 'submitted'} successfully!`);
-        const updatedAbstracts = isEditMode
-            ? userAbstracts.map(abs => abs._id === response.data._id ? response.data : abs)
-            : [...userAbstracts, response.data];
-        setUserAbstracts(updatedAbstracts);
-        resetAbstractForm(); 
-        setCurrentView('list'); // Go back to list view
-        // Clear edit param from URL
-        navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
+      if (metadataResponse.success) {
+        toast.success(`Abstract metadata ${isEditMode ? 'updated' : 'submitted'} successfully!`);
+
+        // Step 2: Upload file if present
+        if (abstractForm.file && abstractIdToUse) {
+          toast.loading('Uploading file...');
+          const fileUploadResponse = await abstractService.uploadAbstractFile(eventId, abstractIdToUse, abstractForm.file);
+          toast.dismiss(); // Dismiss loading toast
+          if (fileUploadResponse.success) {
+            toast.success('File uploaded successfully!');
           } else {
-        setSubmitMessage({ type: 'error', text: response.message || 'Submission failed.' });
-        toast.error(response.message || 'Submission failed.');
-         // Map potential backend validation errors (if service provides them)
-         if (response.errors) {
+            toast.error(`File upload failed: ${fileUploadResponse.message || 'Unknown error'}`);
+            // Abstract metadata was saved, but file upload failed. User might need to re-upload.
+          }
+        } else if (isEditMode && !abstractForm.currentFileName && editingAbstract?.fileName && abstractForm.file === null) {
+            // Logic to explicitly tell backend to remove file if UI indicated removal and no new file.
+            // Current `updateAbstract` on backend might not support this directly for registrants.
+            // `uploadAbstractFile` with null or a special flag could be an option, or admin action.
+            // For now, if user removes file from form and doesn't add new one, existing server file persists unless `uploadAbstractFile` replaces it.
+            // If we want to support explicit deletion by registrant without new upload:
+            // await abstractService.removeAbstractFile(eventId, abstractIdToUse); // Hypothetical service call
+            console.log("File was removed from form, but no new file provided. Existing server file might persist or need admin removal if not replaced.");
+        }
+        
+        navigate(`/registrant-portal/event/${eventId}/abstracts`, { replace: true });
+
+      } else {
+        setSubmitMessage({ type: 'error', text: metadataResponse.message || 'Submission failed.' });
+        toast.error(metadataResponse.message || 'Submission failed.');
+         if (metadataResponse.errors) { // Assuming backend might send structured errors
            const backendErrors = {};
-           for (const key in response.errors) {
-              // Adjust keys if necessary (e.g., authorAffiliations vs affiliations)
-             backendErrors[key === 'authorAffiliations' ? 'affiliations' : key] = response.errors[key].msg || 'Invalid value';
+           for (const key in metadataResponse.errors) {
+             backendErrors[key === 'authorAffiliations' ? 'affiliations' : key] = metadataResponse.errors[key].msg || 'Invalid value';
            }
            setFormErrors(prev => ({ ...prev, ...backendErrors }));
-           console.log("Backend validation errors:", backendErrors);
          }
       }
     } catch (error) {
-        console.error("Catch block error submitting abstract:", error);
-        // Check if the error response contains details
         const errorMsg = error.response?.data?.message || error.message || 'An unexpected error occurred.';
       setSubmitMessage({ type: 'error', text: errorMsg });
       toast.error(errorMsg);
@@ -628,364 +555,181 @@ function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, on
     }
   };
 
-  const handleDeleteAbstract = async (abstractIdToDelete) => {
-    // Prevent deletion if deadline passed? Optional rule.
-    // if (submissionDeadlinePassed) { 
-    //    toast.error("The submission deadline has passed. Cannot delete abstract.");
-    //    return;
-    // }
-    if (!window.confirm('Are you sure you want to delete this abstract? This cannot be undone.')) return;
+  // Conditional rendering for loading, errors, or the form
      if (!eventId) {
-        toast.error("Event ID missing, cannot delete.");
-        return;
-     }
-
-    try {
-      console.log(`Deleting abstract ${abstractIdToDelete} for event ${eventId}`);
-      // Ensure abstractService.deleteAbstract uses authenticated request
-      const response = await abstractService.deleteAbstract(eventId, abstractIdToDelete);
-      if (response.success) {
-        toast.success('Abstract deleted successfully.');
-        setUserAbstracts(prev => prev.filter(abs => abs._id !== abstractIdToDelete)); // Update list immediately
-        // If the deleted abstract was being edited, reset form and go to list
-        if (isEditMode && editingAbstract?._id === abstractIdToDelete) {
-          resetAbstractForm();
-          setCurrentView('list');
-          // Clear edit param from URL
-          navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
-        }
-      } else {
-        toast.error(response.message || 'Failed to delete abstract.');
-      }
-    } catch (error) {
-      toast.error(error.message || 'Error deleting abstract.');
-      console.error("Error deleting abstract:", error);
-    }
-  };
-
-  // Use useCallback to prevent unnecessary re-renders if passed as prop
-  const handleEditAbstract = useCallback((abstractToEdit) => {
-    if (!abstractToEdit) return;
-    console.log("Editing abstract:", abstractToEdit);
-    setEditingAbstract(abstractToEdit); // Store the full abstract object being edited
-    setAbstractForm({
-      title: abstractToEdit.title || '',
-      authors: abstractToEdit.authors || '', // Assuming authors/affiliations are simple strings
-      affiliations: abstractToEdit.authorAffiliations || abstractToEdit.affiliations || '',
-      // Handle category potentially being an object or just an ID string
-      category: typeof abstractToEdit.category === 'object' ? abstractToEdit.category?._id : abstractToEdit.category || '',
-      topic: typeof abstractToEdit.topic === 'object' ? abstractToEdit.topic?._id : abstractToEdit.topic || '',
-      content: abstractToEdit.content || '',
-      file: null, // Clear file object on edit start, rely on currentFileName
-      existingAbstractId: abstractToEdit._id,
-      currentFileName: abstractToEdit.fileName || null, // Show existing file name
-    });
-    setFormErrors({}); // Clear previous errors
-    setSubmitMessage({ type: '', text: '' });
-    setCurrentView('form'); // Switch to form view
-     // Update URL to reflect editing state
-     navigate(`/registrant-portal/abstracts/${abstractToEdit._id}?event=${eventId}`, { replace: true });
-  }, [navigate, eventId]); // Dependencies for useCallback
-
-  const handleAddNewAbstract = () => {
-    if (submissionDeadlinePassed) {
-        toast.error("The submission deadline has passed. Cannot submit new abstracts.");
-        return;
-    }
-    resetAbstractForm();
-    setCurrentView('form');
-     // Ensure URL doesn't have an abstract ID param
-     navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
-  };
-
-  // TODO: Implement handleViewAbstract using a Modal component if needed
-  const handleViewAbstract = (abstract) => {
-    console.log("View abstract details:", abstract);
-    // Implementation would likely involve setting state for a Modal
-    // and passing the abstract data to it.
-    toast.info('View details functionality not implemented yet.');
-  };
-
-  // --- Render Logic ---
-
-  // 1. Check for Event ID first - Essential for any further action
-  if (!eventId) {
-    return <MuiAlert severity="error">Event ID not found. Cannot load abstract submissions.</MuiAlert>;
+    return <MuiAlert severity="error" sx={{m:2}}>Event ID not found. Cannot load abstract submission form.</MuiAlert>;
   }
-
-  // 2. Check Authentication and Registrant Availability
   if (authLoading || !currentRegistrant) {
-    // Show loading if auth is in progress OR if auth is finished but registrant object isn't populated yet
     return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3, height: 'calc(100vh - 200px)' }}>
+            <CircularProgress />
+        <Typography sx={{ ml: 2 }}>{authLoading ? 'Authenticating...' : 'Loading registrant data...'}</Typography>
+        </Box>
+    );
+  }
+  if (loading) { // Covers loading event details or abstract for edit
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3, height: 'calc(100vh - 200px)' }}>
             <CircularProgress />
             <Typography sx={{ ml: 2 }}>
-              {authLoading ? 'Authenticating...' : 'Loading registrant data...'}
+          {isEditMode && !editingAbstract ? 'Loading abstract details...' : 'Loading event settings...'}
             </Typography>
         </Box>
     );
   }
-
-  // --- At this point, we have eventId AND registrant --- 
-
-  // 3. Check Core Data Loading State (Event Details and User Abstracts)
-  if (loading) {
-    return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-            <CircularProgress />
-            {/* Determine more specific message based on what might be loading */}
-            <Typography sx={{ ml: 2 }}>
-              { !eventDetails ? 'Loading event data...' : 'Loading your abstracts...' }
-            </Typography>
-        </Box>
-    );
-  }
-  
-  // 4. Check if Event Details failed to load (after loading is false)
   if (!eventDetails) {
-    return <MuiAlert severity="error">Failed to load event details. Please try again later or contact support.</MuiAlert>;
+    return <MuiAlert severity="error" sx={{m:2}}>Failed to load event details. Please try again later.</MuiAlert>;
   }
-
-  // 5. Check Abstract Settings (after event details loaded)
   if (!settings) {
-     return <MuiAlert severity="warning">Abstract submission settings are not configured for this event.</MuiAlert>;
+    return <MuiAlert severity="warning" sx={{m:2}}>Abstract submission settings are not configured for this event.</MuiAlert>;
   }
   if (!settings.enabled) {
-     return <MuiAlert severity="info">Abstract submissions are not currently enabled for this event.</MuiAlert>;
+    return <MuiAlert severity="info" sx={{m:2}}>Abstract submissions are not currently enabled for this event.</MuiAlert>;
   }
 
-  // --- View Rendering ---
-
-  if (currentView === 'list') {
+  // Main Form Render
     return (
-      <Paper sx={{ p: 2, mt: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h5">Your Abstract Submissions</Typography>
-              <Button
-                  variant="contained"
-                  onClick={handleAddNewAbstract}
-                  disabled={submissionDeadlinePassed} // Disable button if deadline passed
-                  startIcon={<AddCircleOutline />}
-              >
-                  Submit New Abstract
-              </Button>
-          </Box>
-           {submissionDeadlinePassed && (
-             <MuiAlert severity="warning" sx={{ mb: 2 }}>
-               The submission deadline ({formatDate(settings?.submissionDeadline)}) has passed. You can view existing abstracts but cannot submit new ones or edit existing ones.
-             </MuiAlert>
-           )}
-
-          {userAbstracts.length === 0 ? (
-              <Typography sx={{ textAlign: 'center', p: 3, color: 'text.secondary' }}>
-                  You haven't submitted any abstracts yet.
-              </Typography>
-          ) : (
-              <List disablePadding>
-                  {userAbstracts.map((abs) => (
-                      <React.Fragment key={abs._id}>
-                          <ListItem >
-                              <ListItemText
-                                  primary={abs.title || 'Untitled Abstract'}
-                                  // Display category name if available
-                                  secondary={`Category: ${abs.category?.name || 'N/A'} | Submitted: ${formatDate(abs.submissionDate || abs.createdAt)} | Status: ${abs.status || 'Submitted'}`}
-                               />
-                              <ListItemSecondaryAction>
-                                  {/* View Button - Implement Modal Later */}
-                                  <IconButton edge="end" aria-label="view" onClick={() => handleViewAbstract(abs)} sx={{ mr: 0.5 }}>
-                                       <VisibilityIcon />
-                                  </IconButton>
-                                  {/* Edit Button - Conditionally enable */}
-                                  <IconButton
-                                     edge="end"
-                                     aria-label="edit"
-                                     onClick={() => handleEditAbstract(abs)}
-                                     disabled={submissionDeadlinePassed} // Disable edit after deadline
-                                     sx={{ mr: 0.5 }}
-                                  >
-                                      <EditIcon />
-                                  </IconButton>
-                                  {/* Delete Button */}
-                                  <IconButton 
-                                     edge="end" 
-                                     aria-label="delete" 
-                                     onClick={() => handleDeleteAbstract(abs._id)}
-                                     // Optionally disable delete after deadline too
-                                     // disabled={submissionDeadlinePassed} 
-                                  >
-                                      <DeleteIcon color="error" />
-                                  </IconButton>
-                              </ListItemSecondaryAction>
-                          </ListItem>
-                          <Divider component="li" />
-                      </React.Fragment>
-                  ))}
-              </List>
-          )}
-      </Paper>
-    );
-  }
-
-  if (currentView === 'form') {
-    return (
-      <Paper sx={{ p: 3, mt: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h5">
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Paper elevation={3} sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main', mb: 3, textAlign: 'center' }}>
             {isEditMode ? 'Edit Abstract' : 'Submit New Abstract'}
           </Typography>
-           <Button variant="outlined" onClick={() => { resetAbstractForm(); setCurrentView('list'); navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true }); }}>
-             Back to List
-                </Button>
-        </Box>
+        <Typography variant="subtitle1" gutterBottom sx={{ mb: 3, textAlign: 'center', color: 'text.secondary' }}>
+          For event: {eventDetails.name}
+        </Typography>
 
-         {submissionDeadlinePassed && (
-             <MuiAlert severity="warning" sx={{ mb: 2 }}>
-                 The submission deadline ({formatDate(settings?.submissionDeadline)}) has passed. You can view but no longer submit or edit abstracts.
+        {submitMessage.text && (
+          <MuiAlert severity={submitMessage.type || 'info'} sx={{ mb: 3 }} onClose={() => setSubmitMessage({ type: '', text: '' })}>
+            {submitMessage.text}
              </MuiAlert>
            )}
-        {submitMessage.text && <MuiAlert severity={submitMessage.type || 'info'} sx={{ mb: 2 }}>{submitMessage.text}</MuiAlert>}
 
-        <Box component="form" onSubmit={handleSubmitAbstract} noValidate sx={{ mt: 1 }}>
+        <form onSubmit={handleSubmitAbstract}>
           <Grid container spacing={3}>
-            {/* Title */}
             <Grid item xs={12}>
               <TextField
-                name="title"
+                fullWidth 
                 label="Abstract Title"
+                name="title" 
                 value={abstractForm.title}
                 onChange={handleInputChange}
                 error={!!formErrors.title}
                 helperText={formErrors.title}
                 required
-                fullWidth
-                variant="outlined"
-                disabled={formSubmitting || submissionDeadlinePassed}
+                disabled={submissionDeadlinePassed && !isEditMode}
               />
             </Grid>
-
-            {/* Authors (Simple Text Input for now) */}
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} md={6}>
               <TextField
+                fullWidth 
+                label="Author(s)" 
                 name="authors"
-                label="Authors"
                 value={abstractForm.authors}
                 onChange={handleInputChange}
                 error={!!formErrors.authors}
-                helperText={formErrors.authors || "List all author names, separated by commas"}
+                helperText={formErrors.authors}
                 required
-                fullWidth
-                variant="outlined"
-                disabled={formSubmitting || submissionDeadlinePassed}
+                placeholder="e.g., John Doe, Jane Smith"
+                disabled={submissionDeadlinePassed && !isEditMode}
               />
             </Grid>
-
-            {/* Affiliations (Simple Text Input for now) */}
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} md={6}>
               <TextField
+                fullWidth 
+                label="Affiliation(s)"
                 name="affiliations"
-                label="Affiliations"
                 value={abstractForm.affiliations}
                 onChange={handleInputChange}
                 error={!!formErrors.affiliations}
-                helperText={formErrors.affiliations || "List author affiliations"}
-                required
-                fullWidth
-                variant="outlined"
-                disabled={formSubmitting || submissionDeadlinePassed}
+                helperText={formErrors.affiliations}
+                placeholder="e.g., University Name, Organization"
+                disabled={submissionDeadlinePassed && !isEditMode}
               />
             </Grid>
-
-            {/* Category */}
-            <Grid item xs={12}>
-              <FormControl fullWidth required error={!!formErrors.category} disabled={formSubmitting || submissionDeadlinePassed || categories.length === 0 || isEditMode}>
-                <InputLabel id="category-select-label">Category</InputLabel>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth error={!!formErrors.category} disabled={submissionDeadlinePassed && !isEditMode}>
+                <InputLabel id="category-select-label">Category/Topic *</InputLabel>
                 <Select
                   labelId="category-select-label"
-                  id="category"
                   name="category"
-                  value={abstractForm.category || ''}
-                  label="Category"
+                  value={abstractForm.category}
                   onChange={handleSelectChange}
-                  disabled={formSubmitting || submissionDeadlinePassed || categories.length === 0 || isEditMode}
+                  label="Category/Topic *"
+                  disabled={isEditMode || (submissionDeadlinePassed && !isEditMode)} // Disable in edit mode
                 >
-                  <MenuItem value="" disabled><em>Select a category...</em></MenuItem>
-                  {categories.map(cat => (
+                  {categories.length > 0 ? (
+                    categories.map((cat) => (
                     <MenuItem key={cat.value} value={cat.value}>{cat.label}</MenuItem>
-                  ))}
-                  {!categories.length && <MenuItem value="" disabled>No categories defined for this event</MenuItem>}
+                    ))
+                  ) : (
+                    <MenuItem value=""><em>No categories available</em></MenuItem>
+                  )}
                 </Select>
                 {formErrors.category && <FormHelperText>{formErrors.category}</FormHelperText>}
-                {isEditMode && <FormHelperText>This field cannot be changed in edit mode.</FormHelperText>}
-                {categories.length === 0 && !loading && <FormHelperText>No abstract categories available.</FormHelperText>} 
               </FormControl>
             </Grid>
 
-            {/* Topic */}
-            <Grid item xs={12}>
-              <FormControl fullWidth required error={!!formErrors.topic} disabled={formSubmitting || submissionDeadlinePassed || categories.length === 0 || isEditMode}>
-                <InputLabel id="topic-select-label">Topic</InputLabel>
+            {eventDetails && eventDetails.abstractSettings && eventDetails.abstractSettings.categories && eventDetails.abstractSettings.categories.length > 0 && (
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth error={!!formErrors.topic} disabled={!abstractForm.category || isEditMode || (submissionDeadlinePassed && !isEditMode)}>
+                  <InputLabel id="subtopic-select-label">Sub Topic</InputLabel>
                 <Select
-                  labelId="topic-select-label"
-                  id="topic"
+                    labelId="subtopic-select-label"
                   name="topic"
-                  value={abstractForm.topic || ''}
-                  label="Topic"
+                    value={abstractForm.topic}
                   onChange={handleSelectChange}
-                  disabled={formSubmitting || submissionDeadlinePassed || categories.length === 0 || isEditMode}
+                    label="Sub Topic"
+                    disabled={!abstractForm.category || isEditMode || (submissionDeadlinePassed && !isEditMode)} // Disable if no category, or in edit mode
                 >
-                  <MenuItem value="" disabled><em>Select a topic...</em></MenuItem>
+                    <MenuItem value="">
+                      <em>None</em>
+                    </MenuItem>
                   {categories
                     .find(cat => cat.value === abstractForm.category)
                     ?.subTopics?.map(st => (
                       <MenuItem key={st._id} value={st._id}>{st.name}</MenuItem>
-                    )) || []}
-                  {!abstractForm.category && <MenuItem value="" disabled>Select a category first</MenuItem>}
+                      ))}
                 </Select>
                 {formErrors.topic && <FormHelperText>{formErrors.topic}</FormHelperText>}
-                {isEditMode && <FormHelperText>This field cannot be changed in edit mode.</FormHelperText>}
               </FormControl>
             </Grid>
+            )}
 
-            {/* Abstract Content */}
             <Grid item xs={12}>
               <TextField
-                name="content"
+                fullWidth
                 label="Abstract Content"
+                name="content"
                 value={abstractForm.content}
                 onChange={handleInputChange}
-                error={!!formErrors.content}
-                helperText={formErrors.content || `Max ${settings?.maxLength || 500} words. Current: ${abstractForm.content.trim().split(/\s+/).filter(Boolean).length}`}
-                required
-                fullWidth
                 multiline
                 rows={10}
-                variant="outlined"
-                disabled={formSubmitting || submissionDeadlinePassed}
+                error={!!formErrors.content}
+                helperText={formErrors.content || `Max ${settings?.maxLength || 500} words.`}
+                disabled={submissionDeadlinePassed && !isEditMode}
               />
             </Grid>
 
-             {/* File Upload (Optional based on settings) */}
             {settings?.allowFiles && (
               <Grid item xs={12}>
-                  <Typography variant="subtitle1" gutterBottom>File Upload {isEditMode && abstractForm.currentFileName ? '(Replace existing)' : '(Optional)'}</Typography>
+                <Typography variant="subtitle2" gutterBottom sx={{mt:1}}>Attach File (Optional)</Typography>
                    <FileUploadControl
                      onChange={handleFileChange}
-                     onRemove={handleRemoveFile}
                      error={formErrors.file}
-                     accept={settings?.allowedFileTypes || '.pdf,.doc,.docx'} // Pass allowed types
-                     maxSize={(settings?.maxFileSize || 5) * 1024 * 1024} // Pass max size
+                  accept={settings.allowedFileTypes?.join(',') || '.pdf,.doc,.docx,.txt'}
+                  maxSize={(settings.maxFileSizeMB || 5) * 1024 * 1024}
                      currentFileName={abstractForm.currentFileName}
-                     disabled={formSubmitting || submissionDeadlinePassed}
+                  onRemove={handleRemoveFile}
+                  disabled={submissionDeadlinePassed && !isEditMode}
                    />
               </Grid>
             )}
 
-            {/* Submit/Cancel Buttons */}
-            <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}>
+            <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
                     <Button 
                     variant="outlined"
-                    onClick={() => { resetAbstractForm(); setCurrentView('list'); navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true }); }}
-                    disabled={formSubmitting}
+                onClick={() => navigate(`/registrant-portal/abstracts?event=${eventId}`)}
+                disabled={submissionDeadlinePassed && !isEditMode}
                 >
                     Cancel
                     </Button>
@@ -993,19 +737,17 @@ function AbstractSubmissionForm({ abstract = null, isEdit = false, onSuccess, on
                 type="submit" 
                   variant="contained"
                   color="primary"
-                  disabled={formSubmitting || submissionDeadlinePassed}
+                disabled={submissionDeadlinePassed && !isEditMode}
+                startIcon={submissionDeadlinePassed && !isEditMode ? <CircularProgress size={20} color="inherit" /> : null}
                 >
-                  {formSubmitting ? <CircularProgress size={24} /> : (isEditMode ? 'Update Abstract' : 'Submit Abstract')}
+                {submissionDeadlinePassed && !isEditMode ? 'Submission Deadline Passed' : (isEditMode ? 'Update Abstract' : 'Submit Abstract')}
               </Button>
             </Grid>
           </Grid>
-        </Box>
+        </form>
       </Paper>
+    </Container>
     );
-  }
-
-  // Fallback if view state is somehow invalid
-  return <MuiAlert severity="error">Invalid view state. Current view: {currentView}</MuiAlert>;
 }
 
 export default AbstractSubmissionForm;                    

@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useRegistrantAuth } from '../contexts/RegistrantAuthContext';
 import { ActiveEventProvider, useActiveEvent } from '../contexts/ActiveEventContext';
-import apiRegistrant from '../services/apiRegistrant';
 import Button from '../components/common/Button';
+import { Spinner } from '../components/common'; // Assuming Spinner is in common components
 
 // Helper to parse query params
 function useQuery() {
@@ -11,64 +11,37 @@ function useQuery() {
 }
 
 const LayoutContent = () => {
-  const { logout, currentRegistrant } = useRegistrantAuth();
+  const { logout } = useRegistrantAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activeEventId, updateActiveEventId } = useActiveEvent();
-  const [eventInfo, setEventInfo] = useState({ name: 'Loading...' });
-  const [isLoadingEvent, setIsLoadingEvent] = useState(false);
-  const [eventError, setEventError] = useState(null);
+  const {
+    activeEventId, 
+    updateActiveEventId, 
+    activeEventDetails, 
+    isLoadingEventDetails,
+    eventDetailsError 
+  } = useActiveEvent();
 
-  useEffect(() => {
-    const fetchEventInfo = async () => {
-      if (!activeEventId) {
-          console.log('[LayoutContent] No activeEventId, skipping event info fetch.');
-          setEventInfo({ name: 'N/A' });
-          return;
-      }
-      setIsLoadingEvent(true);
-      setEventError(null);
-      console.log(`[LayoutContent] Fetching event info for ID: ${activeEventId}`);
-      try {
-        const response = await apiRegistrant.get(`/events/${activeEventId}`);
-        
-        if (response.status >= 200 && response.status < 300 && response.data?.success && response.data.data) {
-          setEventInfo({
-              name: response.data.data.basicInfo?.eventName || response.data.data.name || 'Event Details',
-          });
-          console.log('[LayoutContent] Event info loaded:', response.data.data.basicInfo?.eventName || response.data.data.name);
-        } else {
-          const errorMessage = response.data?.message || 'Failed to load event details (check API response)';
-          console.error('[LayoutContent] Failed to fetch event details:', errorMessage, 'Response Data:', response.data);
-          setEventError(errorMessage);
-          setEventInfo({ name: 'Error Loading Event' });
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred while loading event details.';
-        console.error('[LayoutContent] Catch Error fetching event details:', error);
-        setEventError(errorMessage);
-        setEventInfo({ name: 'Error Loading Event' });
-      } finally {
-        setIsLoadingEvent(false);
-      }
-    };
-
-    fetchEventInfo();
-  }, [activeEventId]);
-
+  // Navigation items, potentially dynamic based on event features later
   const navigation = useMemo(() => [
     { name: 'Dashboard', path: `/registrant-portal` },
     { name: 'Profile', path: `/registrant-portal/profile` },
     { name: 'Abstracts', path: `/registrant-portal/abstracts` },
+    // Add other common navigation items here
   ], []);
 
   const getPathWithEvent = useCallback((basePath) => {
     if (!activeEventId) return basePath;
-    const url = new URL(basePath, window.location.origin);
-    if (!url.searchParams.has('event')) {
+    try {
+      const url = new URL(basePath, window.location.origin);
+      if (!url.searchParams.has('event')) {
         url.searchParams.set('event', activeEventId);
+      }
+      return `${url.pathname}${url.search}`;
+    } catch (e) {
+      console.error('Error creating URL for navigation:', e);
+      return basePath; // Fallback
     }
-    return `${url.pathname}${url.search}`; 
   }, [activeEventId]);
 
   const navigateWithEvent = useCallback((to, options) => {
@@ -76,9 +49,9 @@ const LayoutContent = () => {
     if (typeof to === 'string') {
       path = getPathWithEvent(to);
     } else if (typeof to === 'number') {
-      navigate(to);
+      navigate(to); // For navigate(-1) etc.
       return;
-    } else {
+    } else { // to is an object (e.g., { pathname, search, hash })
       const targetPath = to.pathname || location.pathname;
       const combinedSearch = new URLSearchParams(to.search);
       if (!combinedSearch.has('event') && activeEventId) {
@@ -107,77 +80,106 @@ const LayoutContent = () => {
 
   const handleLogout = () => {
     logout();
-    updateActiveEventId(null);
+    updateActiveEventId(null); // This now also clears event details in context
     navigate('/registrant-portal/auth/login'); 
   };
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <Link to={getPathWithEvent('/registrant-portal')} className="text-xl font-bold text-gray-800">
-                  {isLoadingEvent ? 'Loading Event...' : eventInfo.name || 'ATLAS Portal'}
-                </Link>
-              </div>
+  const eventDisplayName = useMemo(() => {
+    if (isLoadingEventDetails) return 'Loading Event...';
+    if (eventDetailsError) return 'Error Loading Event';
+    return activeEventDetails?.name || activeEventDetails?.basicInfo?.eventName || 'Event Portal';
+  }, [activeEventDetails, isLoadingEventDetails, eventDetailsError]);
 
-              <nav className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                {navigation.map((item) => (
-                  <Link
-                    key={item.name}
-                    to={getPathWithEvent(item.path)}
-                    className={`${
-                      isActivePath(item.path)
-                        ? 'border-indigo-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                  >
-                    {item.name}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            <div className="flex items-center">
-              <span className="text-sm text-gray-600 mr-4">
-                Welcome, {currentRegistrant?.name || currentRegistrant?.registrationId || 'Registrant'}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Logout
-              </button>
-            </div>
+  // Render function for the header, can be expanded
+  const renderHeader = () => (
+    <header className="bg-white shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex-shrink-0">
+            <Link to={getPathWithEvent('/registrant-portal')} className="text-xl font-bold text-indigo-600">
+              {eventDisplayName}
+            </Link>
           </div>
-        </div>
-      </header>
-
-      <nav className="sm:hidden bg-white border-t border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-around space-x-3 py-3">
+          <nav className="hidden sm:ml-6 sm:flex sm:space-x-8">
             {navigation.map((item) => (
               <Link
                 key={item.name}
                 to={getPathWithEvent(item.path)}
-                className={`${
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                   isActivePath(item.path)
-                    ? 'text-indigo-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                } text-sm font-medium flex flex-col items-center`}
+                    ? 'border-indigo-500 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <span>{item.name}</span>
+                {item.name}
               </Link>
             ))}
+          </nav>
+          <div className="hidden sm:ml-6 sm:flex sm:items-center">
+            <Button onClick={handleLogout} variant="outline" size="sm">
+              Logout
+            </Button>
           </div>
+          {/* Mobile menu button can be added here if needed */}
         </div>
-      </nav>
+      </div>
+    </header>
+  );
 
+  const renderMobileNav = () => (
+    <nav className="sm:hidden bg-white border-t border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-around space-x-3 py-3">
+          {navigation.map((item) => (
+            <Link
+              key={item.name}
+              to={getPathWithEvent(item.path)}
+              className={`${
+                isActivePath(item.path)
+                  ? 'text-indigo-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              } text-sm font-medium flex flex-col items-center`}
+            >
+              <span>{item.name}</span>
+            </Link>
+          ))}
+          {/* Mobile Logout Button */}
+          <button
+            onClick={handleLogout}
+            className="text-sm font-medium flex flex-col items-center text-red-600 hover:text-red-800 focus:outline-none"
+            style={{ minWidth: 48 }}
+          >
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {renderHeader()}
+      {renderMobileNav()}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-4 sm:px-0">
-          {!activeEventId ? (
+          {isLoadingEventDetails && !activeEventDetails && (
+            <div className="flex justify-center items-center h-64">
+              <Spinner size="xl" />
+              <p className="ml-3 text-lg">Loading event data...</p>
+            </div>
+          )}
+          {!isLoadingEventDetails && eventDetailsError && (
+             <div className="text-center p-8 bg-red-50 border border-red-200 rounded-lg">
+               <h2 className="text-xl font-semibold text-red-700">Error Loading Event</h2>
+               <p className="text-red-600 mt-2 mb-4">
+                 {eventDetailsError}
+               </p>
+               <Button onClick={() => navigate('/registrant-portal/auth/login')} variant="danger">
+                 Go to Login
+               </Button>
+             </div>
+          )}
+          {!isLoadingEventDetails && !eventDetailsError && !activeEventId && (
             <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg">
               <h2 className="text-xl font-semibold text-yellow-700">Event Context Missing</h2>
               <p className="text-yellow-600 mt-2 mb-4">
@@ -187,8 +189,9 @@ const LayoutContent = () => {
                 Go to Login
               </Button>
             </div>
-          ) : (
-            <Outlet />
+          )}
+          {!isLoadingEventDetails && !eventDetailsError && activeEventId && (
+            <Outlet /> // Render child routes only if eventId exists and no error
           )}
         </div>
       </main>
@@ -200,38 +203,48 @@ const RegistrantPortalLayout = () => {
   const query = useQuery();
   const navigate = useNavigate();
   const eventIdFromQuery = query.get('event');
-  const { hasEventAccess } = useRegistrantAuth();
+  const { currentRegistrant, hasEventAccess } = useRegistrantAuth(); // Added currentRegistrant
   
   useEffect(() => {
     const storedEventId = localStorage.getItem('activeEventId');
-    if (eventIdFromQuery) {
-      console.log('[RegistrantPortalLayout] Event ID from URL query (?event=):', eventIdFromQuery);
-      if (!hasEventAccess(eventIdFromQuery)) {
-        console.warn(`[RegistrantPortalLayout] Registrant does not have access to event ${eventIdFromQuery}`);
-        navigate('/registrant-portal/auth/login');
+    const targetEventId = eventIdFromQuery || storedEventId;
+
+    if (targetEventId) {
+      console.log(`[RegistrantPortalLayout] Target Event ID for access check: ${targetEventId}`);
+      // Wait for currentRegistrant to be loaded before checking access
+      if (currentRegistrant === undefined) { // Still loading registrant context
+        console.log("[RegistrantPortalLayout] Waiting for registrant data before event access check.");
         return;
       }
-      if (storedEventId !== eventIdFromQuery) {
-        localStorage.setItem('activeEventId', eventIdFromQuery); 
-        console.log('[RegistrantPortalLayout] Updated localStorage with eventId from query.');
-      }
-    } else if (storedEventId) {
-      console.log('[RegistrantPortalLayout] No event in query, using stored eventId:', storedEventId, '. Will update URL.');
-      if (!hasEventAccess(storedEventId)) {
-        console.warn(`[RegistrantPortalLayout] Registrant does not have access to event ${storedEventId}`);
-        navigate('/registrant-portal/auth/login');
+      if (!hasEventAccess(targetEventId)) {
+        console.warn(`[RegistrantPortalLayout] Registrant does not have access to event ${targetEventId}. Redirecting to login.`);
+        navigate('/registrant-portal/auth/login', { replace: true });
         return;
       }
-      const currentPath = window.location.pathname;
-      navigate(`${currentPath}?event=${storedEventId}`, { replace: true });
+      // If using storedEventId and eventIdFromQuery is missing, update URL
+      if (!eventIdFromQuery && storedEventId) {
+        console.log('[RegistrantPortalLayout] No event in query, using stored eventId and updating URL.');
+        navigate(`${location.pathname}?event=${storedEventId}`, { replace: true });
+      }
+      // If eventIdFromQuery is present and different from stored, localStorage will be updated by ActiveEventProvider
     } else {
-      console.warn('[RegistrantPortalLayout] No event ID found in URL query or localStorage. Portal may not function correctly.');
-      navigate('/registrant-portal/auth/login');
+      console.warn('[RegistrantPortalLayout] No event ID found in URL query or localStorage. Redirecting to login.');
+      navigate('/registrant-portal/auth/login', { replace: true });
     }
-  }, [eventIdFromQuery, navigate, hasEventAccess]);
+  }, [eventIdFromQuery, navigate, hasEventAccess, location.pathname, currentRegistrant]);
+
+  // Render ActiveEventProvider only if we have a valid eventIdFromQuery or one from storage to pass to it.
+  // The useEffect above handles redirection if access is denied or no ID is found.
+  const initialEventIdForProvider = eventIdFromQuery || localStorage.getItem('activeEventId');
+
+  if (!initialEventIdForProvider && !currentRegistrant) {
+    // If no ID and registrant potentially not loaded, show minimal loading or redirect if appropriate
+    // This case should ideally be handled by the useEffect redirecting to login quickly
+    return <div className="flex justify-center items-center h-screen"><Spinner size="xl" /><p className="ml-3">Initializing...</p></div>;
+  }
 
   return (
-    <ActiveEventProvider eventIdFromQuery={eventIdFromQuery}>
+    <ActiveEventProvider eventIdFromQuery={initialEventIdForProvider}>
       <LayoutContent />
     </ActiveEventProvider>
   );

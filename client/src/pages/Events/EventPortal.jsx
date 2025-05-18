@@ -27,6 +27,7 @@ import {
 import { Card, Tabs, Badge, Button, Spinner, Alert, SafeCard } from '../../components/common';
 import eventService from '../../services/eventService';
 import { FiUsers, FiTag, FiPackage, FiFileText, FiPrinter, FiBarChart2, FiSettings, FiMail } from 'react-icons/fi';
+import { FaBullhorn } from 'react-icons/fa';
 import { formatDate, formatDateTimeRelative } from '../../utils/dateUtils';
 import RegistrationsTab from './registrations/RegistrationsTab';
 import CategoriesTab from './categories/CategoriesTab';
@@ -60,6 +61,7 @@ import {
 import ResourcesTab from './resources/ResourcesTab';
 import AbstractsTab from './abstracts/AbstractsTab';
 import EventUserManagementTab from './settings/EventUserManagementTab'; // Import the component
+import AnnouncementsTab from './announcements/AnnouncementsTab'; // Import the AnnouncementsTab component
 
 // Simple error boundary component for tabs - RESTORING THIS
 const TabErrorBoundary = ({ children, tabName }) => {
@@ -107,6 +109,7 @@ const eventNavItems = [
   { id: "resources", label: "Resources", icon: <FiPackage /> },
   { id: "abstracts", label: "Abstracts", icon: <FiFileText /> },
   { id: "badges", label: "Badges", icon: <FiPrinter /> },
+  { id: "announcements", label: "Announcements", icon: <FaBullhorn /> },
   { id: "landing-pages", label: "Landing Pages", icon: <LinkIcon className="w-5 h-5" /> },
   { id: "emails", label: "Emails", icon: <FiMail /> },
   { id: "reports", label: "Reports", icon: <FiBarChart2 /> },
@@ -633,6 +636,9 @@ function EventPortal() {
         } else {
           activeTabContent = <TabErrorBoundary tabName="Badges"><BadgePrintingPage eventId={id} /></TabErrorBoundary>;
         }
+        break;
+      case "announcements":
+        activeTabContent = <TabErrorBoundary tabName="Announcements"><AnnouncementsTab eventId={id} /></TabErrorBoundary>;
         break;
       case "scanner":
         activeTabContent = <TabErrorBoundary tabName="Scanner"><ScannerStation eventId={id} /></TabErrorBoundary>;
