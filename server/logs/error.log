@@ -6259,3 +6259,17 @@
     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
     at async model.Query.exec (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\query.js:4447:11)
     at async D:\Projects\ONSITE ATLAS - Copy\server\src\controllers\registrantPortalController.js:744:25
+2025-05-18 22:50:23 [31merror[39m: Error: Token expired
+    at D:\Projects\ONSITE ATLAS - Copy\server\src\middleware\registrantAuth.js:26:19
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2025-05-18 22:50:36 [31merror[39m: StrictPopulateError: Cannot populate path `resourceSetting` because it is not in your schema. Set the `strictPopulate` option to false to override.
+    at getModelsMapForPopulate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:50:12)
+    at populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4394:21)
+    at _populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4354:5)
+    at D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4326:5
+    at new Promise (<anonymous>)
+    at Function.populate (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\model.js:4325:10)
+    at model.Query._find (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\query.js:2316:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async model.Query.exec (D:\Projects\ONSITE ATLAS - Copy\server\node_modules\mongoose\lib\query.js:4447:11)
+    at async D:\Projects\ONSITE ATLAS - Copy\server\src\controllers\registrantPortalController.js:744:25
