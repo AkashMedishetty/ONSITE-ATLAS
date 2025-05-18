@@ -171,6 +171,11 @@ const registrationSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'cancelled', 'no-show'],
     default: 'active'
+  },
+  sponsoredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'EventSponsor',
+    required: false
   }
 }, {
   timestamps: true

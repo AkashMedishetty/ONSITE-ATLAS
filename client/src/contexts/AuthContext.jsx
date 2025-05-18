@@ -136,13 +136,14 @@ export function AuthProvider({ children }) {
     return {
       user: currentUser, // Changed key name to 'user' for clarity
       currentEventId, // Provide currentEventId in context
+      setCurrentEventId,
       login,
       logout,
       error,
       isAuthenticated: !!currentUser,
       loading
     };
-  }, [currentUser, currentEventId, error, loading]); // Dependencies for useMemo
+  }, [currentUser, currentEventId, setCurrentEventId, error, loading]); // Dependencies for useMemo
   
   return (
     <AuthContext.Provider value={value}>

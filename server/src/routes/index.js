@@ -16,11 +16,13 @@ const importJobRoutes = require('./importJob.routes');
 const abstractRoutes = require('./abstract.routes.js'); // IMPORT abstract.routes
 const registrantPortalRoutesFile = require('./registrantPortalRoutes.js'); // CORRECTED FILENAME (plural Routes)
 const scheduleRoutes = require('./schedule.routes'); // IMPORT schedule.routes
+const sponsorAuthRoutes = require('./sponsorAuth.routes'); // Added Sponsor Auth Routes
 
 // Mount routes
 router.use('/events', eventRoutes);
 router.use('/users', userRoutes);
 router.use('/auth', authRoutes);
+router.use('/sponsor-auth', sponsorAuthRoutes); // Added Sponsor Auth Routes
 router.use('/events/:eventId/registrations', registrationRoutes);
 // router.use('/events', registrationResourceRoutes); // REMOVED - This was likely causing conflict
 router.use('/dashboard', dashboardRoutes);

@@ -1,7 +1,7 @@
 const Joi = require('joi');
 const httpStatus = require('http-status');
 const pick = require('../utils/pick');
-const ApiError = require('../utils/ApiError');
+const { ApiError } = require('../utils/ApiError');
 
 /**
  * Middleware to validate request data against a Joi schema

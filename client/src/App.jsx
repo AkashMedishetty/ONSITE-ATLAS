@@ -55,6 +55,8 @@ const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/Auth/ForgotPasswordPage'));
 const RegistrationPortal = lazy(() => import('./pages/PublicPortals/RegistrationPortal'));
+const SponsorLoginPortal = lazy(() => import('./pages/PublicPortals/SponsorLoginPortal'));
+const SponsorRegistrantManagement = lazy(() => import('./pages/PublicPortals/SponsorRegistrantManagement'));
 
 // Reviewer Portal Pages (Lazy Load)
 const ReviewerLoginPage = lazy(() => import('./pages/ReviewerPortal/ReviewerLoginPage'));
@@ -115,12 +117,43 @@ import TermsOfUsePage from './pages/Public/TermsOfUsePage';
 // 404 Page
 import NotFoundPage from './pages/NotFound/NotFoundPage';
 
+// Sponsor Portal Components (lazy load for consistency, or import directly if small)
+const SponsorPortalLayout = lazy(() => import('./pages/SponsorPortal/SponsorPortalLayout'));
+const SponsorProfilePage = lazy(() => import('./pages/SponsorPortal/SponsorProfilePage'));
+const SponsorRegistrantListPage = lazy(() => import('./pages/SponsorPortal/SponsorRegistrantListPage'));
+
+// Import sponsorAuthService for SponsorRoute
+import sponsorAuthService from './services/sponsorAuthService';
+
 // LoadingFallback component for Suspense
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-screen">
     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
   </div>
 );
+
+// Placeholder for SponsorRoute - implement proper auth check later
+const SponsorRoute = ({ children }) => {
+  const token = sponsorAuthService.getCurrentSponsorToken();
+  const sponsorDetails = sponsorAuthService.getCurrentSponsorData();
+
+  // Valid session: token exists, and sponsorDetails (which includes eventId) exist.
+  if (token && sponsorDetails && sponsorDetails.eventId) {
+    return children;
+  }
+
+  // Invalid or no session, attempt to redirect to a relevant sponsor login page.
+  // If sponsorDetails exist and contain an eventId, use that for redirection.
+  // This covers cases like token expired but we still know which event they were associated with.
+  if (sponsorDetails && sponsorDetails.eventId) {
+    return <Navigate to={`/portal/sponsor-login/${sponsorDetails.eventId}`} replace />;
+  }
+
+  // If no token AND no sponsorDetails (or sponsorDetails without eventId),
+  // we don't know which event's sponsor login to direct to.
+  // Redirect to the application root as a fallback.
+  return <Navigate to="/" replace />;
+};
 
 const App = () => {
   return (
@@ -145,6 +178,8 @@ const App = () => {
                 <Route path="register/:eventId" element={<RegistrationPortal />} />
                 <Route path="abstract/:eventId" element={<AbstractPortal />} />
                 <Route path="reviewer/:eventId" element={<ReviewerLoginPage />} />
+                <Route path="sponsor-login/:eventId" element={<SponsorLoginPortal />} />
+                <Route path="sponsor-dashboard/:eventId/:sponsorId/registrants" element={<SponsorRegistrantManagement />} />
               </Route>
 
               {/* Registrant Portal Routes */}
@@ -172,6 +207,14 @@ const App = () => {
               <Route element={<PrivateRoute><ReviewerPortalLayout /></PrivateRoute>}>
                 <Route path="/reviewer/dashboard" element={<ReviewerDashboardPage />} />
                 <Route path="/reviewer/abstract/:abstractId/review" element={<ReviewerAbstractReviewPage />} />
+              </Route>
+
+              {/* Sponsor Portal Routes */}
+              <Route path="/sponsor-portal" element={<SponsorRoute><SponsorPortalLayout /></SponsorRoute>}>
+                <Route index element={<Navigate to="profile" replace />} />
+                <Route path="profile" element={<SponsorProfilePage />} />
+                <Route path="registrants" element={<SponsorRegistrantListPage />} />
+                {/* Add other sponsor portal routes here, e.g., my-registrants */}
               </Route>
 
               {/* Main Dashboard and Management Routes */}
