@@ -1074,6 +1074,52 @@ const getImportJobStatus = asyncHandler(async (req, res, next) => {
   }
 });
 
+/**
+ * @desc    Get registration details by QR code string or registration ID string for a specific event
+ * @route   POST /api/events/:eventId/registrations/scan
+ * @access  Private
+ */
+const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
+  const eventId = req.params.id; // From the parent router :id mapped to /events/:id
+  const { qrCode } = req.body; // qrCode can be registrationId string or actual QR content
+
+  logger.info(`[getRegistrationDetailsByScan] Attempting to find registration for event: ${eventId} with QR/ID: ${qrCode}`);
+
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+    logger.warn(`[getRegistrationDetailsByScan] Invalid or missing eventId: ${eventId}`);
+    return sendSuccess(res, 400, 'Valid Event ID is required.');
+  }
+
+  if (!qrCode) {
+    logger.warn(`[getRegistrationDetailsByScan] Missing qrCode in request body.`);
+    return sendSuccess(res, 400, 'QR code or Registration ID is required in the request body.');
+  }
+
+  // Find the registration by QR code or registrationId string
+  // The 'qrCode' field in the model stores the unique QR code content.
+  // The 'registrationId' field stores the human-readable ID like "REG-1234".
+  // The scanned value could be either.
+  const registration = await Registration.findOne({
+    event: eventId,
+    $or: [
+      { qrCode: qrCode },
+      { registrationId: qrCode }
+    ]
+  })
+  .populate('event', 'name startDate endDate logo')
+  .populate('category', 'name color permissions resourcePermissions') // Added resourcePermissions
+  .populate('personalInfo'); // Assuming personalInfo is a subdocument or separate populated field
+
+  if (!registration) {
+    logger.warn(`[getRegistrationDetailsByScan] Registration not found for event ${eventId} with QR/ID: ${qrCode}`);
+    return sendSuccess(res, 404, 'Registration not found for the given QR code/ID and event.');
+  }
+
+  logger.info(`[getRegistrationDetailsByScan] Found registration: ${registration._id} (${registration.registrationId})`);
+  
+  return sendSuccess(res, 200, 'Registration details retrieved successfully.', registration);
+});
+
 module.exports = {
   getRegistrations,
   getRegistrationsCount,
@@ -1085,5 +1131,6 @@ module.exports = {
   importRegistrations,
   exportRegistrationsController,
   getRegistrationStatistics,
-  getImportJobStatus
+  getImportJobStatus,
+  getRegistrationDetailsByScan
 }; 

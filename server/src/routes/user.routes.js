@@ -7,7 +7,9 @@ const {
   getUserById, 
   updateUser, 
   deleteUser,
-  getAssignedAbstractsForReviewer
+  getAssignedAbstractsForReviewer,
+  exportReviewerAbstractDetails,
+  downloadReviewerAbstractFiles
 } = require('../controllers/user.controller');
 
 // User routes
@@ -24,5 +26,13 @@ router.route('/:id')
 // Route for logged-in user to get their assigned abstracts for review
 router.route('/me/reviewer/assigned-abstracts')
   .get(protect, getAssignedAbstractsForReviewer);
+
+// New route for reviewer to export assigned abstract details
+router.route('/me/reviewer/events/:eventId/export-assigned-details')
+  .get(protect, restrict('reviewer'), exportReviewerAbstractDetails);
+
+// New route for reviewer to download assigned abstract files
+router.route('/me/reviewer/events/:eventId/download-assigned-files')
+  .get(protect, restrict('reviewer'), downloadReviewerAbstractFiles);
 
 module.exports = router; 

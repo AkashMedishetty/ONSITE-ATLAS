@@ -6,12 +6,14 @@ import abstractService from '../../../services/abstractService';
 import eventService from '../../../services/eventService';
 import categoryService from '../../../services/categoryService';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const ABSTRACT_STATUSES = [
   'draft', 'submitted', 'under-review', 'approved', 'rejected', 'revision-requested', 'pending', 'accepted', 'revised-pending-review'
 ];
 
 const AbstractsTab = ({ event }) => {
+  const { user: currentUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -87,7 +89,7 @@ const AbstractsTab = ({ event }) => {
   }, [event]);
   
   useEffect(() => {
-    if (showAssignReviewerModal && event?._id) {
+    if (showAssignReviewerModal && event?._id && (currentUser?.role === 'admin' || currentUser?.role === 'event-manager')) {
       const fetchReviewersForModal = async () => {
         setLoadingReviewers(true);
         setErrorReviewers(null);
@@ -106,8 +108,12 @@ const AbstractsTab = ({ event }) => {
         setLoadingReviewers(false);
       };
       fetchReviewersForModal();
+    } else if (showAssignReviewerModal && event?._id) {
+      setErrorReviewers('You are not authorized to view or assign reviewers.');
+      setAvailableReviewers([]);
+      setLoadingReviewers(false);
     }
-  }, [showAssignReviewerModal, event?._id]);
+  }, [showAssignReviewerModal, event?._id, currentUser]);
   
   // Fetch categories, topics, and reviewers for export filters
   useEffect(() => {
@@ -123,14 +129,23 @@ const AbstractsTab = ({ event }) => {
     } else {
       setTopicOptions([]);
     }
-    // Fetch reviewers
-    setExportReviewer('');
-    setReviewerOptions([]);
-    eventService.getEventReviewers(event._id).then(res => {
-      if (res.success && Array.isArray(res.data)) setReviewerOptions(res.data);
-      else setReviewerOptions([]);
-    });
-  }, [event]);
+    // Fetch reviewers only if user is admin/manager
+    if (currentUser?.role === 'admin' || currentUser?.role === 'event-manager') {
+      setExportReviewer('');
+      setReviewerOptions([]);
+      eventService.getEventReviewers(event._id).then(res => {
+        if (res.success && Array.isArray(res.data)) setReviewerOptions(res.data);
+        else setReviewerOptions([]);
+      }).catch(err => {
+        console.error("Error fetching reviewers for export options:", err);
+        setReviewerOptions([]);
+      });
+    } else {
+      // Clear reviewer options if user is not authorized
+      setExportReviewer('');
+      setReviewerOptions([]);
+    }
+  }, [event, currentUser]);
   
   const getStatusBadge = (status) => {
     switch (status) {
@@ -599,19 +614,21 @@ const AbstractsTab = ({ event }) => {
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Reviewer</label>
-            <select
-              className="border rounded px-2 py-1 text-sm w-full"
-              value={exportReviewer}
-              onChange={e => setExportReviewer(e.target.value)}
-            >
-              <option value="">All Reviewers</option>
-              {reviewerOptions.map(reviewer => (
-                <option key={reviewer._id || reviewer.email || reviewer.name} value={reviewer._id}>{reviewer.name} ({reviewer.email})</option>
-              ))}
-            </select>
-          </div>
+          {(currentUser?.role === 'admin' || currentUser?.role === 'event-manager') && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Reviewer</label>
+              <select
+                className="border rounded px-2 py-1 text-sm w-full"
+                value={exportReviewer}
+                onChange={e => setExportReviewer(e.target.value)}
+              >
+                <option value="">All Reviewers</option>
+                {reviewerOptions.map(reviewer => (
+                  <option key={reviewer._id || reviewer.email || reviewer.name} value={reviewer._id}>{reviewer.name} ({reviewer.email})</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1">
               <label className="block text-sm font-medium mb-1">Min Score</label>
@@ -750,15 +767,17 @@ const AbstractsTab = ({ event }) => {
                  >
                      {isProcessingBulk ? 'Processing...' : 'Reject Selected'}
                  </Button>
-                 <Button
-                    size="sm"
-                    variant="info"
-                    onClick={() => handleOpenAssignReviewerModal(selectedAbstractIds)}
-                    disabled={isProcessingBulk}
-                    leftIcon={isProcessingBulk ? <Spinner size="xs" /> : <UserGroupIcon className="h-4 w-4" />}
-                 >
-                    {isProcessingBulk ? 'Processing...' : 'Assign Reviewer(s)'}
-                 </Button>
+                 {(currentUser?.role === 'admin' || currentUser?.role === 'event-manager') && (
+                   <Button
+                      size="sm"
+                      variant="info"
+                      onClick={() => handleOpenAssignReviewerModal(selectedAbstractIds)}
+                      disabled={isProcessingBulk}
+                      leftIcon={isProcessingBulk ? <Spinner size="xs" /> : <UserGroupIcon className="h-4 w-4" />}
+                   >
+                      {isProcessingBulk ? 'Processing...' : 'Assign Reviewer(s)'}
+                   </Button>
+                 )}
             </div>
         )}
         

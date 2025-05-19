@@ -19,6 +19,7 @@ const CustomField = require('./CustomField');
 const Dashboard = require('./Dashboard');
 const AnalyticsDataCache = require('./AnalyticsDataCache');
 const Report = require('./Report');
+const EventSponsor = require('./EventSponsor');
 
 module.exports = {
   User,
@@ -41,5 +42,6 @@ module.exports = {
   CustomField,
   Dashboard,
   AnalyticsDataCache,
-  Report
+  Report,
+  EventSponsor
 }; 

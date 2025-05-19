@@ -2,15 +2,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Spinner, Alert, Card } from '../../../components/common';
 import UserCreate from '../../Users/UserCreate';
 import eventService from '../../../services/eventService'; // Import eventService
+import { useAuth } from '../../../contexts/AuthContext'; // Added import
 
 const EventUserManagementTab = ({ eventId }) => {
+  const { user: currentUser } = useAuth(); // Added to get current user
   const [showCreateUserForm, setShowCreateUserForm] = useState(false);
   const [eventUsers, setEventUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState(null);
 
   const fetchEventUsers = useCallback(async () => {
-    if (!eventId) return;
+    if (!eventId || !currentUser) return; // Wait for currentUser
+
+    // If user is reviewer, don't fetch and set an appropriate message or error
+    if (currentUser.role === 'reviewer') {
+      setUsersError("You do not have permission to view event users.");
+      setEventUsers([]);
+      setLoadingUsers(false);
+      return;
+    }
+
     setLoadingUsers(true);
     setUsersError(null);
     try {
@@ -27,14 +38,29 @@ const EventUserManagementTab = ({ eventId }) => {
     } finally {
       setLoadingUsers(false);
     }
-  }, [eventId]);
+  }, [eventId, currentUser]);
 
   useEffect(() => {
-    fetchEventUsers();
-  }, [fetchEventUsers]);
+    // fetchEventUsers will now only run if eventId and currentUser are available,
+    // and will handle the role check internally.
+    if (currentUser) { // Ensure currentUser is available before attempting to fetch
+        fetchEventUsers();
+    }
+  }, [fetchEventUsers, currentUser]); // Added currentUser to dependency array
 
   if (!eventId) {
     return <Alert variant="danger" title="Error" description="Event ID is missing. Cannot manage users." />;
+  }
+
+  // Check user role
+  if (currentUser && currentUser.role === 'reviewer') {
+    return (
+      <Alert 
+        variant="info" 
+        title="Permission Denied"
+        description="You do not have permission to manage users for this event."
+      />
+    );
   }
 
   const handleUserCreated = () => {
@@ -85,22 +111,25 @@ const EventUserManagementTab = ({ eventId }) => {
             eventUsers.length > 0 ? (
               <Card>
                 <ul className="divide-y divide-gray-200">
-                  {eventUsers.map(user => (
-                    <li key={user._id} className="px-4 py-3 sm:px-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  {eventUsers.map((user, index) => {
+                    console.log(`EventUserManagementTab: Mapping user with email: ${user.email}, index: ${index}`, user);
+                    return (
+                      <li key={user.email || `user-${index}`} className="px-4 py-3 sm:px-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                          </div>
+                          <div className="ml-2 flex-shrink-0 flex">
+                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                              {user.role}
+                            </span>
+                            {/* Placeholder for future actions like Edit/Remove from event */}
+                          </div>
                         </div>
-                        <div className="ml-2 flex-shrink-0 flex">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                            {user.role}
-                          </span>
-                          {/* Placeholder for future actions like Edit/Remove from event */}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </Card>
             ) : (

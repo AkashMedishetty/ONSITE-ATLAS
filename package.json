@@ -29,6 +29,7 @@
   "dependencies": {
     "chart.js": "^4.4.8",
     "jspdf": "^3.0.1",
+    "pdf-to-png-converter": "^3.6.5",
     "qrcode.react": "^4.2.0",
     "react-chartjs-2": "^5.3.0"
   }

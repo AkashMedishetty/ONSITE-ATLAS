@@ -9,7 +9,7 @@ const fileUpload = require('express-fileupload');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const routes = require('./routes');
-const { errorConverter, errorHandler } = require('./middleware/error');
+const { ApiError, errorHandler } = require('./utils/ApiError');
 const { protect } = require('./middleware/auth.middleware');
 const config = require('./config/config');
 const path = require('path');
@@ -21,7 +21,10 @@ const app = express();
 
 // Set security HTTP headers
 app.use(helmet({
-  contentSecurityPolicy: false // Disable for development
+  contentSecurityPolicy: false, // Disable for development
+  crossOriginResourcePolicy: false, // Explicitly disable Helmet's CORP middleware
+  frameguard: false, // Disable X-Frame-Options header
+  crossOriginEmbedderPolicy: false // Disable COEP header from backend (for testing)
 }));
 
 // Set up rate limiting
@@ -141,15 +144,13 @@ app.get('/health', (req, res) => {
 });
 
 // Handle 404
-app.use((req, res) => {
-  res.status(404).json({
-    status: 'error',
-    message: 'Not found'
-  });
+app.use((req, res, next) => {
+  res.status(404).json({ success: false, message: 'Not Found' });
 });
 
-// Convert errors to ApiError
-// app.use(errorConverter);
+// Convert errors to ApiError (if you had a complex errorConverter, ensure it's compatible or remove)
+// The errorHandler from utils/ApiError.js is simpler and might not need a separate converter
+// app.use(errorConverter); // Keeping this commented as the new errorHandler is basic
 
 // Handle errors
 app.use(errorHandler);

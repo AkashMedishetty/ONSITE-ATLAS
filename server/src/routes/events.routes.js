@@ -29,6 +29,8 @@ const registrationRouter = require('./registrations.routes');
 const resourceRouter = require('./resource.routes');
 // --- Import Announcement Router ---
 const announcementRouter = require('./announcementRoutes.js');
+// --- Import Sponsor Router ---
+const sponsorRouter = require('./sponsor.routes');
 
 // --- Import Category Router (if not already done elsewhere) ---
 // Assuming category routes are handled here or imported as needed
@@ -82,6 +84,10 @@ router.use('/:eventId/landing-pages', require('./landingPages.routes'));
 // Mount the announcement router for paths starting with /:id/announcements
 // Note: Ensure :id parameter name consistency with other event-specific routes.
 router.use('/:id/announcements', announcementRouter);
+
+// Mount the sponsor router for paths starting with /:id/sponsors (or /:eventId/sponsors)
+// Using :id to be consistent with other routes in this file like registrations, resources.
+router.use('/:id/sponsors', sponsorRouter);
 
 // --- End Mount Nested Routers --- 
 

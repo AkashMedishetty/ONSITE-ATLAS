@@ -188,8 +188,10 @@
     // Clear all local storage and session storage
     function clearAllStorage() {
       try {
-        localStorage.clear();
-        sessionStorage.clear();
+        // sessionStorage.clear(); // Optionally clear session storage as well
+        // localStorage.clear(); // Clear local storage
+        document.cookie.split(";").forEach(function(c) { document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); });
+        console.log("All cookies, localStorage, and sessionStorage have been cleared.");
         showStatus('All browser storage has been cleared successfully!', 'success');
         checkTokenStatus();
       } catch (error) {

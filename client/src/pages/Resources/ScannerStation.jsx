@@ -15,9 +15,19 @@ import {
   PrinterIcon
 } from "@heroicons/react/24/outline";
 import { Card, Button, Badge, Spinner, Alert } from "../../components/common";
+import toast from 'react-hot-toast';
 import eventService from "../../services/eventService";
 import resourceService from "../../services/resourceService";
 import registrationService from "../../services/registrationService";
+
+// Helper function to get the API base URL (add this)
+const getApiBaseUrl = () => {
+  if (process.env.NODE_ENV === 'development') {
+    return 'http://localhost:5000'; // Your local backend URL
+  } else {
+    return process.env.REACT_APP_API_URL || window.location.origin;
+  }
+};
 
 const ScannerStation = ({ eventId: eventIdProp }) => {
   console.log('--- ScannerStation Component Mounted ---');
@@ -246,6 +256,40 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           if (settingsResponse.data.settings?.templates && settingsResponse.data.settings.templates.length > 0) {
             setSelectedResource(settingsResponse.data.settings.templates[0]._id);
           }
+          }
+        } else if (type === "certificatePrinting") {
+          console.log('[FetchResourceOptions] Fetching for certificatePrinting');
+          settingsResponse = await resourceService.getCertificatePrintingSettings(eventId);
+
+          // --- DETAILED LOGGING START ---
+          console.log('[FetchResourceOptions - CertPrint] Full API Response:', JSON.stringify(settingsResponse, null, 2));
+          if (settingsResponse && settingsResponse.data) {
+            console.log('[FetchResourceOptions - CertPrint] response.data:', JSON.stringify(settingsResponse.data, null, 2));
+            console.log('[FetchResourceOptions - CertPrint] typeof response.data.certificatePrintingTemplates:', typeof settingsResponse.data.certificatePrintingTemplates);
+            console.log('[FetchResourceOptions - CertPrint] Array.isArray(response.data.certificatePrintingTemplates):', Array.isArray(settingsResponse.data.certificatePrintingTemplates));
+            if (Array.isArray(settingsResponse.data.certificatePrintingTemplates)) {
+              console.log('[FetchResourceOptions - CertPrint] response.data.certificatePrintingTemplates CONTENT:', JSON.stringify(settingsResponse.data.certificatePrintingTemplates, null, 2));
+            }
+          } else {
+            console.log('[FetchResourceOptions - CertPrint] response or response.data is null/undefined.');
+          }
+          // --- DETAILED LOGGING END ---
+
+          if (settingsResponse.success && Array.isArray(settingsResponse.data?.settings?.templates)) {
+            console.log('[FetchResourceOptions - CertPrint] Main condition met: Processing response.data.settings.templates');
+            const templateList = settingsResponse.data.settings.templates.map(template => ({
+              _id: template._id, // This should be the unique ID of the template
+              name: template.name || 'Unnamed Template',
+              // Add other properties if needed by the component, e.g., type: template.categoryType
+            }));
+            setResourceOptions(templateList);
+            if (templateList.length > 0) {
+              setSelectedResource(templateList[0]._id);
+            }
+            console.log('[FetchResourceOptions - CertPrint] Templates set:', templateList);
+          } else {
+            // This else will be caught by the generic fallback below if not successful
+            console.warn('[FetchResourceOptions - CertPrint] Failed to load templates or data in unexpected format.');
           }
         }
         
@@ -569,6 +613,66 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         registration: registrationDetails,
         resourceOption: resourceOptionDisplay
       });
+
+      // --- PDF PRINTING TRIGGER for 'certificatePrinting' ---
+      if (selectedResourceType === 'certificatePrinting') {
+        const registrationIdForPdf = validationResponse.data?.registration?._id;
+        const templateIdForPdf = selectedResource; // This holds the selected template's _id
+
+        if (registrationIdForPdf && templateIdForPdf && eventId) {
+          console.log(`[ProcessQrCode] Attempting to generate PDF for reg: ${registrationIdForPdf}, template: ${templateIdForPdf}`);
+          // const pdfUrl = `${getApiBaseUrl()}/api/resources/events/${eventId}/certificate-templates/${templateIdForPdf}/registrations/${registrationIdForPdf}/generate-pdf`;
+          // console.log("[ProcessQrCode] Opening PDF URL:", pdfUrl);
+          // window.open(pdfUrl, '_blank'); // Old direct open method
+
+          resourceService.getCertificatePdfBlob(eventId, templateIdForPdf, registrationIdForPdf)
+            .then(pdfResponse => {
+              if (pdfResponse.success && pdfResponse.blob) {
+                const fileURL = URL.createObjectURL(pdfResponse.blob);
+                window.open(fileURL, '_blank');
+                setScanResult(prevResult => {
+                  console.log("[ScannerStation] Inside setScanResult (PDF blob success). prevResult:", prevResult);
+                  console.log("[ScannerStation] registrationDetails from outer scope (PDF success):", registrationDetails);
+                  return {
+                    ...prevResult,
+                    message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generated.`,
+                  };
+                });
+                toast.success('Certificate PDF generated and opened.');
+              } else {
+                console.error("[ProcessQrCode] Failed to get PDF blob:", pdfResponse.message);
+                toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
+                setScanResult(prevResult => {
+                    console.log("[ScannerStation] Inside setScanResult (PDF blob fetch failed). prevResult:", prevResult);
+                    console.log("[ScannerStation] registrationDetails from outer scope (PDF fetch failed):", registrationDetails);
+                    return { 
+                        ...prevResult,
+                        message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generation FAILED.`,
+                    };
+                });
+              }
+            })
+            .catch(err => {
+              console.error("[ProcessQrCode] Error in getCertificatePdfBlob call:", err);
+              toast.error('Error generating certificate PDF.');
+              setScanResult(prevResult => {
+                console.log("[ScannerStation] Inside setScanResult (PDF blob promise .catch). prevResult:", prevResult);
+                console.log("[ScannerStation] registrationDetails from outer scope (PDF .catch):", registrationDetails);
+                return { 
+                    ...prevResult,
+                    message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generation FAILED.`,
+                };
+              });
+            });
+
+        } else {
+          console.warn("[ProcessQrCode] Missing IDs for PDF generation:", { registrationIdForPdf, templateIdForPdf, eventId });
+          if (selectedResource && selectedResourceType === 'certificatePrinting') {
+            toast.error('Could not generate PDF: missing registration or template ID.');
+          }
+        }
+      }
+      // --- END PDF PRINTING TRIGGER ---
       
       // Refresh data immediately after successful scan with a sequence of refreshes 
       // to ensure we get the latest data as it propagates through the system

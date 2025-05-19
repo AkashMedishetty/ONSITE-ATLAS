@@ -69,6 +69,24 @@ const CertificatePrinting = () => {
                 { name: 'name', displayName: 'Full Name', required: true },
                 { name: 'presentationTitle', displayName: 'Presentation Title', required: false }
               ] 
+            },
+            { 
+              id: 'abstract', 
+              name: 'Abstract Presenter Certificate', 
+              type: 'abstract',
+              fields: [
+                { name: 'name', displayName: 'Presenter Name', required: true },
+                { name: 'abstractTitle', displayName: 'Abstract Title', required: true }
+              ] 
+            },
+            { 
+              id: 'workshop', 
+              name: 'Workshop Certificate', 
+              type: 'workshop',
+              fields: [
+                { name: 'name', displayName: 'Participant Name', required: true },
+                { name: 'workshopTitle', displayName: 'Workshop Title', required: true }
+              ] 
             }
           ]);
           setTemplateId('attendance');

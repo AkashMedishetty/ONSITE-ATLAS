@@ -245,6 +245,7 @@ const AbstractPortal = () => {
   const [userAbstracts, setUserAbstracts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [fileUploading, setFileUploading] = useState(false);
+  const [selectedSubTopics, setSelectedSubTopics] = useState([]); // State for sub-topics of the selected category
   
   const [abstractForm, setAbstractForm] = useState({
     title: '',
@@ -273,7 +274,19 @@ const AbstractPortal = () => {
         if (details.success) {
           setEventDetails(details.data);
           if (details.data.abstractSettings?.categories?.length > 0) {
-            setCategories(details.data.abstractSettings.categories.map(cat => ({ value: cat._id, label: cat.name })));
+            // Store the full category object, including subTopics
+            // Ensure each category object has a unique 'value' for the Select component,
+            // using its _id.
+            setCategories(details.data.abstractSettings.categories.map((cat, index) => {
+              if (!cat._id) {
+                console.warn(`Category "${cat.name}" at index ${index} is missing an _id. Submission might fail. Using name as fallback value.`);
+              }
+              return {
+                value: cat._id || cat.name, // Use _id if available, fallback to name (and log warning)
+                label: cat.name,
+                subTopics: cat.subTopics || [] // Ensure subTopics is an array
+              };
+            }));
           }
         } else {
           toast.error(details.message || 'Failed to fetch event details.');
@@ -417,6 +430,13 @@ const AbstractPortal = () => {
         [name]: null
       }));
     }
+    // If category changed, also clear any existing subTopic error
+    if (name === 'category' && formErrors.subTopic) {
+      setFormErrors(prev => ({
+        ...prev,
+        subTopic: null
+      }));
+    }
   };
   
   const handleFileChange = (file) => {
@@ -457,6 +477,18 @@ const AbstractPortal = () => {
     // Validate category
     if (!abstractForm.category) {
       errors.category = 'Please select a category';
+    }
+    
+    // Validate subTopic if the selected category has sub-topics and sub-topic selection is required
+    // This logic assumes a convention or a specific setting (e.g., requireSubTopicPerCategory in abstractSettings)
+    const selectedCategoryData = categories.find(cat => cat.value === abstractForm.category);
+    if (selectedCategoryData && selectedCategoryData.subTopics && selectedCategoryData.subTopics.length > 0) {
+      // Example: Make subTopic required if eventDetails.abstractSettings.requireSubTopic is true
+      // You might have a more granular setting, e.g. category.requireSubTopic
+      const subTopicIsRequired = eventDetails?.abstractSettings?.requireSubTopicForEnabledCategories; // Hypothetical setting
+      if (subTopicIsRequired && !abstractForm.subTopic) {
+        errors.subTopic = 'Please select a sub-topic for the chosen category';
+      }
     }
     
     // Validate topic (required by backend)
@@ -558,6 +590,12 @@ const AbstractPortal = () => {
       if (hasFile) delete dataToSend.file;
 
       let response;
+      // Create a payload for the service, excluding the file object itself
+      const payloadForService = { ...dataToSend };
+      if (payloadForService.file) { // abstractForm.file might be null
+        delete payloadForService.file; // Remove if it's just a placeholder or null
+      }
+
       if (abstractForm.existingAbstractId) {
         console.log("Updating existing abstract:", abstractForm.existingAbstractId);
         response = await abstractService.updateAbstract(eventId, abstractForm.existingAbstractId, dataToSend);

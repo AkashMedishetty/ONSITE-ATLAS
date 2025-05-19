@@ -220,7 +220,13 @@ const ReviewerAbstractReviewPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link to="/reviewer/dashboard" className="text-indigo-600 hover:underline">&larr; Back to Dashboard</Link>
+      <Link 
+        to="/reviewer/dashboard" 
+        state={{ reviewedAbstractId: abstractId, newStatus: reviewDecision, eventId: eventId }}
+        className="text-indigo-600 hover:underline"
+      >
+        &larr; Back to Dashboard
+      </Link>
       
       <Card 
         className="shadow-sm"

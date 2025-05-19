@@ -56,11 +56,14 @@ import {
   AbstractsTab as AbstractsSettingsTab,  // Alias to avoid conflict
   ScheduleTab  // Add the new ScheduleTab import
 } from './settings';
+// import SponsorsSettingsTab from './settings/SponsorsSettingsTab'; // Import the new Sponsors settings tab
 
 // Import dedicated tab components
 import ResourcesTab from './resources/ResourcesTab';
 import AbstractsTab from './abstracts/AbstractsTab';
 import EventUserManagementTab from './settings/EventUserManagementTab'; // Import the component
+import SponsorsList from '../../pages/SponsorManagement/SponsorsList'; // Added for Sponsors Tab
+import SponsorForm from '../../pages/SponsorManagement/SponsorForm'; // Import SponsorForm
 import AnnouncementsTab from './announcements/AnnouncementsTab'; // Import the AnnouncementsTab component
 
 // Simple error boundary component for tabs - RESTORING THIS
@@ -105,6 +108,7 @@ const isDevelopment = import.meta.env.MODE === 'development';
 const eventNavItems = [
   { id: "dashboard", label: "Dashboard", icon: <FiBarChart2 /> },
   { id: "registrations", label: "Registrations", icon: <FiUsers /> },
+  { id: "sponsors", label: "Sponsors", icon: <BookmarkIcon className="w-5 h-5" /> },
   { id: "categories", label: "Categories", icon: <FiTag /> },
   { id: "resources", label: "Resources", icon: <FiPackage /> },
   { id: "abstracts", label: "Abstracts", icon: <FiFileText /> },
@@ -121,7 +125,7 @@ function EventPortal() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { currentUser, isAuthenticated, loading: authLoading, currentEventId: contextEventId, setCurrentEventId } = useAuth();
   
   // State variables
   const [event, setEvent] = useState(null);
@@ -137,9 +141,9 @@ function EventPortal() {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [activeSettingsTab, setActiveSettingsTab] = useState(0);
-  const [renderKey, setRenderKey] = useState(0); // Add a key to force re-render when needed
+  const [renderKey, setRenderKey] = useState(0);
   const [formChanged, setFormChanged] = useState(false);
   const [categoriesKey, setCategoriesKey] = useState(Date.now());
   
@@ -258,9 +262,13 @@ function EventPortal() {
   
   // Handle navigation back from the location state more robustly
   useEffect(() => {
-    // Check if the location state has an activeTab or subSection
     const locationState = location.state || {};
     
+    if (!id || id === "undefined") {
+      // console.warn("EventPortal: Tab management useEffect skipped due to invalid id:", id);
+      return;
+    }
+
     if (locationState.activeTab && eventNavItems.some(item => item.id === locationState.activeTab)) {
       setActiveTab(locationState.activeTab);
       // Clear location state to prevent re-application on refresh
@@ -318,55 +326,91 @@ function EventPortal() {
 
   }, [id, location.pathname, location.state, navigate, eventNavItems, activeTab]); // Added activeTab to dependencies
   
-  // Load event data
+  // Main data loading effect and active tab synchronization
   useEffect(() => {
-    const loadEventData = async () => {
-      setLoading(true);
-      setError(null);
+    const pathSegments = location.pathname.split('/').filter(Boolean);
+    // Expected: ["events", eventIdFromUrl, (tabName), (itemId), (action)]
+
+    if (id && id !== 'undefined') {
+      if (contextEventId !== id) {
+        setCurrentEventId(id); // Update context if URL's eventId differs
+      }
+      loadEventData(); // Uses 'id' from useParams() directly
+
+      let newActiveTab = 'dashboard'; // Default tab
+      if (pathSegments.length > 2 && eventNavItems.some(item => item.id === pathSegments[2])) {
+        newActiveTab = pathSegments[2];
+      }
+      // Special handling if the third segment is 'sponsors' and there's more, like 'new' or 'edit'
+      // This ensures the 'sponsors' tab remains active when on /events/:id/sponsors/new or /events/:id/sponsors/edit/:sponsorId
+      if (pathSegments.length > 3 && pathSegments[2] === 'sponsors' && (pathSegments[3] === 'new' || pathSegments[3] === 'edit')) {
+        newActiveTab = 'sponsors';
+      }
+      // Add similar specific handlers if other tabs have deep-linking that should keep parent tab active
       
+      setActiveTab(newActiveTab);
+    } else {
+      // Only set error or clear data if auth is done and ID is genuinely missing/invalid
+      if (isAuthenticated && !authLoading) {
+        console.error('EventPortal: useEffect found invalid id from useParams():', id, 'Current Path:', location.pathname);
+        setError('Event ID is missing or invalid. Please select an event.');
+        setEvent(null); // Clear event data
+        setStatistics({}); // Clear stats
+        setLoading(false);
+        if (contextEventId) {
+          setCurrentEventId(null); // Clear context if it holds an old ID
+        }
+      }
+    }
+  }, [id, location.pathname, isAuthenticated, authLoading, contextEventId, setCurrentEventId]); // Added contextEventId and setCurrentEventId
+
+  // Load event data function - now uses 'id' from useParams directly from its scope
+  const loadEventData = async () => {
+    // The 'id' from useParams() is directly available in this function's scope
+    if (!id || id === 'undefined') {
+      console.error(`EventPortal: loadEventData aborted due to invalid id from scope: ${id}`);
+      // Clear event related state if ID is invalid
+      setEvent(null);
+      setStatistics(prev => ({ ...prev, totalRegistrations: { total: 0, checkedIn: 0 }, registrationsToday: 0, checkedIn: 0, categories: [], resourcesDistributed: { food: 0, kits: 0, certificates: 0 }, abstractsSubmitted: 0, abstractsApproved: 0 }));
+      setError('No valid event ID provided to loadEventData.');
+      setLoading(false);
+      return;
+    }
+
+    console.log(`EventPortal: Loading event data for ID: ${id}`);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const eventData = await eventService.getEventById(id);
+      
+      if (!eventData) {
+        throw new Error('Event data is empty');
+      }
+      
+      if (eventData && eventData.success) {
+        setEvent(eventData.data); // Store only the event data object, not the entire response
+      } else {
+        throw new Error(eventData.message || 'Failed to load event data');
+      }
+      
+      // Load statistics and dashboard data
       try {
-        const eventData = await eventService.getEventById(id);
+        const statsResponse = await eventService.getEventStatistics(id);
         
-        if (!eventData) {
-          throw new Error('Event data is empty');
-        }
-        
-        if (eventData && eventData.success) {
-          setEvent(eventData.data); // Store only the event data object, not the entire response
+        if (statsResponse && statsResponse.success) {
+          // Ensure we have a properly structured statistics object
+          setStatistics({
+            totalRegistrations: statsResponse.data.totalRegistrations || { total: 0, checkedIn: 0 },
+            registrationsToday: statsResponse.data.registrationsToday || 0,
+            checkedIn: statsResponse.data.checkedIn || 0,
+            categories: statsResponse.data.categories || [],
+            resourcesDistributed: statsResponse.data.resourcesDistributed || { food: 0, kits: 0, certificates: 0 },
+            abstractsSubmitted: statsResponse.data.abstractsSubmitted || 0,
+            abstractsApproved: statsResponse.data.abstractsApproved || 0
+          });
         } else {
-          throw new Error(eventData.message || 'Failed to load event data');
-        }
-        
-        // Load statistics and dashboard data
-        try {
-          const statsResponse = await eventService.getEventStatistics(id);
-          
-          if (statsResponse && statsResponse.success) {
-            // Ensure we have a properly structured statistics object
-            setStatistics({
-              totalRegistrations: statsResponse.data.totalRegistrations || { total: 0, checkedIn: 0 },
-              registrationsToday: statsResponse.data.registrationsToday || 0,
-              checkedIn: statsResponse.data.checkedIn || 0,
-              categories: statsResponse.data.categories || [],
-              resourcesDistributed: statsResponse.data.resourcesDistributed || { food: 0, kits: 0, certificates: 0 },
-              abstractsSubmitted: statsResponse.data.abstractsSubmitted || 0,
-              abstractsApproved: statsResponse.data.abstractsApproved || 0
-            });
-          } else {
-            console.warn('Statistics data not in expected format:', statsResponse);
-            setStatistics({
-              totalRegistrations: { total: 0, checkedIn: 0 },
-              registrationsToday: 0,
-              checkedIn: 0,
-              categories: [],
-              resourcesDistributed: { food: 0, kits: 0, certificates: 0 },
-              abstractsSubmitted: 0,
-              abstractsApproved: 0
-            });
-          }
-        } catch (statsError) {
-          console.error('Error loading statistics:', statsError);
-          // Use default values if statistics fail to load
+          console.warn('Statistics data not in expected format:', statsResponse);
           setStatistics({
             totalRegistrations: { total: 0, checkedIn: 0 },
             registrationsToday: 0,
@@ -377,41 +421,41 @@ function EventPortal() {
             abstractsApproved: 0
           });
         }
+      } catch (statsError) {
+        console.error('Error loading statistics:', statsError);
+        // Use default values if statistics fail to load
+        setStatistics({
+          totalRegistrations: { total: 0, checkedIn: 0 },
+          registrationsToday: 0,
+          checkedIn: 0,
+          categories: [],
+          resourcesDistributed: { food: 0, kits: 0, certificates: 0 },
+          abstractsSubmitted: 0,
+          abstractsApproved: 0
+        });
+      }
+      
+      try {
+        const dashboardResponse = await eventService.getEventDashboard(id);
         
-        try {
-          const dashboardResponse = await eventService.getEventDashboard(id);
-          
-          if (dashboardResponse && dashboardResponse.success) {
-            setActivities(dashboardResponse.data.recentActivities || []);
-          } else {
-            console.warn('Dashboard data not in expected format:', dashboardResponse);
-            setActivities([]);
-          }
-        } catch (dashboardError) {
-          console.error('Error loading dashboard:', dashboardError);
+        if (dashboardResponse && dashboardResponse.success) {
+          setActivities(dashboardResponse.data.recentActivities || []);
+        } else {
+          console.warn('Dashboard data not in expected format:', dashboardResponse);
           setActivities([]);
         }
-        
-        setLoading(false);
-      } catch (err) {
-        console.error('Error in loadEventData:', err);
-        setError(err.message || 'Failed to load event data');
-        setLoading(false);
+      } catch (dashboardError) {
+        console.error('Error loading dashboard:', dashboardError);
+        setActivities([]);
       }
-    };
-    
-    // Only load data if auth check is done and user is authenticated
-    if (id && !authLoading && isAuthenticated) {
-      loadEventData();
-    } else if (!authLoading && !isAuthenticated) {
-      // Handle case where user is not authenticated (e.g., redirect or show error)
-      setError('Authentication required to view event data.');
+      
       setLoading(false);
-      // Optionally navigate to login: navigate('/login');
+    } catch (err) {
+      console.error('Error in loadEventData:', err);
+      setError(err.message || 'Failed to load event data');
+      setLoading(false);
     }
-    // If auth is still loading, do nothing yet
-
-  }, [id, authLoading, isAuthenticated]);
+  };
   
   // Log formChanged state changes
   useEffect(() => {
@@ -612,7 +656,30 @@ function EventPortal() {
         activeTabContent = <TabErrorBoundary tabName="Dashboard">{renderDashboard()}</TabErrorBoundary>;
         break;
       case "registrations":
-        activeTabContent = <TabErrorBoundary tabName="Registrations"><RegistrationsTab eventId={id} /></TabErrorBoundary>;
+        // Check for /registrations/new, /registrations/:regId, /registrations/:regId/edit
+        // This logic should ideally be handled by React Router's <Outlet /> within a layout route for registrations
+        // For now, keeping it simple here, but this can become complex.
+        activeTabContent = <TabErrorBoundary tabName="Registrations"><RegistrationsTab eventId={id} /></TabErrorBoundary>; 
+        break;
+      case "sponsors":
+        const sponsorPathSegments = location.pathname.split('/');
+        const eventRegPrefix = event?.registrationSettings?.idPrefix || 'EVENT'; // Default if not found
+
+        console.log("[EventPortal] ActiveTab 'sponsors'. Pathname:", location.pathname, "Segments:", sponsorPathSegments);
+        console.log("[EventPortal] Checking for 'new': Length > 4?", sponsorPathSegments.length > 4, "Segment[4] === 'new'?", sponsorPathSegments[4] === 'new');
+        console.log("[EventPortal] Checking for 'edit': Length > 5?", sponsorPathSegments.length > 5, "Segment[5] === 'edit'?", sponsorPathSegments[5] === 'edit');
+
+        if (sponsorPathSegments.length > 4 && sponsorPathSegments[4] === 'new') {
+          console.log("[EventPortal] Rendering SponsorForm for 'new' with prefix:", eventRegPrefix);
+          activeTabContent = <TabErrorBoundary tabName="Add Sponsor"><SponsorForm eventRegPrefix={eventRegPrefix} /></TabErrorBoundary>;
+        } else if (sponsorPathSegments.length > 5 && sponsorPathSegments[5] === 'edit') {
+          const sponsorIdFromPath = sponsorPathSegments[4]; // This is the sponsorDbId
+          console.log("[EventPortal] Rendering SponsorForm for 'edit' with sponsorIdFromPath:", sponsorIdFromPath, "and prefix:", eventRegPrefix);
+          activeTabContent = <TabErrorBoundary tabName="Edit Sponsor"><SponsorForm eventRegPrefix={eventRegPrefix} sponsorIdForEdit={sponsorIdFromPath} /></TabErrorBoundary>;
+        } else {
+          console.log("[EventPortal] Rendering SponsorsList");
+          activeTabContent = <TabErrorBoundary tabName="Sponsors"><SponsorsList event={event} /></TabErrorBoundary>;
+        }
         break;
       case "categories":
         activeTabContent = <TabErrorBoundary tabName="Categories"><CategoriesTab eventId={id} key={categoriesKey} /></TabErrorBoundary>;
@@ -667,18 +734,18 @@ function EventPortal() {
         activeTabContent = (
           <TabErrorBoundary tabName="Settings">
             <div className="p-2">
-              {/* Remove the buttons from here */}
+              {/* Tabs for different settings categories */}
               <Tabs
                 tabs={[
-                  { label: "General" }, 
-                  { label: "Registration" }, 
-                  { label: "Badges" }, 
-                  { label: "Resources" }, 
-                  { label: "Abstracts" }, 
-                  { label: "Schedule" },
-                  { label: "Email" }, 
-                  { label: "Payment" }, 
-                  { label: "Advanced" }
+                  { label: "General", component: GeneralTab, icon: <Cog6ToothIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Registration", component: RegistrationTab, icon: <UserPlusIcon className="w-5 h-5 mr-2" /> },
+                  // { label: "Sponsors", component: SponsorsSettingsTab, icon: <BookmarkIcon className="w-5 h-5 mr-2" /> }, // Removed Sponsors
+                  { label: "Badges", component: BadgesTab, icon: <CheckBadgeIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Email", component: EmailTab, icon: <EnvelopeIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Payment", component: PaymentTab, icon: <ChartPieIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Resources", component: ResourcesSettingsTab, icon: <CubeIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Abstracts", component: AbstractsSettingsTab, icon: <DocumentTextIcon className="w-5 h-5 mr-2" /> },
+                  { label: "Schedule", component: ScheduleTab, icon: <CalendarIcon className="w-5 h-5 mr-2" /> },
                 ]}
                 activeTab={activeSettingsTab}
                 onChange={setActiveSettingsTab}
@@ -686,44 +753,45 @@ function EventPortal() {
               <div className="mt-4">
                 {(() => {
                   switch (activeSettingsTab) {
-                    case 0:
-                      return <GeneralTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 1:
-                      return <RegistrationTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 2:
-                      return <BadgesTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 3:
-                      return <ResourcesSettingsTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 4:
-                      return <AbstractsSettingsTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} />;
-                    case 5:
-                      return <ScheduleTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 6:
-                      return <EmailTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 7:
-                      return <PaymentTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
-                    case 8:
-                      return <SettingsTab event={event} setEvent={setEvent} setFormChanged={setFormChanged} id={id} />;
+                    case 0: // General
+                      return <GeneralTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
+                    case 1: // Registration
+                      return <RegistrationTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
+                    // Case 2 (Sponsors) removed
+                    case 2: // Badges (was 3)
+                      return <BadgesTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
+                    case 3: // Email (was 4)
+                      return <EmailTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
+                    case 4: // Payment (was 5)
+                      return <PaymentTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
+                    case 5: // Resources (was 6)
+                      return <ResourcesSettingsTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
+                    case 6: // Abstracts (was 7)
+                      return <AbstractsSettingsTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} updateAbstractSettings={updateAbstractSettings} />;
+                    case 7: // Schedule (was 8)
+                      return <ScheduleTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
                     default:
                       return <div>Select a settings category.</div>;
                   }
                 })()}
               </div>
               
-              {/* Add this at the bottom */}
+              {/* Add this at the bottom - Restoring Save/Cancel buttons */}
               <div className="mt-8 pt-6 border-t border-gray-200">
                 {/* Test button to debug formChanged state */}
-                <div className="mb-4 flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      console.log("Setting formChanged to true for testing");
-                      setFormChanged(true);
-                    }}
-                  >
-                    Test Change (Debug)
-                  </Button>
-                </div>
+                {isDevelopment && ( // Only show test button in development
+                  <div className="mb-4 flex justify-center">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        console.log("Setting formChanged to true for testing");
+                        setFormChanged(true);
+                      }}
+                    >
+                      Test Change (Dev Only)
+                    </Button>
+                  </div>
+                )}
                 
                 {/* Save/Cancel buttons */}
                 <div className="flex justify-end space-x-3">
@@ -731,7 +799,7 @@ function EventPortal() {
                     variant="light"
                     onClick={() => {
                       // Reset by fetching the event data again
-                      loadEventData();
+                      loadEventData(); // Make sure loadEventData is defined and accessible
                       setFormChanged(false);
                     }}
                   >
@@ -739,24 +807,27 @@ function EventPortal() {
                   </Button>
                   <Button
                     variant="primary"
-                    disabled={!formChanged}
+                    disabled={!formChanged || loading} // Disable if not changed or if loading
                     onClick={async () => {
                       try {
-                        console.log("Saving event changes");
-                        setLoading(true);
-                        await eventService.updateEvent(id, event);
+                        console.log("Saving event settings...");
+                        setLoading(true); // Indicate loading state
+                        // Ensure eventService.updateEvent is correctly defined and imported
+                        await eventService.updateEvent(id, event); 
                         setFormChanged(false);
-                        setLoading(false);
-                        // Show success message (you could add a toast notification here)
+                        // Optionally, trigger a full portal refresh or just show success
+                        // await handleRefresh(); // If you want to refresh everything
                         console.log("Event settings saved successfully");
+                         // Consider adding a success toast notification here
                       } catch (err) {
                         console.error("Error saving event settings:", err);
-                        setLoading(false);
-                        // Show error message (you could add a toast notification here)
+                        // Consider adding an error toast notification here
+                      } finally {
+                        setLoading(false); // End loading state
                       }
                     }}
                   >
-                    Save Changes
+                    {loading ? <Spinner size="sm" /> : "Save Changes"}
                   </Button>
                 </div>
               </div>
@@ -1087,6 +1158,26 @@ function EventPortal() {
                     </button>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Sponsor Portal</label>
+                  <div className="flex rounded-md shadow-sm">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/portal/sponsor-login/${id}`}
+                      className="flex-1 min-w-0 block w-full px-3 py-2 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(`${window.location.origin}/portal/sponsor-login/${id}`)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-r-md bg-gray-50 text-gray-700 sm:text-sm"
+                    >
+                      <ClipboardIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
               </div>
               
               <div className="mt-6">

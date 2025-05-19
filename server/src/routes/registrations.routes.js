@@ -11,7 +11,8 @@ const {
   checkInRegistration,
   importRegistrations,
   exportRegistrationsController,
-  getRegistrationStatistics
+  getRegistrationStatistics,
+  getRegistrationDetailsByScan
 } = require('../controllers/registration.controller');
 
 // Import the router for resources related to a specific registration
@@ -36,6 +37,10 @@ router.route('/export')
 // Route for statistics
 router.route('/statistics')
   .get(getRegistrationStatistics);
+
+// Add new scan route here
+router.route('/scan')
+  .post(getRegistrationDetailsByScan); // Handles POST /api/events/:eventId/registrations/scan
 
 // Mount the registration-specific resource router at /:registrationId/resources
 // This will handle paths like /api/events/:eventId/registrations/:registrationId/resources/ 

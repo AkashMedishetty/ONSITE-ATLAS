@@ -84,6 +84,7 @@ const abstractService = {
     const cleanedData = { ...abstractData };
     if (cleanedData.registration) cleanedData.registration = String(cleanedData.registration);
     if (cleanedData.category) cleanedData.category = String(cleanedData.category);
+    if (cleanedData.topic) cleanedData.topic = String(cleanedData.topic);
 
     const url = `/events/${eventId}/abstracts`;
     console.log("[AbstractService] Creating abstract (registrant) for URL:", url);

@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { User, Registration } = require('../models');
+const { User, Registration, EventSponsor } = require('../models');
 const { createApiError } = require('./error');
 const logger = require('../utils/logger');
 const asyncHandler = require('./async');
@@ -45,8 +45,27 @@ const protect = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse('Not authorized, registrant not found', 401));
       }
       console.log(`[Protect Middleware] Registrant (ID: ${req.registrant._id}) authenticated for ${req.originalUrl}`);
-      // Optionally, to maintain compatibility if some downstream middleware expects req.user
-      // you might set req.user = req.registrant here, but it's cleaner to use req.registrant for registrants.
+      // Optionally, you might set req.user = req.registrant here for compatibility,
+      // but it's cleaner to use req.registrant for registrants.
+    } else if (decoded.type === 'sponsor') { // Added case for sponsor
+      req.sponsor = await EventSponsor.findById(decoded.id);
+      if (!req.sponsor) {
+        console.log('[Protect Middleware] Sponsor not found for decoded token ID:', decoded.id);
+        return next(new ErrorResponse('Not authorized, sponsor not found', 401));
+      }
+      console.log(`[Protect Middleware] Sponsor (ID: ${req.sponsor._id}, SponsorAppID: ${req.sponsor.sponsorId}) authenticated for ${req.originalUrl}`);
+      // To allow generic req.user checks for role-based authorization further down (like the restrict middleware)
+      // we can populate req.user with essential details from the sponsor, including a role.
+      // The 'sponsor' role is already defined in src/config/roles.js
+      req.user = { 
+        _id: req.sponsor._id, 
+        id: req.sponsor._id, // for consistency if some parts use .id
+        role: 'sponsor', // Assign the 'sponsor' role
+        sponsorDetails: req.sponsor, // Attach full sponsor details if needed
+        // Add other common fields if restrict middleware or others expect them, e.g., email
+        email: req.sponsor.contactEmail, // Assuming contactEmail is present
+        name: req.sponsor.companyName // Assuming companyName is present
+      };
     } else {
       // Assume 'user' type or default to User model if type is undefined
       req.user = await User.findById(decoded.id).select('-password');
