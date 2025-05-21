@@ -17,7 +17,7 @@ import {
 import { Card, Button, Badge, Spinner, Alert } from "../../components/common";
 import toast from 'react-hot-toast';
 import eventService from "../../services/eventService";
-import resourceService from "../../services/resourceService";
+import resourceService, { normalizeResourceType } from "../../services/resourceService";
 import registrationService from "../../services/registrationService";
 
 // Helper function to get the API base URL (add this)
@@ -30,15 +30,17 @@ const getApiBaseUrl = () => {
 };
 
 const ScannerStation = ({ eventId: eventIdProp }) => {
-  console.log('--- ScannerStation Component Mounted ---');
-  console.log('Received eventId prop:', eventIdProp);
-  const { resourceType: resourceTypeParam } = useParams();
+  const { resourceType: resourceTypeParam, id: eventIdFromUrl } = useParams();
+  console.log(`[ScannerStation START] Component Mount/Re-render. eventIdProp: ${eventIdProp}, URL eventId: ${eventIdFromUrl}, URL resourceTypeParam: ${resourceTypeParam}`);
+  
   const navigate = useNavigate();
-  
-  // Use the prop as the definitive eventId
   const eventId = eventIdProp;
+  const [selectedResourceType, setSelectedResourceType] = useState(() => {
+    const initialType = resourceTypeParam || "food";
+    console.log(`[ScannerStation START] Initializing selectedResourceType state to: ${initialType} (from URL param: ${resourceTypeParam})`);
+    return initialType;
+  });
   
-  // State declarations
   const [event, setEvent] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [selectedResource, setSelectedResource] = useState("");
@@ -48,37 +50,25 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [statistics, setStatistics] = useState({
-    total: 0,
-    today: 0,
-    unique: 0
-  });
+  const [statistics, setStatistics] = useState({ total: 0, today: 0, unique: 0 });
   const [isLoadingScans, setIsLoadingScans] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
-  const [selectedResourceType, setSelectedResourceType] = useState(resourceTypeParam || "food");
   const [scannerType, setScannerType] = useState("camera");
   const [manualInput, setManualInput] = useState("");
+  const [printFieldsOnly, setPrintFieldsOnly] = useState(true);
   
-  // Refs
   const scannerRef = useRef(null);
   const scannerDivRef = useRef(null);
   const manualInputRef = useRef(null);
   
-  // Utility functions
   const getResourceTypeDisplay = (type = selectedResourceType) => {
     if (!type) return "Resource";
-    
     switch (type) {
-      case "food":
-        return "Food";
-      case "kits":
-        return "Kit Bag";
-      case "certificates":
-        return "Certificate";
-      case "certificatePrinting":
-        return "Certificate Printing";
-      default:
-        return type.charAt(0).toUpperCase() + type.slice(1);
+      case "food": return "Food";
+      case "kits": return "Kit Bag";
+      case "certificates": return "Certificate";
+      case "certificatePrinting": return "Certificate Printing";
+      default: return type.charAt(0).toUpperCase() + type.slice(1);
     }
   };
   
@@ -97,16 +87,33 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
     }
   };
   
-  const formatTimestamp = (timestamp) => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch (err) {
-      return "Invalid time";
+  const formatResourceName = (resourceName) => {
+    // Try to find the resource option by _id in resourceOptions
+    if (resourceName && resourceOptions && Array.isArray(resourceOptions)) {
+      const found = resourceOptions.find(opt => opt._id === resourceName);
+      if (found && found.name) return found.name;
     }
+    // Fallback: if it's a food resource with a day index prefix
+    if (resourceName && typeof resourceName === 'string' && resourceName.match(/^[0-9]+_/)) {
+      const resourceOption = resourceOptions.find(opt => opt._id === resourceName);
+      if (resourceOption && resourceOption.name) return resourceOption.name;
+    }
+    // Fallback to the raw value or a placeholder
+    return resourceName || "—";
   };
   
-  // Scanner management functions
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return "—";
+    if (timestamp instanceof Date && !isNaN(timestamp)) {
+      return timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    const date = new Date(timestamp);
+    if (!isNaN(date)) {
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return "—";
+  };
+  
   const stopScanner = () => {
     if (scannerRef.current) {
       try {
@@ -122,12 +129,8 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
   };
   
   const startScanner = () => {
-    // Clear any previous error
     setCameraError(null);
-    
-    // Safely access resourceType with fallback
     const resourceDisplay = getResourceTypeDisplay();
-    
     if (!selectedResource) {
       setScanResult({
         success: false,
@@ -135,8 +138,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       });
       return;
     }
-
-    // If a scanner instance exists, clear it first
     if (scannerRef.current) {
       try {
         scannerRef.current.clear();
@@ -145,274 +146,189 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         console.error("Error clearing previous scanner:", error);
       }
     }
-    
-    // First set scanning to true so the scanner div is rendered
     setScanning(true);
-    
-    // Delay scanner initialization slightly to ensure the DOM element is available
     setTimeout(() => {
       const scannerElement = document.getElementById("scanner");
-      console.log("Starting scanner with container:", scannerElement);
-      
       if (!scannerElement) {
         console.error("Scanner element not found in DOM");
         setCameraError("Scanner initialization failed: scanner element not found");
         setScanning(false);
         return;
       }
-      
       try {
-        const scanner = new Html5QrcodeScanner(
-          "scanner",
-          { 
-            fps: 5, 
-            qrbox: 250,
-            aspectRatio: 1,
-            showTorchButtonIfSupported: false,
-            showZoomSliderIfSupported: false,
-            disableFlip: false,
-            rememberLastUsedCamera: false
-          },
-          /* verbose= */ false
-        );
-        
-        scanner.render(onScanSuccess, onScanFailure);
-        scannerRef.current = scanner;
+        const html5Scanner = new Html5QrcodeScanner("scanner", { fps: 5, qrbox: 250, aspectRatio: 1 }, false);
+        html5Scanner.render(onScanSuccess, onScanFailure);
+        scannerRef.current = html5Scanner;
       } catch (err) {
         console.error("Error initializing scanner:", err);
         setCameraError(`Failed to start scanner: ${err.message}`);
         setScanning(false);
       }
-    }, 100); // Short delay to ensure the DOM has updated
+    }, 100);
   };
   
-  // Data fetching functions
   const fetchResourceOptions = async (type = selectedResourceType) => {
-    // Ensure we use the eventId from the prop
+    console.log(`[fetchResourceOptions] Called for type: ${type}, current selectedResourceType state: ${selectedResourceType}`);
     if (!eventId) {
       setError('Event ID is missing.');
       console.error('ScannerStation: Event ID prop is missing or undefined.');
-      setLoading(false); // Stop loading if ID is missing
-      return; // Return early
+      setLoading(false);
+      return; 
     }
+
+    let currentResourceOptions = []; // To check after API call if options were set
 
     try {
       if (!type) {
         console.warn("No resource type provided for fetchResourceOptions");
         return { success: false, message: "Resource type is required" };
       }
-      
       console.log(`Fetching ${type} settings for event ${eventId}`);
-      
-        let settingsResponse;
+      let settingsResponse;
+
       if (type === "food") {
-          settingsResponse = await resourceService.getFoodSettings(eventId);
-          if (settingsResponse.success) {
+        settingsResponse = await resourceService.getFoodSettings(eventId);
+        if (settingsResponse && settingsResponse.success) {
           console.log("Food settings loaded successfully:", settingsResponse.data);
-          
-          // For food, we need to extract meals from days
           const days = settingsResponse.data.settings?.days || [];
-          
-          // Flatten the meals from all days and add unique ID by combining day index and meal name
           const allMeals = [];
           days.forEach((day, dayIndex) => {
             const dayDate = new Date(day.date);
             const formattedDate = dayDate.toLocaleDateString();
-            
             const meals = day.meals || [];
             meals.forEach((meal) => {
-              // Creating a unique ID by combining day and meal
               const mealId = `${dayIndex}_${meal.name}`;
-              allMeals.push({
-                _id: mealId,
-                name: `${meal.name} (${formattedDate})`,
-                dayIndex,
-                originalMeal: meal
-              });
+              allMeals.push({ _id: mealId, name: `${meal.name} (${formattedDate})`, dayIndex, originalMeal: meal });
             });
           });
-          
           console.log("Extracted meals:", allMeals);
-          
           setResourceOptions(allMeals);
-          if (allMeals.length > 0) {
-            setSelectedResource(allMeals[0]._id);
-          }
+          currentResourceOptions = allMeals; // Keep track
+          if (allMeals.length > 0) setSelectedResource(allMeals[0]._id);
+          else setSelectedResource("");
         }
       } else if (type === "kits") {
-          settingsResponse = await resourceService.getKitSettings(eventId);
-          if (settingsResponse.success) {
-          console.log("Kit settings loaded successfully:", settingsResponse.data);
-          setResourceOptions(settingsResponse.data.settings?.items || []);
-          if (settingsResponse.data.settings?.items && settingsResponse.data.settings.items.length > 0) {
-            setSelectedResource(settingsResponse.data.settings.items[0]._id);
-          }
+        settingsResponse = await resourceService.getKitSettings(eventId);
+        if (settingsResponse && settingsResponse.success) {
+          console.log("[fetchResourceOptions - Kits] Kit settings loaded successfully:", settingsResponse.data);
+          const rawKitItems = settingsResponse.data.settings?.items || [];
+          const formattedKitItems = rawKitItems.map((item, index) => ({ _id: item._id || item.id || `kit_item_${index}`, name: item.name || `Unnamed Kit Item ${index + 1}` }));
+          console.log("[fetchResourceOptions - Kits] Formatted kit items:", formattedKitItems);
+          setResourceOptions(formattedKitItems);
+          currentResourceOptions = formattedKitItems; // Keep track
+          if (formattedKitItems.length > 0) setSelectedResource(formattedKitItems[0]._id);
+          else setSelectedResource("");
         }
       } else if (type === "certificates") {
-          settingsResponse = await resourceService.getCertificateSettings(eventId);
-          if (settingsResponse.success) {
+        settingsResponse = await resourceService.getCertificateSettings(eventId);
+        if (settingsResponse && settingsResponse.success) {
           console.log("Certificate settings loaded successfully:", settingsResponse.data);
-          setResourceOptions(settingsResponse.data.settings?.templates || []);
-          if (settingsResponse.data.settings?.templates && settingsResponse.data.settings.templates.length > 0) {
-            setSelectedResource(settingsResponse.data.settings.templates[0]._id);
-          }
-          }
-        } else if (type === "certificatePrinting") {
-          console.log('[FetchResourceOptions] Fetching for certificatePrinting');
-          settingsResponse = await resourceService.getCertificatePrintingSettings(eventId);
-
-          // --- DETAILED LOGGING START ---
-          console.log('[FetchResourceOptions - CertPrint] Full API Response:', JSON.stringify(settingsResponse, null, 2));
-          if (settingsResponse && settingsResponse.data) {
-            console.log('[FetchResourceOptions - CertPrint] response.data:', JSON.stringify(settingsResponse.data, null, 2));
-            console.log('[FetchResourceOptions - CertPrint] typeof response.data.certificatePrintingTemplates:', typeof settingsResponse.data.certificatePrintingTemplates);
-            console.log('[FetchResourceOptions - CertPrint] Array.isArray(response.data.certificatePrintingTemplates):', Array.isArray(settingsResponse.data.certificatePrintingTemplates));
-            if (Array.isArray(settingsResponse.data.certificatePrintingTemplates)) {
-              console.log('[FetchResourceOptions - CertPrint] response.data.certificatePrintingTemplates CONTENT:', JSON.stringify(settingsResponse.data.certificatePrintingTemplates, null, 2));
-            }
-          } else {
-            console.log('[FetchResourceOptions - CertPrint] response or response.data is null/undefined.');
-          }
-          // --- DETAILED LOGGING END ---
-
-          if (settingsResponse.success && Array.isArray(settingsResponse.data?.settings?.templates)) {
-            console.log('[FetchResourceOptions - CertPrint] Main condition met: Processing response.data.settings.templates');
-            const templateList = settingsResponse.data.settings.templates.map(template => ({
-              _id: template._id, // This should be the unique ID of the template
-              name: template.name || 'Unnamed Template',
-              // Add other properties if needed by the component, e.g., type: template.categoryType
-            }));
+          const certificateTypes = settingsResponse.data.settings?.types || [];
+          setResourceOptions(certificateTypes);
+          currentResourceOptions = certificateTypes; // Keep track
+          if (certificateTypes.length > 0) setSelectedResource(certificateTypes[0]._id);
+          else setSelectedResource("");
+        }
+      } else if (type === "certificatePrinting") {
+        console.log('[FetchResourceOptions] Fetching for certificatePrinting');
+        settingsResponse = await resourceService.getCertificatePrintingSettings(eventId);
+        console.log('[FetchResourceOptions - CertPrint] Full API Response:', JSON.stringify(settingsResponse, null, 2));
+        if (settingsResponse && settingsResponse.success && settingsResponse.data) {
+          console.log('[FetchResourceOptions - CertPrint] response.data:', JSON.stringify(settingsResponse.data, null, 2));
+          if (Array.isArray(settingsResponse.data.settings?.templates)) {
+            const templateList = settingsResponse.data.settings.templates.map(template => ({ _id: template._id, name: template.name || 'Unnamed Template' }));
             setResourceOptions(templateList);
-            if (templateList.length > 0) {
-              setSelectedResource(templateList[0]._id);
-            }
+            currentResourceOptions = templateList; // Keep track
+            if (templateList.length > 0) setSelectedResource(templateList[0]._id);
+            else setSelectedResource("");
             console.log('[FetchResourceOptions - CertPrint] Templates set:', templateList);
           } else {
-            // This else will be caught by the generic fallback below if not successful
-            console.warn('[FetchResourceOptions - CertPrint] Failed to load templates or data in unexpected format.');
+            console.warn('[FetchResourceOptions - CertPrint] settings.templates is not an array or is missing.');
+            setResourceOptions([]); currentResourceOptions = []; setSelectedResource("");
           }
+        } else {
+          console.log('[FetchResourceOptions - CertPrint] response was not successful or response.data is null/undefined.');
+          setResourceOptions([]); currentResourceOptions = []; setSelectedResource("");
         }
-        
-        if (!settingsResponse || !settingsResponse.success) {
-        console.warn(`Could not load ${type} settings, using fallback data`);
-          // Fallback to minimal resource data if API fails
-          const fallbackOptions = [
+      }
+
+      if (!settingsResponse || !settingsResponse.success || (settingsResponse.success && currentResourceOptions.length === 0)) {
+        console.warn(`Could not load options for ${type} or options array was empty after API call, using fallback data.`);
+        const fallbackOptions = [
           { _id: `${type}_option_1`, name: `${getResourceTypeDisplay(type)} Option 1` },
           { _id: `${type}_option_2`, name: `${getResourceTypeDisplay(type)} Option 2` }
-          ];
-          setResourceOptions(fallbackOptions);
-          setSelectedResource(fallbackOptions[0]._id);
-        }
-        
+        ];
+        setResourceOptions(fallbackOptions);
+        if (fallbackOptions.length > 0) setSelectedResource(fallbackOptions[0]._id);
+      }
       return settingsResponse;
-      } catch (err) {
+    } catch (err) {
       console.error(`Error fetching ${type} options:`, err);
+      setError(`Failed to fetch ${type} options: ${err.message}`);
+      const fallbackOnError = [{ _id: `${type}_error_option_1`, name: `Error Loading ${getResourceTypeDisplay(type)}` }];
+      setResourceOptions(fallbackOnError);
+      if (fallbackOnError.length > 0) setSelectedResource(fallbackOnError[0]._id); // Ensure selectedResource is also set on error
       return { success: false, message: err.message };
     }
   };
   
   const fetchRecentScans = useCallback(async () => {
-    // Use the eventId from the prop here
-    if (!eventId || !selectedResource) return;
-    
+    console.log(`[fetchRecentScans] Called. eventId: ${eventId}, selectedResourceType: ${selectedResourceType}, selectedResource: ${selectedResource}`);
+    if (!eventId || !selectedResource) {
+        console.log("[fetchRecentScans] Aborted: Missing eventId or selectedResource.");
+        return;
+    }
     setIsLoadingScans(true);
     try {
-      const response = await resourceService.getRecentScans(eventId, selectedResourceType, 20, selectedResource);
-      if (response.success) {
-        setRecentScans(response.data || []);
-      } else {
-        console.error('Failed to fetch recent scans:', response.message);
-        setRecentScans([]);
-      }
+      const normalizedType = normalizeResourceType(selectedResourceType);
+      const response = await resourceService.getRecentScans(eventId, normalizedType, 20, selectedResource);
+      console.log(`[fetchRecentScans] API response for ${normalizedType} - ${selectedResource}:`, response);
+      if (response.success) setRecentScans(response.data || []);
+      else { console.error('Failed to fetch recent scans:', response.message); setRecentScans([]); }
     } catch (error) {
-      console.error('Error fetching recent scans:', error);
-      setRecentScans([]);
-    } finally {
-      setIsLoadingScans(false);
-    }
-  }, [eventId, selectedResourceType, selectedResource]); // Add eventId dependency
+      console.error('Error fetching recent scans:', error); setRecentScans([]);
+    } finally { setIsLoadingScans(false); }
+  }, [eventId, selectedResourceType, selectedResource]);
   
   const fetchStatistics = useCallback(async () => {
-    // Use the eventId from the prop here
     if (!eventId || !selectedResource) return;
-    
     setIsLoadingStats(true);
     try {
-      const response = await resourceService.getResourceStatistics(eventId, selectedResourceType, selectedResource);
-      
+      const normalizedType = normalizeResourceType(selectedResourceType);
+      const response = await resourceService.getResourceStatistics(eventId, normalizedType, selectedResource);
       if (response.success) {
-        console.log(`Statistics for ${selectedResourceType} loaded:`, response.data);
-        console.log(`Count: ${response.data.count}, Today: ${response.data.today}, Unique: ${response.data.uniqueAttendees}`);
-        
-        // Set the statistics directly from the response
-        setStatistics({
-          total: response.data.count || 0,
-          today: response.data.today || 0,
-          unique: response.data.uniqueAttendees || 0
-        });
+        console.log(`Statistics for ${normalizedType} loaded:`, response.data);
+        setStatistics({ total: response.data.count || 0, today: response.data.today || 0, unique: response.data.uniqueAttendees || 0 });
       } else {
-        console.warn(`Could not load ${selectedResourceType} statistics, using default values`);
-        setStatistics({
-          total: 0,
-          today: 0,
-          unique: 0
-        });
+        console.warn(`Could not load ${normalizedType} statistics, using default values`);
+        setStatistics({ total: 0, today: 0, unique: 0 });
       }
     } catch (err) {
       console.error(`Error fetching ${selectedResourceType} statistics:`, err);
-      // Set default stats to prevent UI breaking
-      setStatistics({
-        total: 0,
-        today: 0,
-        unique: 0
-      });
-    } finally {
-      setIsLoadingStats(false);
-    }
-  }, [eventId, selectedResourceType, selectedResource]); // Add eventId dependency
+      setStatistics({ total: 0, today: 0, unique: 0 });
+    } finally { setIsLoadingStats(false); }
+  }, [eventId, selectedResourceType, selectedResource]);
   
   const fetchEventDetails = useCallback(async () => {
-    // Use the eventId from the prop here
     if (!eventId) return;
     try {
       const response = await eventService.getEventById(eventId);
-      if (response.success) {
-        setEvent(response.data);
-        console.log("[ScannerStation] Event data loaded:", response.data);
-      } else {
-        throw new Error(response?.message || "Failed to fetch event details.");
-      }
-    } catch (err) {
-      console.error("[ScannerStation] Error fetching event details:", err);
-      setError(err.message || "An error occurred while loading event details.");
-    }
-  }, [eventId]); // Add eventId dependency
+      if (response.success) { setEvent(response.data); console.log("[ScannerStation] Event data loaded:", response.data); }
+      else throw new Error(response?.message || "Failed to fetch event details.");
+    } catch (err) { console.error("[ScannerStation] Error fetching event details:", err); setError(err.message || "An error occurred while loading event details."); }
+  }, [eventId]);
   
-  // Handler functions
   const handleResourceTypeChange = async (newType) => {
-    console.log(`Changing resource type from ${selectedResourceType} to ${newType}`);
+    console.log(`[handleResourceTypeChange] Called with newType: ${newType}. Current selectedResourceType: ${selectedResourceType}`);
+    if (selectedResourceType === newType) return;
     setSelectedResourceType(newType);
-    
-    // Stop scanner if it's running
-    if (scanning) {
-      stopScanner();
-    }
-    
-    // Reset states
-    setSelectedResource("");
+    if (scanning) stopScanner();
+    setSelectedResource(""); 
     setResourceOptions([]);
     setScanResult(null);
-    
-    // Fetch new options for the selected resource type
-    await fetchResourceOptions(newType);
-    
-    // Fetch recent scans
-    await fetchRecentScans();
-    
-    // Fetch statistics
-    await fetchStatistics();
-    
-    // Update URL without causing a page reload
+    setRecentScans([]); 
+    setStatistics({ total: 0, today: 0, unique: 0 }); 
+    await fetchResourceOptions(newType); 
     navigate(`/events/${eventId}/resources/scanner/${newType}`, { replace: true });
   };
   
@@ -422,356 +338,130 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
   };
 
   const handleScannerTypeChange = (type) => {
-    if (scanning && type !== scannerType) {
-      stopScanner();
-    }
+    if (scanning && type !== scannerType) stopScanner();
     setScannerType(type);
     setScanResult(null);
-    
-    // If switching to manual, focus the input
-    if (type === "manual" && manualInputRef.current) {
-      setTimeout(() => {
-        manualInputRef.current.focus();
-      }, 100);
-    } else if (type === "camera") {
-      // Auto-start camera scanner if resource is selected
-      if (selectedResource) {
-        // Wait longer for the DOM to update before initializing scanner
-        setTimeout(() => {
-          startScanner();
-        }, 1000);
-      }
-    }
+    if (type === "manual" && manualInputRef.current) setTimeout(() => { manualInputRef.current.focus(); }, 100);
+    else if (type === "camera" && selectedResource) setTimeout(() => { startScanner(); }, 1000);
   };
   
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     if (!manualInput.trim()) return;
-    
     await processQrCode(manualInput.trim());
     setManualInput("");
-    
-    // Focus back on input for continuous scanning
-    if (manualInputRef.current) {
-      setTimeout(() => {
-        manualInputRef.current.focus();
-      }, 500);
-    }
+    if (manualInputRef.current) setTimeout(() => { manualInputRef.current.focus(); }, 500);
   };
   
-  // Scanner event handlers
   const onScanSuccess = async (decodedText) => {
     console.log(`QR Code scanned: ${decodedText}`);
-    
-    // Pause the scanner while processing
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.pause(true);
-      } catch (error) {
-        console.error("Error pausing scanner:", error);
-      }
-    }
-    
-      await processQrCode(decodedText);
-    
-    // Resume the scanner after processing
-      if (scannerRef.current) {
-        try {
-        setTimeout(() => {
-          scannerRef.current?.resume();
-        }, 2000); // Delay to allow user to see the result
-        } catch (error) {
-          console.error("Error resuming scanner:", error);
-      }
-    }
+    if (scannerRef.current) try { scannerRef.current.pause(true); } catch (error) { console.error("Error pausing scanner:", error); }
+    await processQrCode(decodedText);
+    if (scannerRef.current) try { setTimeout(() => { scannerRef.current?.resume(); }, 2000); } catch (error) { console.error("Error resuming scanner:", error); }
   };
   
   const onScanFailure = (error) => {
-    // Only log specific errors, completely suppress "No MultiFormat Readers" errors
-    // as these are normal when no QR code is in view
-    if (error && !error.toString().includes("MultiFormat Readers")) {
-      console.error("QR Code scan error:", error);
-    }
-    // Don't show UI errors for regular scan failures - only show for initialization failures
+    if (error && !error.toString().includes("MultiFormat Readers")) console.error("QR Code scan error:", error);
   };
   
   const processQrCode = async (qrData) => {
-    // Use the eventId from the prop here
     if (!eventId || !selectedResource) {
-      setScanResult({
-        success: false,
-        message: "Event ID or resource is missing",
-        details: "Please check your configuration"
-      });
+      setScanResult({ success: false, message: "Event ID or resource is missing", details: "Please check your configuration" });
       return;
     }
-    
     console.log(`Processing QR Code: ${qrData} for resource ${selectedResource} in event ${eventId}`);
     setScanResult({ processing: true });
-    
     try {
-      // Safely get resource display name with fallback
       const resourceDisplay = getResourceTypeDisplay();
       const resourceLower = resourceDisplay ? resourceDisplay.toLowerCase() : 'resource';
-
-      // Find the selected resource option
-      const selectedOption = resourceOptions.find(opt => opt._id === selectedResource);
-      
-      // Create resource info object for API calls
-      const resourceInfo = {
-        type: selectedResourceType,
-        selectedOption: selectedOption,
-        eventId: eventId,
-        // Add the selected resource ID directly to ensure it's available
-        resourceOptionId: selectedResource,
-        // Include as selectedResource too for redundancy
-        selectedResource: selectedResource
-      };
-      
-      // Validate the scan
-      console.log(`Validating scan for ${selectedResourceType}, option: `, selectedOption);
-      
-      // Try to clean up the QR code by trimming whitespace
+      const selectedOptionObj = resourceOptions.find(opt => opt._id === selectedResource);
+      const resourceInfo = { type: selectedResourceType, selectedOption: selectedOptionObj, eventId, resourceOptionId: selectedResource, selectedResource };
       const cleanQrCode = qrData.toString().trim();
-      console.log("Clean QR code for validation:", cleanQrCode);
-      
-      // Fix: Pass the correct parameters in the correct order instead of the resourceInfo object
-      const validationResponse = await resourceService.validateScan(
-        eventId,
-        selectedResourceType,
-        selectedResource,
-        cleanQrCode
-      );
-      
-      console.log("Validation response:", validationResponse);
-      
+      const validationResponse = await resourceService.validateScan(eventId, selectedResourceType, selectedResource, cleanQrCode);
       if (!validationResponse || !validationResponse.success) {
-        // If API returns null/undefined or success: false
-        setScanResult({
-          success: false,
-          message: validationResponse?.message || "Invalid scan",
-          details: validationResponse?.details || `Unable to validate this ${resourceLower} scan`
-        });
+        setScanResult({ success: false, message: validationResponse?.message || "Invalid scan", details: validationResponse?.details || `Unable to validate this ${resourceLower} scan` });
         return;
       }
-      
-      // Record the resource usage
-      console.log(`Recording ${selectedResourceType} usage for registration ${cleanQrCode}`);
-      console.log("QR code value being passed:", cleanQrCode);
-      console.log("Resource info being passed:", JSON.stringify(resourceInfo));
-      
-      // We now pass the clean QR code to make sure there are no whitespace issues
-      const usageResponse = await resourceService.recordResourceUsage(
-        resourceInfo,
-        cleanQrCode
-      );
-      
-      console.log("Usage response:", usageResponse);
-      
+      const usageResponse = await resourceService.recordResourceUsage(resourceInfo, cleanQrCode);
       if (!usageResponse || !usageResponse.success) {
-        // If API returns null/undefined or success: false
-        setScanResult({
-          success: false,
-          message: usageResponse?.message || `Failed to record ${resourceLower} usage`,
-          details: usageResponse?.details || `Error details: ${JSON.stringify(usageResponse)}. The validation was successful, but recording the usage failed.`
-        });
-        
-        // Show a more detailed error alert if possible
-        console.error(`Failed to record ${resourceLower} usage. Details:`, usageResponse);
+        setScanResult({ success: false, message: usageResponse?.message || `Failed to record ${resourceLower} usage`, details: usageResponse?.details || `Recording failed after successful validation.` });
         return;
       }
-      
-      // Fetch registration details
       let registrationDetails = null;
       try {
-        const registrationResponse = await registrationService.scanRegistration(
-          eventId,
-          { qrCode: cleanQrCode }
-        );
-      
-        if (registrationResponse && registrationResponse.success) {
-          registrationDetails = registrationResponse.data;
-        }
-      } catch (regError) {
-        console.warn("Error fetching registration details:", regError);
-        // Continue even if registration details fail to load
-      }
-      
-      // Get the display name for the resource option
-      let resourceOptionDisplay = "";
-      if (selectedResourceType === 'food' && selectedOption) {
-        resourceOptionDisplay = selectedOption.name; // This includes date
-      } else {
-        // For other resource types
-        resourceOptionDisplay = resourceOptions.find(r => r._id === selectedResource)?.name || "Selected option";
-      }
-      
-      // Set successful scan result
-      setScanResult({
-        success: true,
-        message: `${resourceDisplay} recorded successfully`,
-        registration: registrationDetails,
-        resourceOption: resourceOptionDisplay
-      });
+        const registrationResponse = await registrationService.scanRegistration(eventId, { qrCode: cleanQrCode });
+        if (registrationResponse && registrationResponse.success) registrationDetails = registrationResponse.data;
+      } catch (regError) { console.warn("Error fetching registration details:", regError); }
+      let resourceOptionDisplay = selectedOptionObj?.name || "Selected option";
+      setScanResult({ success: true, message: `${resourceDisplay} recorded successfully`, registration: registrationDetails, resourceOption: resourceOptionDisplay });
 
-      // --- PDF PRINTING TRIGGER for 'certificatePrinting' ---
       if (selectedResourceType === 'certificatePrinting') {
         const registrationIdForPdf = validationResponse.data?.registration?._id;
-        const templateIdForPdf = selectedResource; // This holds the selected template's _id
-
+        const templateIdForPdf = selectedResource;
         if (registrationIdForPdf && templateIdForPdf && eventId) {
-          console.log(`[ProcessQrCode] Attempting to generate PDF for reg: ${registrationIdForPdf}, template: ${templateIdForPdf}`);
-          // const pdfUrl = `${getApiBaseUrl()}/api/resources/events/${eventId}/certificate-templates/${templateIdForPdf}/registrations/${registrationIdForPdf}/generate-pdf`;
-          // console.log("[ProcessQrCode] Opening PDF URL:", pdfUrl);
-          // window.open(pdfUrl, '_blank'); // Old direct open method
-
-          resourceService.getCertificatePdfBlob(eventId, templateIdForPdf, registrationIdForPdf)
+          resourceService.getCertificatePdfBlob(eventId, templateIdForPdf, registrationIdForPdf, !printFieldsOnly)
             .then(pdfResponse => {
               if (pdfResponse.success && pdfResponse.blob) {
                 const fileURL = URL.createObjectURL(pdfResponse.blob);
                 window.open(fileURL, '_blank');
-                setScanResult(prevResult => {
-                  console.log("[ScannerStation] Inside setScanResult (PDF blob success). prevResult:", prevResult);
-                  console.log("[ScannerStation] registrationDetails from outer scope (PDF success):", registrationDetails);
-                  return {
-                    ...prevResult,
-                    message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generated.`,
-                  };
-                });
                 toast.success('Certificate PDF generated and opened.');
+                toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
               } else {
-                console.error("[ProcessQrCode] Failed to get PDF blob:", pdfResponse.message);
                 toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
-                setScanResult(prevResult => {
-                    console.log("[ScannerStation] Inside setScanResult (PDF blob fetch failed). prevResult:", prevResult);
-                    console.log("[ScannerStation] registrationDetails from outer scope (PDF fetch failed):", registrationDetails);
-                    return { 
-                        ...prevResult,
-                        message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generation FAILED.`,
-                    };
-                });
               }
             })
-            .catch(err => {
-              console.error("[ProcessQrCode] Error in getCertificatePdfBlob call:", err);
-              toast.error('Error generating certificate PDF.');
-              setScanResult(prevResult => {
-                console.log("[ScannerStation] Inside setScanResult (PDF blob promise .catch). prevResult:", prevResult);
-                console.log("[ScannerStation] registrationDetails from outer scope (PDF .catch):", registrationDetails);
-                return { 
-                    ...prevResult,
-                    message: `${resourceDisplay} for ${prevResult?.registration?.name || registrationDetails?.name || 'attendee'} recorded. Certificate PDF generation FAILED.`,
-                };
-              });
-            });
-
-        } else {
-          console.warn("[ProcessQrCode] Missing IDs for PDF generation:", { registrationIdForPdf, templateIdForPdf, eventId });
-          if (selectedResource && selectedResourceType === 'certificatePrinting') {
-            toast.error('Could not generate PDF: missing registration or template ID.');
-          }
+            .catch(err => { console.error("Error in getCertificatePdfBlob call:", err); toast.error('Error generating certificate PDF.'); });
         }
       }
-      // --- END PDF PRINTING TRIGGER ---
-      
-      // Refresh data immediately after successful scan with a sequence of refreshes 
-      // to ensure we get the latest data as it propagates through the system
       await fetchRecentScans();
       await fetchStatistics();
-      
-      // Add multiple refreshes with delays to catch updates as they propagate
-      setTimeout(async () => {
-        await fetchRecentScans();
-        await fetchStatistics();
-        
-        // One final refresh after a longer delay
-        setTimeout(async () => {
-          await fetchRecentScans();
-          await fetchStatistics();
-        }, 5000);
-      }, 2000);
     } catch (err) {
       console.error("Error processing QR code:", err);
-      setScanResult({
-        success: false,
-        message: "Error processing scan",
-        details: err.message || "An unexpected error occurred"
-      });
+      setScanResult({ success: false, message: "Error processing scan", details: err.message || "An unexpected error occurred" });
     }
   };
   
-  // Update the formatResourceName function to show original resource names
-  const formatResourceName = (resourceName) => {
-    // If it's a food resource with a day index prefix (like "0_Breakfast")
-    if (resourceName && typeof resourceName === 'string' && resourceName.match(/^\d+_/)) {
-      // Look up the full name including date in resourceOptions
-      const resourceOption = resourceOptions.find(opt => opt._id === resourceName);
-      if (resourceOption && resourceOption.name) {
-        return resourceOption.name; // Return the full name with date: "Breakfast (MM/DD/YYYY)"
-      }
-      // If not found, just use the original name
-      return resourceName;
-    }
-    return resourceName;
-  };
-  
-  // --- useEffect for Initial Data Loading ---
   useEffect(() => {
-    console.log('--- ScannerStation useEffect triggered ---');
-    // Use the eventId from the prop here
-    if (eventId) {
-      fetchInitialData();
-    } else {
-      setError('Event ID is missing. Cannot load initial data.');
-      setLoading(false);
-    }
+    console.log(`[useEffect for Initial Load] Triggered. eventId: ${eventId}, URL resourceTypeParam: ${resourceTypeParam}`);
+    if (eventId) fetchInitialData();
+    else { setError('Event ID is missing. Cannot load initial data.'); setLoading(false); }
+    return () => { console.log('--- ScannerStation Component Unmounted --- Stopping Scanner ---'); stopScanner(); };
+  }, [eventId]);
 
-    // Cleanup function for scanner
-    return () => {
-      console.log('--- ScannerStation Component Unmounted --- Stopping Scanner ---');
-      stopScanner();
-    };
-  }, [eventId]); // Add eventId as dependency
-  
-  // Effect hook to refetch stats and scans when selected resource changes
   useEffect(() => {
-    // Use the eventId from the prop here
-    if (eventId && selectedResource) {
+    if (resourceTypeParam && resourceTypeParam !== selectedResourceType) {
+      console.log(`[ScannerStation useEffect resourceTypeParam] URL param '${resourceTypeParam}' differs from state '${selectedResourceType}'. Syncing state.`);
+      handleResourceTypeChange(resourceTypeParam);
+    }
+  }, [resourceTypeParam]);
+
+  useEffect(() => {
+    console.log(`[useEffect for selectedResource] Triggered. eventId: ${eventId}, selectedResource: ${selectedResource}`);
+    if (eventId && selectedResource) { 
       fetchStatistics();
       fetchRecentScans();
+    } else if (eventId && !selectedResource) {
+      console.log("[useEffect for selectedResource] Clearing scans and stats because selectedResource is empty.");
+      setRecentScans([]);
+      setStatistics({ total: 0, today: 0, unique: 0 });
     }
-  }, [eventId, selectedResource, fetchStatistics, fetchRecentScans]); // Add eventId dependency
+  }, [eventId, selectedResource, fetchStatistics, fetchRecentScans]);
 
-  // The main data fetching function called on mount
-  const fetchInitialData = async () => {
-    // Use the eventId from the prop here
-    if (!eventId) {
-      setError("Event ID is missing.");
-      setLoading(false);
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
+  const fetchInitialData = useCallback(async () => {
+    console.log(`[fetchInitialData] Called. eventId: ${eventId}, current selectedResourceType state (before fetchOptions): ${selectedResourceType}`);
+    if (!eventId) { setError("Event ID is missing."); setLoading(false); return; }
+    setLoading(true); setError(null);
     try {
       console.log(`Fetching initial data for event ${eventId}`);
-      // Use the eventId from the prop here
       await Promise.all([
         fetchEventDetails(),
-        fetchResourceOptions(selectedResourceType) // Fetch options based on initial/URL type
+        fetchResourceOptions(selectedResourceType)
       ]);
-      // Statistics and recent scans will be fetched by the other useEffect 
-      // once fetchResourceOptions sets the selectedResource
       console.log("Initial data fetch complete.");
-    } catch (err) {
-      console.error('Error fetching initial data:', err);
-      setError(`Failed to load initial data: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    } catch (err) { console.error('Error fetching initial data:', err); setError(`Failed to load initial data: ${err.message}`);
+    } finally { setLoading(false); }
+  }, [eventId, selectedResourceType, fetchEventDetails]); // Added fetchEventDetails to deps
   
-  // Render loading state
   if (loading && !event) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -783,7 +473,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
     );
   }
 
-  // Render error state
   if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -800,17 +489,19 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
     );
   }
 
-  // Render main component
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Header */}
       <div className="mb-6">
         <div className="flex items-center mb-2">
-          <Link to={`/events/${eventId}/resources`} className="mr-3">
-            <Button variant="ghost" size="sm" leftIcon={<ArrowLeftIcon className="h-5 w-5" />}>
-              Back
-            </Button>
-          </Link>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            leftIcon={<ArrowLeftIcon className="h-5 w-5" />}
+            onClick={() => navigate(`/events/${eventId}/resources`, { state: { refresh: true } })}
+            className="mr-3"
+          >
+            Back
+          </Button>
           <h1 className="text-2xl font-bold text-gray-900">Resource Scanner</h1>
         </div>
         <p className="text-gray-500">
@@ -818,7 +509,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         </p>
       </div>
       
-      {/* Scanner Card */}
       <Card className="p-6 mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-2 md:mb-0">{getResourceTypeDisplay()} Distribution</h2>
@@ -826,16 +516,12 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
             variant="outline"
             size="sm"
             leftIcon={<ArrowPathIcon className="h-4 w-4" />}
-            onClick={() => {
-              fetchRecentScans();
-              fetchStatistics();
-            }}
+            onClick={() => { fetchRecentScans(); fetchStatistics(); }}
           >
             Refresh Data
           </Button>
         </div>
         
-        {/* Resource Type Selection */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select Resource Type
@@ -858,7 +544,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         </div>
 
-        {/* Resource Option Selection */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select {getResourceTypeDisplay()} Option
@@ -878,7 +563,21 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </select>
         </div>
         
-        {/* Scanner Type Selection */}
+        {selectedResourceType === 'certificatePrinting' && (
+          <div className="mb-6 flex items-center">
+            <input
+              type="checkbox"
+              id="printFieldsOnly"
+              className="mr-2"
+              checked={printFieldsOnly}
+              onChange={e => setPrintFieldsOnly(e.target.checked)}
+            />
+            <label htmlFor="printFieldsOnly" className="text-sm text-gray-700">
+              Print fields only (for pre-printed certificates)
+            </label>
+          </div>
+        )}
+        
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select Scanner Type
@@ -912,7 +611,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         </div>
         
-        {/* Camera Error Alert */}
         {cameraError && (
           <div className="mb-6">
             <Alert variant="error" icon={<ExclamationCircleIcon className="h-5 w-5" />}>
@@ -923,7 +621,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         )}
         
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 rounded-lg p-4">
             <div className="flex items-start">
@@ -962,7 +659,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         </div>
         
-        {/* Scanner Controls */}
         {scannerType === "camera" ? (
         <div className="mb-6">
           {!scanning ? (
@@ -1010,7 +706,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         )}
         
-        {/* Scanner */}
         {scannerType === "camera" && (
           <div className="mb-6">
             <div id="scanner" ref={scannerDivRef} className={`w-full ${!scanning ? 'hidden' : ''}`}></div>
@@ -1028,7 +723,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         )}
         
-        {/* Scan Result */}
         {scanResult && (
           <div className={`mb-6 p-4 rounded-lg ${
             scanResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
@@ -1085,7 +779,6 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
           </div>
         )}
       
-      {/* Recent Scans */}
         <div>
           <h3 className="font-medium text-gray-900 mb-3">Recent Scans</h3>
         

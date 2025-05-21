@@ -46,6 +46,7 @@
     "pdf-to-png": "^1.0.3",
     "pdfkit": "^0.16.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.34.2",
     "stripe": "^12.0.0",
     "validator": "^13.15.0",
     "winston": "^3.8.2",

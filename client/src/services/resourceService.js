@@ -174,39 +174,45 @@ const resourceService = {
           data: null
         };
       }
-      
       console.log('Making API call to get food settings for event:', eventId);
-      
-      // Use the new settings endpoint with query parameters
       const response = await api.get('/resources/settings', {
         params: { 
           eventId, 
           type: 'food',
-          _t: timestamp || Date.now() // Add timestamp parameter for cache busting
+          _t: timestamp || Date.now()
         }
       });
-      
       console.log('Food settings loaded successfully');
-      return response.data;
+      // Normalize enabled property
+      let data = response.data?.data || {};
+      let settings = data.settings || {};
+      let enabled = typeof data.isEnabled !== 'undefined' ? data.isEnabled : (typeof settings.enabled !== 'undefined' ? settings.enabled : true);
+      settings.enabled = enabled;
+      return {
+        success: true,
+        message: response.data?.message || 'Food settings loaded successfully',
+        data: { settings }
+      };
     } catch (error) {
       console.error(`Error fetching food settings: ${error.message}`);
-      
-      // Check if we're hitting the wrong URL
-      if (error.response?.status === 404) {
-        console.error('API endpoint not found. Check server configuration.');
-        console.error('Current baseURL:', api.defaults.baseURL);
-      }
-      
       // Try legacy endpoint as fallback
       try {
         console.log('Trying legacy endpoint as fallback');
         const legacyResponse = await api.get(`/resources/food/settings`, {
           params: { 
             eventId,
-            _t: timestamp || Date.now() // Add timestamp parameter for cache busting
+            _t: timestamp || Date.now()
           }
         });
-        return legacyResponse.data;
+        let data = legacyResponse.data?.data || {};
+        let settings = data.settings || {};
+        let enabled = typeof data.isEnabled !== 'undefined' ? data.isEnabled : (typeof settings.enabled !== 'undefined' ? settings.enabled : true);
+        settings.enabled = enabled;
+        return {
+          success: true,
+          message: legacyResponse.data?.message || 'Food settings loaded successfully',
+          data: { settings }
+        };
       } catch (legacyError) {
         console.error(`Legacy endpoint also failed: ${legacyError.message}`);
         handleError(error, 'Error fetching food settings');
@@ -278,7 +284,6 @@ const resourceService = {
   getKitSettings: async (eventId, timestamp) => {
     try {
       console.log(`[getKitSettings] Fetching settings for event ${eventId}`);
-      
       if (!eventId) {
         console.error('[getKitSettings] Missing event ID');
         return {
@@ -287,40 +292,26 @@ const resourceService = {
           data: { settings: { enabled: true, items: [] } }
         };
       }
-      
       const response = await api.get('/resources/settings', {
         params: { 
           eventId, 
           type: 'kitBag',
-          _t: timestamp || Date.now() // Add timestamp parameter for cache busting
+          _t: timestamp || Date.now()
         }
       });
-      
       console.log('[getKitSettings] Raw API response:', response.data);
-      
       if (response.data && response.data.success) {
         const data = response.data.data || {};
-        
-        // Format the response in a consistent structure
-        const formattedData = {
+        let settings = data.settings || {};
+        let enabled = typeof data.isEnabled !== 'undefined' ? data.isEnabled : (typeof settings.enabled !== 'undefined' ? settings.enabled : true);
+        settings.enabled = enabled;
+        if (!settings.items) settings.items = [];
+        return {
           success: true,
           message: 'Kit settings loaded successfully',
-          data: {
-            settings: data.settings || {},
-            isEnabled: data.isEnabled !== false
-          }
+          data: { settings }
         };
-        
-        // If settings.items is missing, create an empty array
-        if (!formattedData.data.settings.items) {
-          formattedData.data.settings.items = [];
-          console.log('[getKitSettings] Added empty items array');
         }
-        
-        console.log('[getKitSettings] Formatted kit settings:', formattedData);
-        return formattedData;
-      } 
-      
       // Return default data if response is not successful
       console.warn('[getKitSettings] Invalid response, using defaults');
       return { 
@@ -420,7 +411,6 @@ const resourceService = {
   getCertificateSettings: async (eventId, timestamp) => {
     try {
       console.log(`[getCertificateSettings] Fetching settings for event ${eventId}`);
-      
       if (!eventId) {
         console.error('[getCertificateSettings] Missing event ID');
         return {
@@ -429,41 +419,26 @@ const resourceService = {
           data: { settings: { enabled: true, types: [] } }
         };
       }
-      
-      // Use the settings endpoint with query parameters
       const response = await api.get('/resources/settings', {
         params: { 
           eventId, 
           type: 'certificate',
-          _t: timestamp || Date.now() // Add timestamp parameter for cache busting
+          _t: timestamp || Date.now()
         }
       });
-      
       console.log('[getCertificateSettings] Raw API response:', response.data);
-      
       if (response.data && response.data.success) {
         const data = response.data.data || {};
-        
-        // Format the response in a consistent structure
-        const formattedData = {
+        let settings = data.settings || {};
+        let enabled = typeof data.isEnabled !== 'undefined' ? data.isEnabled : (typeof settings.enabled !== 'undefined' ? settings.enabled : true);
+        settings.enabled = enabled;
+        if (!settings.types) settings.types = [];
+        return {
           success: true,
           message: 'Certificate settings loaded successfully',
-          data: {
-            settings: data.settings || {},
-            isEnabled: data.isEnabled !== false
-          }
+          data: { settings }
         };
-        
-        // Ensure types array exists
-        if (!formattedData.data.settings.types) {
-          formattedData.data.settings.types = [];
-          console.log('[getCertificateSettings] Added empty types array');
         }
-        
-        console.log('[getCertificateSettings] Formatted settings:', formattedData);
-        return formattedData;
-      }
-      
       // Return default data if response is not successful
       console.warn('[getCertificateSettings] Invalid response, using defaults');
       return {
@@ -476,7 +451,6 @@ const resourceService = {
       if (error.response) {
         console.error('[getCertificateSettings] Error details:', error.response.data);
       }
-      
       return {
         success: false,
         message: error.message || 'Failed to fetch certificate settings',
@@ -1223,22 +1197,24 @@ const resourceService = {
       if (response.data && response.data.success) {
         const data = response.data.data || {};
         console.log('[getCertificatePrintingSettings] Settings data object:', data);
-        
         // Format the response in a consistent structure
         const formattedResponse = {
           success: true,
           message: 'Certificate printing settings loaded successfully',
           data: {
-            settings: data.settings || {}
+            settings: data.settings || {},
+            isEnabled: typeof data.isEnabled !== 'undefined' ? data.isEnabled : true
           }
         };
-        
         // Ensure templates array exists
         if (!formattedResponse.data.settings.templates) {
           formattedResponse.data.settings.templates = [];
           console.log('[getCertificatePrintingSettings] Added empty templates array');
         }
-        
+        // Ensure enabled property is present in settings
+        if (typeof formattedResponse.data.settings.enabled === 'undefined') {
+          formattedResponse.data.settings.enabled = formattedResponse.data.isEnabled;
+        }
         console.log('[getCertificatePrintingSettings] Formatted response:', formattedResponse);
         return formattedResponse;
       }
@@ -1384,12 +1360,12 @@ const resourceService = {
    */
   // ... (rest of the service object)
 
-  getCertificatePdfBlob: async (eventId, templateId, registrationId) => {
+  getCertificatePdfBlob: async (eventId, templateId, registrationId, background = true) => {
     if (!eventId || !templateId || !registrationId) {
       console.error('[getCertificatePdfBlob] Missing required IDs', { eventId, templateId, registrationId });
       return { success: false, message: 'Event ID, Template ID, and Registration ID are required.', blob: null, filename: 'error.pdf' };
     }
-    const url = `/resources/events/${eventId}/certificate-templates/${templateId}/registrations/${registrationId}/generate-pdf`;
+    const url = `/resources/events/${eventId}/certificate-templates/${templateId}/registrations/${registrationId}/generate-pdf?background=${background}`;
     try {
       console.log(`[getCertificatePdfBlob] Fetching PDF from: ${url}`);
       const response = await api.get(url, { 
@@ -1528,5 +1504,20 @@ const transformStatisticsForUI = (apiResponse) => {
   
   return result;
 };
+
+/**
+ * Normalize resource type for backend API
+ */
+export function normalizeResourceType(type) {
+  switch (type) {
+    case "kits": return "kitBag";
+    case "kit": return "kitBag";
+    case "kitbag": return "kitBag";
+    case "certificates": return "certificate";
+    case "certificate": return "certificate";
+    case "certificateprinting": return "certificatePrinting";
+    default: return type;
+  }
+}
 
 export default resourceService; 

@@ -23,56 +23,90 @@ const { generateAbstractsExcel } = require('../utils/excelHelper');
  */
 const getAbstracts = asyncHandler(async (req, res, next) => {
   const { eventId } = req.params;
-  // logger.info(`[DEBUG GETABSTRACTS] Event ID: ${eventId}`);
-  // logger.info(`[DEBUG GETABSTRACTS] Request User: ${JSON.stringify(req.user)}`);
-  // logger.info(`[DEBUG GETABSTRACTS] Request Registrant: ${JSON.stringify(req.registrant)}`);
-
   let filters = {};
-
-  // Base filter: always filter by eventId
   if (!eventId) {
     return next(createApiError('Event ID is required', 400));
   }
   filters.event = eventId;
-
+  if (req.query.category) {
+    filters.category = req.query.category;
+  }
+  // Fetch the event to get embedded abstractSettings.categories
+  const event = await Event.findById(eventId);
+  let embeddedCategories = [];
+  if (event && event.abstractSettings && Array.isArray(event.abstractSettings.categories)) {
+    embeddedCategories = event.abstractSettings.categories;
+  }
   // Determine access type and apply further filters
   if (req.registrant && req.registrant._id) {
-    // REGISTRANT ACCESS: Fetch only their own abstracts
-    logger.info(`[getAbstracts] Registrant ${req.registrant._id} fetching their abstracts for event ${eventId}`);
     filters.registration = req.registrant._id;
-    
-    // For registrants, ignore any other query parameters that might try to override ownership
-    // (e.g., if they manually add ?user=someone_else to the URL)
-
   } else if (req.user && (req.user.role === 'admin' || req.user.role === 'staff' || req.user.role === 'reviewer')) {
-    // ADMIN/STAFF/REVIEWER ACCESS: Can view all (for the event), possibly with other filters
-    logger.info(`[getAbstracts] Admin/Staff/Reviewer ${req.user._id} fetching abstracts for event ${eventId} with query:`, req.query);
-    // Apply additional filters from req.query (e.g., status, category) if provided by admin/staff
     if (req.query.status) {
       filters.status = req.query.status;
     }
     if (req.query.category) {
-      // Assuming category is a field on the Abstract model storing category ID
       filters.category = req.query.category;
     }
-    // Add other admin-specific filters as needed
   } else {
-    // Should not be reached if routes are configured correctly with auth middleware
-    logger.warn(`[getAbstracts] Unauthorized attempt to access abstracts for event ${eventId}`);
     return next(createApiError('Not authorized to access this resource', 403));
   }
-
+  // Pagination params
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const skip = (page - 1) * limit;
+  // Add search support: If req.query.search is present, filter by authorName, registrationId, or registration.personalInfo
+  if (req.query.search && typeof req.query.search === 'string' && req.query.search.trim()) {
+    const searchTerm = req.query.search.trim();
+    // Use $or for authorName, registrationId, and registration.personalInfo fields
+    filters.$or = [
+      { authorName: { $regex: searchTerm, $options: 'i' } },
+      { registrationId: { $regex: searchTerm, $options: 'i' } },
+      // For registration.personalInfo, need to use $lookup or aggregation, but for now, match on registrationId and authorName
+    ];
+  }
   // Populate fields
-  const abstracts = await Abstract.find(filters)
-    .populate('registration', 'registrationId personalInfo')
-    .populate('category', 'name') // if you have a category field linked to a Category model
-    .sort({ createdAt: -1 });
-
-  res.status(200).json({
-    success: true,
-    count: abstracts.length,
-    data: abstracts,
-  });
+  let [abstracts, total] = await Promise.all([
+    Abstract.find(filters)
+      .populate('registration', 'registrationId personalInfo')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Abstract.countDocuments(filters)
+  ]);
+  function flattenRegistrationInfo(abstract) {
+    if (!abstract) return abstract;
+    if (abstract.registration && abstract.registration.registrationId) {
+      abstract.registrationId = abstract.registration.registrationId;
+    } else if (!abstract.registrationId) {
+      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+    }
+    if (abstract.registration && abstract.registration.personalInfo) {
+      abstract.personalInfo = abstract.registration.personalInfo;
+    }
+    return abstract;
+  }
+  if (Array.isArray(abstracts)) {
+    abstracts = abstracts.map(a => flattenRegistrationInfo(a.toObject ? a.toObject() : a));
+    abstracts.forEach(abs => {
+      let catId = abs.category;
+      if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
+      else if (catId && catId._id) catId = catId._id;
+      else if (catId) catId = String(catId);
+      const match = embeddedCategories.find(cat => {
+        let embeddedId = cat._id;
+        if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
+        else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
+        else if (embeddedId) embeddedId = String(embeddedId);
+        return embeddedId === catId;
+      });
+      abs.categoryName = match ? match.name : 'N/A';
+    });
+    abstracts.forEach(abs => {
+      console.log('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
+    });
+  }
+  // Fix: Pass correct arguments to sendPaginated (status, message, data, page, limit, total)
+  return sendPaginated(res, 200, 'Abstracts retrieved successfully', abstracts, page, limit, total);
 });
 
 /**
@@ -110,13 +144,33 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
 
   logger.info(`[getAbstractsByRegistration] Admin/Staff ${req.user._id} fetching abstracts for registration ${registrationId} in event ${eventId}`);
 
-  const abstracts = await Abstract.find({
+  let abstracts = await Abstract.find({
     event: eventId,
     registration: registrationId
   })
     .populate('registration', 'registrationId personalInfo')
     .populate('category', 'name')
     .sort({ createdAt: -1 });
+
+  // Utility to flatten registrationId and personalInfo on each abstract
+  function flattenRegistrationInfo(abstract) {
+    if (!abstract) return abstract;
+    if (abstract.registration && abstract.registration.registrationId) {
+      abstract.registrationId = abstract.registration.registrationId;
+    } else if (!abstract.registrationId) {
+      // Log if missing
+      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+    }
+    if (abstract.registration && abstract.registration.personalInfo) {
+      abstract.personalInfo = abstract.registration.personalInfo;
+    }
+    return abstract;
+  }
+
+  // For arrays:
+  if (Array.isArray(abstracts)) {
+    abstracts = abstracts.map(a => flattenRegistrationInfo(a.toObject ? a.toObject() : a));
+  }
 
   if (!abstracts || abstracts.length === 0) {
     // Not an error, just no abstracts for this specific registration in this event
@@ -159,6 +213,14 @@ exports.getAbstract = asyncHandler(async (req, res, next) => {
      logger.warn(`[getAbstract] Unauthorized attempt to access abstract ${abstractId}`);
          // Return 404 to hide existence from unauthorized users
      return next(createApiError(`Abstract not found with id of ${abstractId}`, 404)); 
+  }
+
+  // For single abstract fetches:
+  if (abstract && abstract.registration && abstract.registration.registrationId) {
+    abstract.registrationId = abstract.registration.registrationId;
+  }
+  if (abstract && abstract.registration && abstract.registration.personalInfo) {
+    abstract.personalInfo = abstract.registration.personalInfo;
   }
 
   return sendSuccess(res, 200, 'Abstract retrieved successfully', abstract);
@@ -247,6 +309,26 @@ exports.createAbstract = asyncHandler(async (req, res, next) => {
 
     // Removed email sending logic from here as it's likely handled by abstractWorkflowController.submitAbstract
     // logger.info(`Abstract ${abstract._id} created. Email confirmation handled by workflow controller if applicable.`);
+
+    // Auto-assign reviewers based on category
+    if (abstract.category && event.abstractSettings && Array.isArray(event.abstractSettings.categories)) {
+      let catId = abstract.category;
+      if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
+      else if (catId && catId._id) catId = catId._id;
+      else if (catId) catId = String(catId);
+      const match = event.abstractSettings.categories.find(cat => {
+        let embeddedId = cat._id;
+        if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
+        else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
+        else if (embeddedId) embeddedId = String(embeddedId);
+        return embeddedId === catId;
+      });
+      if (match && Array.isArray(match.reviewerIds) && match.reviewerIds.length > 0) {
+        abstract.reviewDetails = abstract.reviewDetails || {};
+        abstract.reviewDetails.assignedTo = match.reviewerIds.map(id => id.toString());
+        await abstract.save();
+      }
+    }
 
     return sendSuccess(res, 201, 'Abstract created successfully.', abstract);
   } catch (error) {
@@ -630,6 +712,26 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   let abstracts = await Abstract.find(query)
     .populate('registrationInfo', 'registrationId personalInfo')
     .populate('category', 'name');
+
+  // Utility to flatten registrationId and personalInfo on each abstract
+  function flattenRegistrationInfo(abstract) {
+    if (!abstract) return abstract;
+    if (abstract.registration && abstract.registration.registrationId) {
+      abstract.registrationId = abstract.registration.registrationId;
+    } else if (!abstract.registrationId) {
+      // Log if missing
+      console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+    }
+    if (abstract.registration && abstract.registration.personalInfo) {
+      abstract.personalInfo = abstract.registration.personalInfo;
+    }
+    return abstract;
+  }
+
+  // For arrays:
+  if (Array.isArray(abstracts)) {
+    abstracts = abstracts.map(a => flattenRegistrationInfo(a.toObject ? a.toObject() : a));
+  }
 
   // Score and reviewer filtering (in-memory, since reviews are subdocuments)
   if (minScore !== null || maxScore !== null || reviewerId) {
@@ -1801,6 +1903,43 @@ const assignReviewersToAbstracts = async (req, res, next) => {
   }
 };
 
+// 2. Bulk auto-assign reviewers endpoint
+exports.autoAssignReviewers = asyncHandler(async (req, res, next) => {
+  const { eventId } = req.params;
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return next(createApiError('Event not found', 404));
+  }
+  if (!event.abstractSettings || !Array.isArray(event.abstractSettings.categories)) {
+    return next(createApiError('No abstract categories configured for this event', 400));
+  }
+  const abstracts = await Abstract.find({ event: eventId });
+  let updated = 0;
+  for (const abstract of abstracts) {
+    if (!abstract.category) continue;
+    // Only assign if not already assigned
+    if (abstract.reviewDetails && Array.isArray(abstract.reviewDetails.assignedTo) && abstract.reviewDetails.assignedTo.length > 0) continue;
+    let catId = abstract.category;
+    if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
+    else if (catId && catId._id) catId = catId._id;
+    else if (catId) catId = String(catId);
+    const match = event.abstractSettings.categories.find(cat => {
+      let embeddedId = cat._id;
+      if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
+      else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
+      else if (embeddedId) embeddedId = String(embeddedId);
+      return embeddedId === catId;
+    });
+    if (match && Array.isArray(match.reviewerIds) && match.reviewerIds.length > 0) {
+      abstract.reviewDetails = abstract.reviewDetails || {};
+      abstract.reviewDetails.assignedTo = match.reviewerIds.map(id => id.toString());
+      await abstract.save();
+      updated++;
+    }
+  }
+  return sendSuccess(res, 200, `Auto-assigned reviewers to ${updated} abstracts.`);
+});
+
 module.exports = {
   getAbstracts: getAbstracts,
   getAbstractsByRegistration: getAbstractsByRegistration,
@@ -1821,5 +1960,6 @@ module.exports = {
   requestRevision: exports.requestRevision,
   resubmitRevisedAbstract: exports.resubmitRevisedAbstract,
   getAbstractsWithReviewProgress: getAbstractsWithReviewProgress,
-  assignReviewersToAbstracts: assignReviewersToAbstracts
+  assignReviewersToAbstracts: assignReviewersToAbstracts,
+  autoAssignReviewers: exports.autoAssignReviewers
 }; 

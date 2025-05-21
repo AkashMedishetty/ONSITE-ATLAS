@@ -9,9 +9,19 @@ export const useActiveEvent = () => {
 
 const EVENT_ID_STORAGE_KEY = 'activeEventId';
 
-export const ActiveEventProvider = ({ children, eventIdFromQuery }) => {
+// Helper to get eventId from query param
+function getEventIdFromQuery() {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('event');
+  }
+  return null;
+}
+
+export const ActiveEventProvider = ({ children }) => {
   const [activeEventId, setActiveEventId] = useState(() => {
-    // 1. Prioritize eventIdFromQuery if present
+    // 1. Prioritize eventId from query param if present
+    const eventIdFromQuery = getEventIdFromQuery();
     if (eventIdFromQuery) {
       localStorage.setItem(EVENT_ID_STORAGE_KEY, eventIdFromQuery);
       return eventIdFromQuery;
@@ -24,26 +34,19 @@ export const ActiveEventProvider = ({ children, eventIdFromQuery }) => {
   const [activeEventDetails, setActiveEventDetails] = useState(null);
   const [isLoadingEventDetails, setIsLoadingEventDetails] = useState(false);
   const [eventDetailsError, setEventDetailsError] = useState(null);
+  const [isSyncingEventId, setIsSyncingEventId] = useState(false);
 
+  // Always sync eventId from query param if it changes
   useEffect(() => {
-    // This effect handles updates if eventIdFromQuery changes during the component's lifecycle
-    // (e.g., navigating to the same portal page but with a different ?event= query)
-    if (eventIdFromQuery) {
-      if (activeEventId !== eventIdFromQuery) {
-        setActiveEventId(eventIdFromQuery);
-        localStorage.setItem(EVENT_ID_STORAGE_KEY, eventIdFromQuery);
-        console.log(`[ActiveEventContext] Updated activeEventId to ${eventIdFromQuery} from query param and saved to localStorage.`);
-      }
-    } else if (!activeEventId) {
-        // If there's no eventIdFromQuery and no activeEventId (e.g., on fresh load without query param and nothing in storage)
-        // we can try to load from storage one last time, though the initial useState should handle this.
-        const storedEventId = localStorage.getItem(EVENT_ID_STORAGE_KEY);
-        if (storedEventId) {
-            setActiveEventId(storedEventId);
-            console.log(`[ActiveEventContext] Restored activeEventId ${storedEventId} from localStorage.`);
-        }
+    const eventIdFromQuery = getEventIdFromQuery();
+    if (eventIdFromQuery && eventIdFromQuery !== activeEventId) {
+      setIsSyncingEventId(true);
+      setActiveEventId(eventIdFromQuery);
+      localStorage.setItem(EVENT_ID_STORAGE_KEY, eventIdFromQuery);
+      setIsSyncingEventId(false);
+      console.log(`[ActiveEventContext] Updated activeEventId to ${eventIdFromQuery} from query param and saved to localStorage.`);
     }
-  }, [eventIdFromQuery, activeEventId]);
+  }, [activeEventId]);
 
   useEffect(() => {
     const fetchEventDetails = async () => {
@@ -101,7 +104,8 @@ export const ActiveEventProvider = ({ children, eventIdFromQuery }) => {
       updateActiveEventId,
       activeEventDetails,
       isLoadingEventDetails,
-      eventDetailsError
+      eventDetailsError,
+      isSyncingEventId
     }}>
       {children}
     </ActiveEventContext.Provider>

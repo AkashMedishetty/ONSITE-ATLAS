@@ -98,6 +98,9 @@ api.interceptors.response.use(
     // Handle 401 errors
     if (error.response?.status === 401 && !originalRequest._retry) {
       console.error(`Authentication failed (401) for ${isRegistrantEndpoint ? 'registrant' : isReviewerEndpoint ? 'reviewer' : isAdminEndpoint ? 'admin' : 'user'}, logging out.`);
+      // Store intended destination before redirect
+      const currentUrl = window.location.pathname + window.location.search;
+      localStorage.setItem('redirectAfterLogin', currentUrl);
       // Clear only the relevant token
       if (isRegistrantEndpoint) {
         localStorage.removeItem('registrantToken');

@@ -24,7 +24,24 @@ const protect = asyncHandler(async (req, res, next) => {
   }
   
   console.log('[Protect Middleware] Path:', req.originalUrl);
-  console.log('[Protect Middleware] Received token:', token);
+  
+  // ADDED: Conditional bypass for registrant ID lookup
+  if (
+    req.method === 'GET' &&
+    req.query.search &&                          // Check for 'search' query param
+    req.query.limit && parseInt(req.query.limit, 10) === 1 // Check for 'limit=1' query param
+  ) {
+    // Check if the path matches the pattern for event-specific registration lookup
+    // e.g., /api/events/someEventId/registrations
+    const eventIdPattern = /^\/api\/events\/[a-f0-9]{24}\/registrations/i; 
+    if (eventIdPattern.test(req.baseUrl + req.path)) { // Test against the combined base and path
+        console.log('[Protect Middleware] Registrant ID lookup detected, bypassing token check for:', req.originalUrl);
+        return next(); // Bypass token check for this specific lookup
+    }
+  }
+  // END ADDED CODE
+
+  console.log('[Protect Middleware] Received token (after potential bypass check):', token);
 
   // Make sure token exists
   if (!token) {

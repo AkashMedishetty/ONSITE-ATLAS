@@ -11,22 +11,30 @@ const abstractService = {
    * Get all abstracts for an event OR a specific registrant's abstracts
    * @param {string} eventId - Event ID to get abstracts for
    * @param {Object} params - Query parameters for filtering (e.g., { registration: registrantId })
+   * @param {string} userRole - User role (admin, staff, reviewer, registrant)
    * @returns {Promise<object>} - API response ({ success: boolean, data: [], count: number } or error structure)
    */
-  getAbstracts: async (eventId, params = {}) => {
-    const queryString = new URLSearchParams(params).toString();
-    const url = `/events/${eventId}/abstracts${queryString ? `?${queryString}` : ''}`;
-    
-    console.log(`[AbstractService] Fetching abstracts (registrant) from: ${url}`);
-    
+  getAbstracts: async (eventId, params = {}, userRole = 'registrant') => {
+    // Use correct endpoint for admin/staff/reviewer
+    let url;
+    if (userRole === 'registrant') {
+      url = `/events/${eventId}/abstracts`;
+    } else {
+      url = `/events/${eventId}/abstracts/all-event-abstracts`;
+    }
     try {
-      const response = await apiRegistrant.get(url, { params });
+      let response;
+      if (userRole === 'registrant') {
+        response = await apiRegistrant.get(url, { params });
+      } else {
+        response = await api.get(url, { params });
+      }
       return response.data;
     } catch (error) {
-      console.error('[AbstractService] Exception fetching abstracts (registrant):', error.response?.data || error.message);
+      console.error('[AbstractService] Exception fetching abstracts:', error.response?.data || error.message);
       return {
         success: false,
-        message: error.response?.data?.message || 'Failed to fetch abstracts for registrant',
+        message: error.response?.data?.message || 'Failed to fetch abstracts',
         status: error.response?.status,
         data: [],
         count: 0
@@ -38,16 +46,34 @@ const abstractService = {
    * Get a single abstract by ID
    * @param {string} eventId - Event ID
    * @param {string} abstractId - Abstract ID to fetch
+   * @param {string} userRole - User role (admin, reviewer, registrant)
    * @returns {Promise} - API response with abstract data
    */
-  getAbstractById: async (eventId, abstractId) => {
+  getAbstractById: async (eventId, abstractId, userRole = 'registrant') => {
     try {
-      // Debug logging for eventId, abstractId, and token
-      const token = localStorage.getItem('atlas_registrant_token') || localStorage.getItem('registrantToken');
-      console.log('[AbstractService][getAbstractById] eventId:', eventId, 'abstractId:', abstractId, 'token:', token ? token.substring(0, 16) + '...' : 'NOT FOUND');
-      // Use the event-scoped registrant portal route
-      const response = await apiRegistrant.get(`/registrant-portal/events/${eventId}/abstracts/${abstractId}`);
-      return response.data; // Assumes api instance returns data directly or it's handled in a wrapper
+      let response;
+      if (userRole === 'admin' || userRole === 'staff') {
+        // Admin/Staff: Use admin endpoint
+        response = await api.get(`/events/${eventId}/abstracts/${abstractId}`);
+      } else if (userRole === 'reviewer') {
+        // Reviewer: Use reviewer endpoint (if exists)
+        response = await api.get(`/users/me/reviewer/assigned-abstracts`, { params: { eventId } });
+        // Find the abstract by ID in the assigned list
+        if (response.data && Array.isArray(response.data.data)) {
+          const found = response.data.data.find(abs => abs._id === abstractId);
+          if (found) {
+            return { success: true, data: found };
+          } else {
+            return { success: false, message: 'Abstract not assigned to you or not found', data: null };
+          }
+        } else {
+          return { success: false, message: 'Failed to fetch assigned abstracts', data: null };
+        }
+      } else {
+        // Registrant: Use registrant endpoint
+        response = await apiRegistrant.get(`/registrant-portal/events/${eventId}/abstracts/${abstractId}`);
+      }
+      return response.data;
     } catch (error) {
       console.error('Error getting abstract by ID:', error.response?.data || error.message);
       return { 
@@ -357,18 +383,24 @@ const abstractService = {
   },
 
   /**
-   * Get all abstracts for a specific event (intended for Admin/Staff view)
-   * @param {string} eventId - Event ID to get abstracts for
-   * @param {Object} params - Query parameters for filtering (passed by admin UI)
-   * @returns {Promise} - API response with abstracts data
+   * Get all abstracts for an event (admin/staff view)
+   * @param {string} eventId - Event ID
+   * @param {object} options - { page, limit, category, status }
+   * @returns {Promise} - API response with abstracts and pagination
    */
-  getAbstractsByEvent: async (eventId, params = {}) => {
+  getAbstractsByEvent: async (eventId, options = {}) => {
     try {
-      const response = await api.get(`/events/${eventId}/abstracts/all-event-abstracts`, { params });
-      return response.data; 
+      const params = new URLSearchParams();
+      if (options.page) params.append('page', options.page);
+      if (options.limit) params.append('limit', options.limit);
+      if (options.category) params.append('category', options.category);
+      if (options.status) params.append('status', options.status);
+      const url = `/events/${eventId}/abstracts${params.toString() ? '?' + params.toString() : ''}`;
+      const response = await api.get(url);
+      return response.data;
     } catch (error) {
-      console.error('Error fetching abstracts for event:', error.response?.data || error.message);
-      return { success: false, message: error.response?.data?.message || 'Failed to fetch abstracts for event', data: [] };
+      console.error('Error fetching abstracts by event:', error.response?.data || error.message);
+      return { success: false, message: error.response?.data?.message || 'Failed to fetch abstracts', data: [], pagination: null };
     }
   },
 
@@ -549,14 +581,18 @@ const abstractService = {
     }
   },
   
-  // Auto-assign reviewers to abstracts
+  /**
+   * Auto-assign reviewers to abstracts in an event based on category mapping
+   * @param {string} eventId - Event ID
+   * @returns {Promise<object>} - API response
+   */
   autoAssignReviewers: async (eventId) => {
     try {
-      const response = await api.post(`/events/${eventId}/abstracts/auto-assign-reviewers`, {});
-    return response.data;
+      const response = await api.post(`/events/${eventId}/abstracts/auto-assign-reviewers`);
+      return response.data;
     } catch (error) {
       console.error('Error auto-assigning reviewers:', error.response?.data || error.message);
-      return { success: false, message: error.response?.data?.message || 'Failed to auto-assign reviewers', data: null };
+      return { success: false, message: error.response?.data?.message || 'Failed to auto-assign reviewers' };
     }
   },
   

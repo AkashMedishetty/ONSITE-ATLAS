@@ -94,7 +94,7 @@ if (config.env !== 'test') {
 }
 
 // Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // API routes
 app.use('/api', routes);
@@ -116,7 +116,7 @@ const eventRoutes = require('./routes/event.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 
 // Mount eventRoutes to handle all /api/events paths
-// app.use('/api/events', eventRoutes); // Commented out potential conflict
+app.use('/api/events', eventRoutes);
 
 // Direct route registration for key API endpoints that need to be accessible at the root level
 app.use('/api/resources', resourceRoutes);

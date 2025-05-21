@@ -101,8 +101,8 @@ const Modal = ({
         {...props}
       >
         <div className={`
-          flex items-end justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0
-          ${centered ? 'items-center' : 'items-end sm:items-center'}
+          flex justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0
+          ${centered ? 'items-center' : 'items-end sm:items-center sm:block'} 
         `}>
           {/* Background overlay */}
           <Transition.Child
@@ -139,7 +139,8 @@ const Modal = ({
             leave="ease-in duration-200"
             leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             className={`
-              inline-block w-full text-left align-bottom sm:align-middle sm:my-8
+              inline-block w-full text-left sm:my-8 
+              ${centered ? '' : 'align-bottom sm:align-middle'}
               ${fullWidth ? 'w-full' : sizeClasses[size]}
               ${className}
             `}

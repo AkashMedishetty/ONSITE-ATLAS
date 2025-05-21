@@ -7,6 +7,7 @@ import eventService from '../../../services/eventService';
 import categoryService from '../../../services/categoryService';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../../contexts/AuthContext';
+import Pagination from '../../../components/common/Pagination';
 
 const ABSTRACT_STATUSES = [
   'draft', 'submitted', 'under-review', 'approved', 'rejected', 'revision-requested', 'pending', 'accepted', 'revised-pending-review'
@@ -55,38 +56,119 @@ const AbstractsTab = ({ event }) => {
   const [isFilesZipExporting, setIsFilesZipExporting] = useState(false);
   const [filesZipExportError, setFilesZipExportError] = useState(null);
 
+  // Search state
+  const [searchInput, setSearchInput] = useState('');
+
+  // Category filter state
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Memoized map of categoryId to name for fast lookup
+  const categoryIdToName = useMemo(() => {
+    const map = {};
+    if (event?.abstractSettings?.categories && Array.isArray(event.abstractSettings.categories)) {
+      event.abstractSettings.categories.forEach(cat => {
+        if (!cat) return;
+        let id = '';
+        if (cat._id) {
+          if (typeof cat._id === 'object' && cat._id !== null && cat._id.$oid) {
+            id = String(cat._id.$oid);
+          } else {
+            id = String(cat._id);
+          }
+        }
+        if (id) {
+          map[id] = cat.name || 'N/A';
+        }
+      });
+    }
+    // Logging the map for debugging
+    console.log('[AbstractsTab] categoryIdToName map:', map);
+    return map;
+  }, [event]);
+
+  useEffect(() => {
+    // Log the event object for debugging
+    console.log('[AbstractsTab] Loaded event:', event);
+  }, [event]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [categoryFilter]);
+
+  // Add useEffect to reset currentPage when activeTab or searchInput changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchInput]);
+
+  // Update fetchAbstracts to include status param based on activeTab
   const fetchAbstracts = useCallback(async () => {
     if (!event || !event._id) {
       setError('Event data is not available.');
       setLoading(false);
       return;
     }
-    
     try {
       setError(null);
       setBulkActionError(null);
       setBulkActionSuccess(null);
-      const response = await abstractService.getAbstractsByEvent(event._id);
-      
+      const params = { page: currentPage, limit: pageSize };
+      if (categoryFilter && /^[a-f\d]{24}$/i.test(categoryFilter)) {
+        params.category = categoryFilter;
+      }
+      // Add status param based on activeTab
+      const statusMap = ['all', 'approved', 'pending', 'rejected'];
+      const currentStatusFilter = statusMap[activeTab];
+      if (currentStatusFilter !== 'all') {
+        if (currentStatusFilter === 'approved') params.status = 'approved';
+        else if (currentStatusFilter === 'pending') params.status = 'pending';
+        else if (currentStatusFilter === 'rejected') params.status = 'rejected';
+      }
+      // Send search param to backend if present
+      if (searchInput.trim()) {
+        params.search = searchInput.trim();
+      }
+      let userRole = currentUser?.role;
+      if (!['admin', 'staff', 'reviewer'].includes(userRole)) {
+        userRole = 'admin';
+      }
+      const response = await abstractService.getAbstracts(event._id, params, userRole);
       if (response.success) {
         setAbstracts(response.data || []);
+        if (response.pagination) {
+          setCurrentPage(response.pagination.page || 1);
+          setTotalPages(response.pagination.totalPages || 1);
+          setTotalCount(response.pagination.total || (response.data ? response.data.length : 0));
+        } else {
+          setCurrentPage(1);
+          setTotalPages(1);
+          setTotalCount((response.data || []).length);
+        }
       } else {
         setError(response.message || 'Failed to fetch abstracts.');
         setAbstracts([]);
+        setTotalPages(1);
+        setTotalCount(0);
       }
     } catch (err) {
-      console.error("Error fetching abstracts:", err);
       setError('An unexpected error occurred while fetching abstracts.');
       setAbstracts([]);
+      setTotalPages(1);
+      setTotalCount(0);
     } finally {
-      if (loading) setLoading(false);
+      setLoading(false);
     }
-  }, [event]);
+  }, [event, categoryFilter, currentPage, pageSize, currentUser, searchInput, activeTab]);
   
+  // Update useEffect to include activeTab and searchInput
   useEffect(() => {
     setLoading(true);
     fetchAbstracts();
-  }, [event]);
+  }, [event, categoryFilter, currentPage, pageSize, activeTab, searchInput]);
   
   useEffect(() => {
     if (showAssignReviewerModal && event?._id && (currentUser?.role === 'admin' || currentUser?.role === 'event-manager')) {
@@ -195,20 +277,6 @@ const AbstractsTab = ({ event }) => {
     }
   };
   
-  const filteredAbstracts = useMemo(() => {
-    const statusMap = ['all', 'approved', 'pending', 'rejected'];
-    const currentStatusFilter = statusMap[activeTab];
-
-    if (currentStatusFilter === 'all') return abstracts;
-    
-    const statusesToMatch = [];
-    if (currentStatusFilter === 'approved') statusesToMatch.push('approved', 'accepted');
-    else if (currentStatusFilter === 'pending') statusesToMatch.push('pending', 'in-review', 'revision-requested');
-    else if (currentStatusFilter === 'rejected') statusesToMatch.push('rejected');
-    
-    return abstracts.filter(abstract => statusesToMatch.includes(abstract.status));
-  }, [abstracts, activeTab]);
-  
   const handleSelectAbstract = (abstractId) => {
     setSelectedAbstractIds(prevSelected => {
       const newSelected = new Set(prevSelected);
@@ -222,10 +290,10 @@ const AbstractsTab = ({ event }) => {
   };
   
   const handleSelectAll = () => {
-    if (selectedAbstractIds.size === filteredAbstracts.length) {
+    if (selectedAbstractIds.size === abstracts.length) {
       setSelectedAbstractIds(new Set());
     } else {
-      setSelectedAbstractIds(new Set(filteredAbstracts.map(a => a._id)));
+      setSelectedAbstractIds(new Set(abstracts.map(a => a._id)));
     }
   };
   
@@ -461,8 +529,8 @@ const AbstractsTab = ({ event }) => {
     setSingleSelectedAbstractDetail(null);
   };
   
-  const isAllSelected = filteredAbstracts.length > 0 && selectedAbstractIds.size === filteredAbstracts.length;
-  const isIndeterminate = selectedAbstractIds.size > 0 && selectedAbstractIds.size < filteredAbstracts.length;
+  const isAllSelected = abstracts.length > 0 && selectedAbstractIds.size === abstracts.length;
+  const isIndeterminate = selectedAbstractIds.size > 0 && selectedAbstractIds.size < abstracts.length;
 
   const handleDownloadFilesZipDirect = async () => {
     setIsFilesZipExporting(true);
@@ -491,6 +559,39 @@ const AbstractsTab = ({ event }) => {
       setIsFilesZipExporting(false);
     }
   };
+
+  // Handler for auto-assign reviewers
+  const handleAutoAssignReviewers = async () => {
+    if (!event || !event._id) return;
+    try {
+      const response = await abstractService.autoAssignReviewers(event._id);
+      if (response.success) {
+        toast.success(response.message || 'Reviewers auto-assigned successfully.');
+        fetchAbstracts();
+      } else {
+        toast.error(response.message || 'Failed to auto-assign reviewers.');
+      }
+    } catch (err) {
+      toast.error('An error occurred while auto-assigning reviewers.');
+    }
+  };
+
+  // Pagination change handler
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+  };
+  const handlePageSizeChange = (e) => {
+    setPageSize(Number(e.target.value));
+    setCurrentPage(1);
+  };
+
+  // Add debounced search effect
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setSearchInput(searchInput);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [searchInput]);
 
   if (loading) {
     return (
@@ -726,6 +827,14 @@ const AbstractsTab = ({ event }) => {
           >
             Download All Files as ZIP
           </Button>
+          {(currentUser?.role === 'admin' || currentUser?.role === 'event-manager') && (
+            <Button
+              variant="primary"
+              onClick={handleAutoAssignReviewers}
+            >
+              Auto-Assign Reviewers
+            </Button>
+          )}
         </div>
       </div>
       <div className="text-xs text-gray-500 mt-1 mb-2">
@@ -746,6 +855,28 @@ const AbstractsTab = ({ event }) => {
       )}
       
       <Card>
+        {/* Search input */}
+        <div className="p-4 flex flex-col md:flex-row md:items-center gap-4">
+          <select
+            className="border rounded px-3 py-2 w-full md:w-80 text-sm"
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+          >
+            <option value="">All Categories</option>
+            {event?.abstractSettings?.categories?.map(cat => (
+              <option key={typeof cat._id === 'object' && cat._id.$oid ? cat._id.$oid : cat._id} value={typeof cat._id === 'object' && cat._id.$oid ? cat._id.$oid : cat._id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            className="border rounded px-3 py-2 w-full md:w-80 text-sm"
+            placeholder="Search by author, registration name, or registration ID..."
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+          />
+        </div>
         {selectedAbstractIds.size > 0 && (
             <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center space-x-3 flex-wrap gap-y-2">
                 <span className="text-sm font-medium text-gray-700">{selectedAbstractIds.size} selected</span>
@@ -783,13 +914,13 @@ const AbstractsTab = ({ event }) => {
         
         <Tabs
           tabs={[
-            { id: "all", label: `All (${abstracts.length})` },
-            { id: "approved", label: `Approved (${abstracts.filter(a => a.status === 'approved').length})` },
-            { id: "pending", label: `Pending (${abstracts.filter(a => a.status === 'pending').length})` },
-            { id: "rejected", label: `Rejected (${abstracts.filter(a => a.status === 'rejected').length})` }
+            { id: "all", label: `All (${totalCount})` },
+            { id: "approved", label: `Approved` },
+            { id: "pending", label: `Pending` },
+            { id: "rejected", label: `Rejected` }
           ]}
           activeTab={activeTab}
-          onChange={setActiveTab}
+          onChange={(tabIdx) => { setActiveTab(tabIdx); setCurrentPage(1); }}
         />
         
         <div className="mt-6 overflow-x-auto">
@@ -833,7 +964,7 @@ const AbstractsTab = ({ event }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAbstracts.map((abstract) => (
+              {abstracts.map((abstract) => (
                 <tr key={abstract._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     <input
@@ -847,11 +978,27 @@ const AbstractsTab = ({ event }) => {
                     {abstract.title}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {abstract.authorName}
+                    {/* Show author name, fallback to personalInfo if not present */}
+                    {abstract.authorName || (abstract.personalInfo ? `${abstract.personalInfo.firstName || ''} ${abstract.personalInfo.lastName || ''}`.trim() : '')}
+                    {/* Always show registrationId at the root */}
                     <div className="text-xs text-gray-400">{abstract.registrationId}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {abstract.category}
+                    {(() => {
+                      let catId = '';
+                      // Log the raw category field for this abstract
+                      console.log('[AbstractsTab] Rendering abstract:', abstract._id, 'category field:', abstract.category);
+                      if (abstract.category) {
+                        if (typeof abstract.category === 'object' && abstract.category._id) {
+                          catId = String(abstract.category._id);
+                        } else {
+                          catId = String(abstract.category);
+                        }
+                      }
+                      // Log the resolved catId and the lookup result
+                      console.log('[AbstractsTab] Abstract:', abstract._id, 'resolved catId:', catId, 'lookup result:', categoryIdToName[catId], 'fallback name:', abstract.category?.name);
+                      return categoryIdToName[catId] || abstract.category?.name || 'N/A';
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                     {abstract.reviewDetails?.assignedTo?.length || 0}
@@ -860,7 +1007,7 @@ const AbstractsTab = ({ event }) => {
                     {getStatusBadge(abstract.status)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(abstract.submittedAt)}
+                    {formatDate(abstract.submissionDate || abstract.createdAt || null)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <Link to={`/events/${event?._id}/abstracts/${abstract._id}`} className="text-primary-600 hover:text-primary-900">
@@ -872,7 +1019,7 @@ const AbstractsTab = ({ event }) => {
             </tbody>
           </table>
           
-          {filteredAbstracts.length === 0 && (
+          {abstracts.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500">No abstracts found matching the selected filter.</p>
             </div>
@@ -886,12 +1033,12 @@ const AbstractsTab = ({ event }) => {
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Submission Period</h4>
             <p>
-              {formatDate(event?.abstractSettings?.submissionStartDate)} - {formatDate(event?.abstractSettings?.submissionEndDate)}
+              {formatDate(event?.abstractSettings?.submissionStartDate || event?.startDate)} - {formatDate(event?.abstractSettings?.submissionEndDate || event?.endDate)}
             </p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Review Deadline</h4>
-            <p>{formatDate(event?.abstractSettings?.reviewDeadline)}</p>
+            <p>{formatDate(event?.abstractSettings?.reviewDeadline || event?.endDate)}</p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Word Limit</h4>
@@ -915,6 +1062,25 @@ const AbstractsTab = ({ event }) => {
       
       {showAssignReviewerModal && assignReviewerModalContent}
       {filesZipModalContent}
+
+      <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+        <div className="text-sm text-gray-700">
+          Showing <span className="font-medium">{totalCount === 0 ? 0 : ((currentPage - 1) * pageSize + 1)}</span> to <span className="font-medium">{Math.min(totalCount, currentPage * pageSize)}</span> of <span className="font-medium">{totalCount}</span> abstracts
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="text-sm">Page size:
+            <select value={pageSize} onChange={handlePageSizeChange} className="ml-2 border rounded px-1 py-0.5 text-sm">
+              {[10, 20, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            size="sm"
+          />
+        </div>
+      </div>
     </div>
   );
 };

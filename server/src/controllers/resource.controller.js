@@ -15,6 +15,8 @@ const fs = require('fs');
 const path = require('path');
 const pdfkit = require('pdfkit');
 const pdfToPng = require('pdf-to-png');
+const { convertPdfToPng } = require('../utils/pdfToImage');
+const sharp = require('sharp'); // Add at the top for image dimension validation
 
 /**
  * @desc    Get resource settings
@@ -255,6 +257,9 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
     // Save the settings
     await resourceSettingsDoc.save();
     console.log(`[updateResourceSettings] Document details AFTER save for type ${dbType} (refetched might be needed to confirm DB state, but this is post-save call).`);
+
+    // MIRROR: Update event document to keep in sync
+    await mirrorResourceSettingsToEvent(eventId, dbType, resourceSettingsDoc.settings, resourceSettingsDoc.isEnabled);
 
     // Return the updated settings
     return res.status(200).json({
@@ -1639,6 +1644,10 @@ const uploadCertificateTemplateFile = asyncHandler(async (req, res, next) => {
   
   const newFilePath = path.join(uploadDir, newFileName);
 
+  let templatePdfUrl = null;
+  let templateImageUrl = null;
+  let templateUrl = null;
+
   try {
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -1648,18 +1657,63 @@ const uploadCertificateTemplateFile = asyncHandler(async (req, res, next) => {
     await templateFile.mv(newFilePath);
     logger.info(`[uploadCertificateTemplateFile] File moved successfully to: ${newFilePath}`);
 
-    const templateUrl = `/${relativeUploadPath}/${newFileName}`.replace(/\\/g, '/');
+    templateUrl = `/${relativeUploadPath}/${newFileName}`.replace(/\\/g, '/');
 
-    logger.info(`[uploadCertificateTemplateFile] File uploaded for event ${eventIdFromBody}: ${newFileName}, Physical Path: ${newFilePath}, Constructed URL: ${templateUrl}`);
+    // If PDF, convert to PNG for preview/background
+    if (fileExt === '.pdf') {
+      try {
+        const pngPath = await convertPdfToPng(newFilePath, uploadDir, `template-${uniqueSuffix}`);
+        templatePdfUrl = templateUrl;
+        templateImageUrl = `/${relativeUploadPath}/${path.basename(pngPath)}`.replace(/\\/g, '/');
+        // Get PNG dimensions
+        const image = sharp(pngPath);
+        const metadata = await image.metadata();
+        var imageWidth = metadata.width;
+        var imageHeight = metadata.height;
+        var imageAspect = imageWidth / imageHeight;
+      } catch (convErr) {
+        logger.error(`[uploadCertificateTemplateFile] PDF-to-PNG conversion failed: ${convErr.message}`);
+        return next(createApiError('PDF uploaded, but failed to generate preview image. Please check the PDF format or contact support.', 500));
+      }
+    } else if (fileExt === '.png' || fileExt === '.jpg' || fileExt === '.jpeg') {
+      // For images, use as both templateImageUrl and templateUrl
+      templateImageUrl = templateUrl;
+      templatePdfUrl = null;
+      // Get image dimensions
+      try {
+        const image = sharp(newFilePath);
+        const metadata = await image.metadata();
+        var imageWidth = metadata.width;
+        var imageHeight = metadata.height;
+        var imageAspect = imageWidth / imageHeight;
+      } catch (imgErr) {
+        fs.unlinkSync(newFilePath);
+        logger.error(`[uploadCertificateTemplateFile] Image dimension read failed: ${imgErr.message}`);
+        return next(createApiError('Failed to read image dimensions for validation. Please upload a valid PNG/JPG.', 400));
+      }
+    }
+
+    // Calculate warning for non-A4 landscape aspect ratio
+    let aspectWarning = null;
+    const expectedAspect = 297 / 210; // A4 landscape
+    if (typeof imageAspect !== 'undefined' && Math.abs(imageAspect - expectedAspect) > 0.05) {
+      aspectWarning = 'Warning: Uploaded template is not A4 landscape (297x210mm, aspect ratio ≈ 1.414). Field alignment and printing may be unreliable.';
+    }
 
     res.status(200).json({
       success: true,
       message: 'Certificate template uploaded successfully.',
       data: {
-        templateUrl: templateUrl,
+        templateUrl: templateUrl, // legacy, for compatibility
+        templatePdfUrl: templatePdfUrl,
+        templateImageUrl: templateImageUrl,
         fileName: templateFile.name, 
         fileSize: templateFile.size,
-        fileType: templateFile.mimetype
+        fileType: templateFile.mimetype,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+        imageAspect: imageAspect,
+        aspectWarning: aspectWarning
       }
     });
 
@@ -1677,13 +1731,14 @@ const uploadCertificateTemplateFile = asyncHandler(async (req, res, next) => {
 
 /**
  * @desc    Generate Certificate PDF
- * @route   GET /api/resources/events/:eventId/certificate-templates/:templateId/registrations/:registrationId/generate-pdf
+ * @route   GET /api/resources/events/:eventId/certificate-templates/:templateId/registrations/:registrationId/generate-pdf?background=true|false
  * @access  Private
+ * @param   background (optional, default true): if false, only text fields are rendered (for pre-printed certificates)
  */
 exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
     const { eventId, templateId, registrationId } = req.params;
-    // Optional: workshopId, abstractId from query if context is needed
-    const { workshopId, abstractId } = req.query;
+    const { workshopId, abstractId, background = 'true' } = req.query;
+    const drawBackground = background !== 'false'; // default true
 
     if (!mongoose.Types.ObjectId.isValid(eventId) ||
         !mongoose.Types.ObjectId.isValid(templateId) || // templateId is the _id of the template object
@@ -1746,10 +1801,12 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
     }
 
     try {
+        // --- PDFKit: Always use A4 landscape (force with array, no layout flag) ---
+        const PAGE_WIDTH = 841.89; // A4 landscape width in points
+        const PAGE_HEIGHT = 595.28; // A4 landscape height in points
         const doc = new pdfkit({
-            // layout: 'landscape', // Example: if your templates are landscape
-            // size: 'A4' // Example: specify size if needed
-            // autoFirstPage: false // Important if adding background first
+            size: [PAGE_WIDTH, PAGE_HEIGHT]
+            // layout: 'landscape' // REMOVE this line!
         });
 
         // Pipe the PDF to the response
@@ -1757,9 +1814,9 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
         res.setHeader('Content-Disposition', `inline; filename="certificate-${registrationId}-${templateId}.pdf"`);
         doc.pipe(res);
 
-        // Add background image if path exists
-        let absoluteBackgroundPath; // Define higher for broader scope
-        if (template.templateUrl) {
+        // Add background image, scaled to fit full page, only if requested
+        let absoluteBackgroundPath;
+        if (drawBackground && template.templateUrl) {
             logger.info(`[generateCertificatePdf] Template URL found: ${template.templateUrl}`);
             logger.info(`[generateCertificatePdf] Current __dirname: ${__dirname}`);
             const serverBasePath = path.join(__dirname, '..', '..');
@@ -1779,105 +1836,70 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
                     // For now, this will lead to an error below if not handled.
                 }
             }
-        } else {
-            logger.error(`[generateCertificatePdf] template.templateUrl is missing or empty.`);
-            // Send a valid PDF response indicating the error.
-            doc.fontSize(12).text('Error: Certificate template background image URL is missing. Please contact support.', 50, 50);
-            doc.end();
-            return; // Stop further processing
         }
-        
-        const fileExists = absoluteBackgroundPath ? fs.existsSync(absoluteBackgroundPath) : false;
-        logger.info(`[generateCertificatePdf] Checking file existence for path "${absoluteBackgroundPath}": ${fileExists}`);
-
+        const fileExists = drawBackground && absoluteBackgroundPath ? fs.existsSync(absoluteBackgroundPath) : false;
+        if (drawBackground) {
         if (!absoluteBackgroundPath || !fileExists) {
-             logger.error(`[generateCertificatePdf] Certificate template background image not found or path is invalid. Checked Path: ${absoluteBackgroundPath}, Original TemplateURL: ${template.templateUrl}`);
-            // Send a valid PDF response indicating the error.
             doc.fontSize(12).text(`Error: Certificate template background image not found. Path: ${absoluteBackgroundPath || 'not specified'}. Please contact support.`, 50, 50);
             doc.end();
-            return; // Stop further processing
+                return;
         }
-        
         try {
-            const imageSize = doc.openImage(absoluteBackgroundPath); // This gets dimensions
-            doc.options.size = [imageSize.width, imageSize.height]; // Set page size to image size
-            doc.image(absoluteBackgroundPath, 0, 0, { width: imageSize.width, height: imageSize.height });
+                // Always scale background to full A4 landscape
+                doc.image(absoluteBackgroundPath, 0, 0, { width: PAGE_WIDTH, height: PAGE_HEIGHT });
         } catch (bgImgError) {
             logger.error(`[generateCertificatePdf] Error processing background image at ${absoluteBackgroundPath}: ${bgImgError.message}`, { stack: bgImgError.stack });
-            // Send a valid PDF response indicating the error.
             doc.fontSize(12).text(`Error: Could not process certificate background image. Path: ${absoluteBackgroundPath}. Details: ${bgImgError.message}. Please contact support.`, 50, 50);
             doc.end();
-            return; // Stop further processing
+                return;
+            }
         }
-
 
         // --- Draw Fields ---
         for (const field of template.fields) {
             if (field.type !== 'text') continue; // Only handle text for now
-
-            doc.save(); // Save current state (transformations, styles)
-
+            doc.save();
             const xPos = convertToPoints(field.position.x, template.templateUnit);
             const yPos = convertToPoints(field.position.y, template.templateUnit);
-            const rotation = field.style?.rotation || 0; // Get rotation in degrees
-            
+            const rotation = field.style?.rotation || 0;
             let textContent = field.staticText || '';
             if (field.dataSource && !field.dataSource.toLowerCase().startsWith('static.')) {
                  textContent = await getDataSourceValue(field.dataSource, registration, event, abstractData, workshopData);
             } else if (field.dataSource && field.dataSource.toLowerCase().startsWith('static.')) {
                 textContent = field.dataSource.substring('static.'.length);
             }
-
-            // Apply rotation if specified
-            if (rotation !== 0) {
-                // pdfkit rotates around the current origin (0,0 of the current transformation matrix)
-                // To rotate around the text's [xPos, yPos]:
-                // 1. Translate the origin to the text's position.
-                // 2. Rotate.
-                // 3. Translate the origin back.
-                // 4. Draw the text at (0,0) relative to this new rotated origin.
-                doc.translate(xPos, yPos);
-                doc.rotate(rotation); // Rotation in degrees
-                // After translate and rotate, text is drawn at (0,0) of this new context
-            } else {
-                // No rotation, but still need to ensure text is placed correctly if we always draw at 0,0 after translate
-                // However, if not rotating, we can draw directly at xPos, yPos without extra translates
-            }
-
+            // Debug log for each field
+            logger.info(`[generateCertificatePdf] Field: ${field.label}, DataSource: ${field.dataSource}, Value: ${textContent}`);
             let fontName = field.style.font || 'Helvetica';
             if (field.style.fontWeight === 'bold' && !fontName.toLowerCase().includes('bold')) {
-                // Basic bold handling, assumes a corresponding "-Bold" font exists
                 if (fontName === 'Helvetica') fontName = 'Helvetica-Bold';
                 else if (fontName === 'Times-Roman') fontName = 'Times-Bold';
-                // Add more mappings or ensure exact font names are stored
             }
-            
             try {
                  doc.font(fontName);
             } catch (e) {
                 logger.warn(`Failed to set font: ${fontName} for field ${field.label}. Defaulting to Helvetica.`);
                 doc.font('Helvetica');
             }
-            
             doc.fontSize(field.style.fontSize || 12);
             doc.fillColor(field.style.color || '#000000');
-
             const textOptions = {
                 align: field.style.align || 'left',
             };
             if (field.style.maxWidth) {
                 textOptions.width = convertToPoints(field.style.maxWidth, template.templateUnit);
             }
-
             if (rotation !== 0) {
-                doc.text(textContent || '', 0, 0, textOptions); // Draw at (0,0) of the rotated/translated context
+                doc.translate(xPos, yPos);
+                doc.rotate(rotation);
+                doc.text(textContent || '', 0, 0, textOptions);
             } else {
-                doc.text(textContent || '', xPos, yPos, textOptions); // Draw at original xPos, yPos
+                doc.text(textContent || '', xPos, yPos, textOptions);
             }
-
-            doc.restore(); // Restore from the field-specific save (rotation, font, color etc.)
+            doc.restore();
         }
-
+        // Remove debug info line for production
+        // doc.fontSize(8).fillColor('#888888').text(`DEBUG: Page size: ${PAGE_WIDTH}x${PAGE_HEIGHT}pt, forced landscape`, 10, PAGE_HEIGHT - 20);
         doc.end();
 
     } catch (error) {
@@ -1885,6 +1907,107 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
         return next(createApiError(500, 'Failed to generate certificate PDF.'));
     }
 });
+
+// Utility to convert units to PDF points
+function convertToPoints(value, unit = 'pt') {
+  if (!value) return 0;
+  if (unit === 'pt') return value;
+  if (unit === 'mm') return value * 2.83465;
+  if (unit === 'cm') return value * 28.3465;
+  if (unit === 'in') return value * 72;
+  if (unit === 'px') return value * 0.75; // assuming 96dpi
+  return value;
+}
+
+/**
+ * Utility to resolve a data source string (dot notation) from registration, event, abstract, or workshop.
+ * Supports composite fields like 'Registration.personalInfo.fullName'.
+ * @param {string} dataSource - e.g., 'Registration.personalInfo.firstName', 'Event.name', etc.
+ * @param {object} registration - Registration document (populated)
+ * @param {object} event - Event document (populated)
+ * @param {object|null} abstractData - Abstract document (optional)
+ * @param {object|null} workshopData - Workshop document (optional)
+ * @returns {Promise<string>} - The resolved value as a string (empty if not found)
+ */
+async function getDataSourceValue(dataSource, registration, event, abstractData, workshopData) {
+  if (!dataSource || typeof dataSource !== 'string') return '';
+  try {
+    // Support composite fields (e.g., fullName)
+    if (dataSource === 'Registration.personalInfo.fullName') {
+      const first = registration?.personalInfo?.firstName || '';
+      const last = registration?.personalInfo?.lastName || '';
+      return `${first} ${last}`.trim();
+    }
+    if (dataSource === 'Registration.category.name') {
+      return registration?.category?.name || '';
+    }
+    if (dataSource === 'Event.name') {
+      return event?.name || '';
+    }
+    if (dataSource === 'Event.venue.name') {
+      return event?.venue?.name || '';
+    }
+    if (dataSource === 'Event.venue.city') {
+      return event?.venue?.city || '';
+    }
+    if (dataSource === 'Event.startDate') {
+      return event?.startDate ? new Date(event.startDate).toLocaleDateString() : '';
+    }
+    if (dataSource === 'Event.endDate') {
+      return event?.endDate ? new Date(event.endDate).toLocaleDateString() : '';
+    }
+    if (dataSource === 'Abstract.title') {
+      return abstractData?.title || '';
+    }
+    if (dataSource === 'Abstract.authors') {
+      return abstractData?.authors || '';
+    }
+    if (dataSource === 'Abstract.presentingAuthor') {
+      return abstractData?.presentingAuthor || '';
+    }
+    if (dataSource === 'Workshop.name') {
+      return workshopData?.name || '';
+    }
+    // Generic dot notation (e.g., Registration.personalInfo.email)
+    let root = null;
+    if (dataSource.startsWith('Registration.')) root = registration;
+    else if (dataSource.startsWith('Event.')) root = event;
+    else if (dataSource.startsWith('Abstract.')) root = abstractData;
+    else if (dataSource.startsWith('Workshop.')) root = workshopData;
+    if (root) {
+      const path = dataSource.split('.').slice(1); // Remove root
+      let value = root;
+      for (const key of path) {
+        if (value && typeof value === 'object' && key in value) value = value[key];
+        else return '';
+      }
+      if (typeof value === 'string' || typeof value === 'number') return String(value);
+      if (value instanceof Date) return value.toLocaleDateString();
+      return '';
+    }
+    // Fallback: return empty string
+    return '';
+  } catch (err) {
+    logger.warn(`[getDataSourceValue] Failed to resolve dataSource '${dataSource}': ${err.message}`);
+    return '';
+  }
+}
+
+// Utility: Mirror ResourceSettings to Event document
+async function mirrorResourceSettingsToEvent(eventId, type, settings, isEnabled) {
+  // Map dbType to event doc field
+  let update = {};
+  if (type === 'food') {
+    update['foodSettings'] = { ...settings, enabled: isEnabled };
+  } else if (type === 'kitBag') {
+    update['kitSettings'] = { ...settings, enabled: isEnabled };
+  } else if (type === 'certificate') {
+    update['certificateSettings'] = { ...settings, enabled: isEnabled };
+  }
+  if (Object.keys(update).length > 0) {
+    await Event.findByIdAndUpdate(eventId, { $set: update });
+  }
+}
 
 module.exports = {
   getResourceSettings,

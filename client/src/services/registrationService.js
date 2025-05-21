@@ -136,15 +136,14 @@ const registrationService = {
           search: regIdString, 
           limit: 1 
       };
-      
-      // getRegistrations returns the full Axios response object.
-      // The actual server response (with success, data, token) is in axiosResponse.data
-      const axiosResponse = await registrationService.getRegistrations(eventId, filters);
+      // Use a fresh Axios instance with NO interceptors or Authorization header
+      const axiosNoAuth = axios.create();
+      const queryParams = new URLSearchParams(filters).toString();
+      const url = `${API_URL}/events/${eventId}/registrations?${queryParams}`;
+      console.log('[getRegistrationByRegIdString] Making direct public API call to:', url);
+      const axiosResponse = await axiosNoAuth.get(url); // No token sent
 
-      // Check if the backend successfully processed it as a single-registrant auth and returned a token
       if (axiosResponse?.data?.success && axiosResponse.data.token && axiosResponse.data.data) {
-        // The backend controller, when issuing a token, puts the single registration object directly in 'data'
-        // and the token in 'token'.
         console.log('Registrant login successful, token received:', axiosResponse.data.token);
         return { 
             success: true, 
@@ -152,13 +151,9 @@ const registrationService = {
             token: axiosResponse.data.token // This is the JWT
         }; 
       } else if (axiosResponse?.data?.success && Array.isArray(axiosResponse.data.data)) {
-        // This block handles the old/original case where getRegistrations might return an array
-        // (e.g., if the backend logic for token generation didn't trigger, or for other uses of getRegistrations)
         if (axiosResponse.data.data.length === 1) {
           const foundReg = axiosResponse.data.data[0];
           console.log(`Found registration (no token path):`, foundReg);
-          // This path means authentication was successful in finding the user, but no token was issued by this specific logic path.
-          // This might be okay if another part of the system handles token generation or if this function is used for non-auth lookups.
           return { success: true, data: foundReg }; 
         } else if (axiosResponse.data.data.length === 0) {
           console.log(`No registration found with ID string: ${regIdString}`);
@@ -168,7 +163,6 @@ const registrationService = {
           return { success: false, message: 'Multiple registrations found, please contact support.' }; 
         }
       } else {
-        // Handle unexpected response structure or API error from the getRegistrations call
         console.error('Failed to get registration by ID string, unexpected response format from getRegistrations:', axiosResponse?.data);
         return {
           success: false,

@@ -27,14 +27,20 @@ const certificateFieldSchema = new mongoose.Schema({
 // New Schema for a single certificate template
 const certificateTemplateSchema = new mongoose.Schema({
   name: { type: String, required: true }, // User-defined name, e.g., "Participation Certificate"
-  // 'type' here is a user-defined category for the template, not a Mongoose schema type.
-  // It was previously part of the structure, e.g., "Participation", "Abstract", "Workshop".
-  // We can keep it if it helps categorize templates in the UI.
   categoryType: { type: String, required: true }, // e.g., "Participation", "Abstract Presenter"
-  templateUrl: { type: String, required: true }, // e.g., "/uploads/certificate_templates/design.pdf"
+  templateUrl: { type: String, required: true }, // e.g., "/uploads/certificate_templates/design.pdf" (legacy, keep for compatibility)
+  templatePdfUrl: { type: String }, // New: original PDF file
+  templateImageUrl: { type: String }, // New: PNG for preview and PDFKit
   templateUnit: { type: String, default: 'pt', enum: ['pt', 'mm', 'cm'] }, // Unit for coordinates in fields
-  fields: [certificateFieldSchema] // Array of dynamic fields
-}, { timestamps: true }); // Add timestamps if you want to know when a specific template was created/updated
+  fields: [certificateFieldSchema], // Array of dynamic fields
+  printableArea: {
+    // Optional: margins/area for printable region (in templateUnit)
+    left: { type: Number, default: 0 },
+    top: { type: Number, default: 0 },
+    width: { type: Number },
+    height: { type: Number }
+  }
+}, { timestamps: true });
 
 const resourceSettingSchema = new mongoose.Schema({
   event: {

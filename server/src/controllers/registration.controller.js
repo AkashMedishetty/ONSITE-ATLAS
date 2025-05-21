@@ -591,7 +591,7 @@ exports.deleteRegistration = asyncHandler(async (req, res, next) => {
     return next(createApiError(400, 'Cannot delete registration with used resources'));
   }
 
-  await registration.remove();
+  await registration.deleteOne();
 
   res.status(200).json({
     success: true,

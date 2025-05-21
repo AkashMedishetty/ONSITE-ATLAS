@@ -20,46 +20,23 @@ const ReviewerDashboard = () => {
         setLoading(false);
         return;
       }
-      
-      // If currentEventId is not available, it might be an issue.
-      // For now, proceed if it's there, or backend might not need it if filtering globally by reviewer.
       if (!currentEventId) {
-          console.warn("ReviewerDashboard: eventId not available from useAuth. Backend might need to handle this or abstracts might be fetched globally for the reviewer.");
-          // Depending on backend, you might fetch all abstracts assigned to reviewer across all events
-          // or show an error if event context is strictly required here.
-          // For this example, we'll proceed, assuming backend can handle it or we adapt later.
+        setError('No event context. Please log in via an event-specific reviewer portal link.');
+        setLoading(false);
+        return;
       }
-
       setLoading(true);
       setError('');
       try {
-        // Construct params for fetching abstracts assigned to this reviewer.
-        // The backend for 'getAbstracts' must support filtering by 'assignedReviewer'.
-        // And potentially by 'eventId' if currentEventId is provided and relevant.
         const params = { 
             assignedReviewer: currentUser._id,
-            // reviewStatus: 'pending' // Optional: if you only want to show those not yet reviewed by them
         };
-        if (currentEventId) {
-            // Assuming getAbstracts takes eventId as first arg, then params
-             const response = await abstractService.getAbstracts(currentEventId, params);
-             if (response.success) {
-                setAbstractsToReview(response.data || []);
-             } else {
-                setError(response.message || 'Failed to fetch assigned abstracts.');
-                toast.error(response.message || 'Failed to fetch assigned abstracts.');
-             }
+        const response = await abstractService.getAbstracts(currentEventId, params);
+        if (response.success) {
+          setAbstractsToReview(response.data || []);
         } else {
-            // If no eventId, maybe a different service call or an error
-            // For now, let's assume getAbstracts can work without eventId if filtering by reviewer globally
-            // This part might need adjustment based on actual service capabilities
-            const response = await abstractService.getAbstracts(null, params); // Or a dedicated service call
-             if (response.success) {
-                setAbstractsToReview(response.data || []);
-             } else {
-                setError(response.message || 'Failed to fetch assigned abstracts globally.');
-                toast.error(response.message || 'Failed to fetch assigned abstracts globally.');
-             }
+          setError(response.message || 'Failed to fetch assigned abstracts.');
+          toast.error(response.message || 'Failed to fetch assigned abstracts.');
         }
       } catch (err) {
         setError('Error fetching abstracts: ' + err.message);
@@ -69,11 +46,14 @@ const ReviewerDashboard = () => {
       }
     };
 
-    if (currentUser && currentUser._id) {
+    if (currentUser && currentUser._id && currentEventId) {
       fetchAssignedAbstracts();
     } else if (!currentUser) {
         setLoading(false);
         setError("Waiting for user authentication...");
+    } else if (currentUser && !currentEventId) {
+        setLoading(false);
+        setError('No event context. Please log in via an event-specific reviewer portal link.');
     }
   }, [currentUser, currentEventId]);
 

@@ -98,6 +98,17 @@ export function AuthProvider({ children }) {
           console.log('[AuthContext] No eventId from login URL, cleared currentEventId.');
         }
         
+        // --- REDIRECT LOGIC ---
+        const redirect = localStorage.getItem('redirectAfterLogin');
+        if (redirect) {
+          localStorage.removeItem('redirectAfterLogin');
+          window.location.href = redirect;
+        } else if (user && (user.role === 'reviewer' || user.role === 'admin')) {
+          window.location.href = '/reviewer/dashboard';
+        } else {
+          window.location.href = '/dashboard'; // fallback for other roles
+        }
+        
         return user;
       } else {
         // Handle cases where API returns unexpected format

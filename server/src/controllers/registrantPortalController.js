@@ -616,7 +616,7 @@ exports.getAbstractByIdForEvent = asyncHandler(async (req, res, next) => {
       .lean();
 
     if (!abstract) {
-      return next(new ApiError('Abstract not found or access denied', 404));
+      return next(new ApiError(404, 'Abstract not found or access denied'));
     }
 
     // Always include the category ObjectId as a string for frontend matching
@@ -697,7 +697,7 @@ exports.getAbstractByIdForEvent = asyncHandler(async (req, res, next) => {
     });
   } catch (error) {
     console.error(`[getAbstractByIdForEvent] Error: ${error.message}`);
-    return next(new ApiError('Error processing abstract details', 500, error.stack));
+    return next(new ApiError(500, 'Error processing abstract details', error.stack));
   }
 });
 

@@ -46,6 +46,34 @@ const ResourcesTab = ({ eventId }) => {
     fetchData();
   }, [eventId]); // Keep eventId dependency
   
+  // useEffect to handle refresh requests from navigation state
+  useEffect(() => {
+    if (location.state?.refresh) {
+      console.log('[ResourcesTab] Refresh triggered by navigation state.');
+      // Call the main data fetching logic
+      // Assuming fetchData encapsulates both loadResources and loadStatistics
+      // or create a combined refresh function if needed.
+      const fetchData = async () => {
+        if (!eventId) {
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+          await Promise.all([loadResources(), loadStatistics()]);
+        } catch (err) {
+          console.error("[ResourcesTab] Error during state-triggered data refresh:", err);
+          setError("Failed to refresh resource data.");
+        }
+        setLoading(false); // Set loading false after fetching
+      };
+      fetchData();
+      // Clear the state to prevent re-refreshing
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, eventId, navigate]); // Added dependencies
+  
   // Parse the resource type from URL if present
   useEffect(() => {
     const pathParts = location.pathname.split('/');
@@ -161,8 +189,8 @@ const ResourcesTab = ({ eventId }) => {
       setError("Cannot open scanner: Event ID is missing");
       return;
     }
-    // Navigate within the same tab
-    navigate(`/events/${eventId}/resources/scanner`);
+    // Navigate within the same tab, to a default scanner type
+    navigate(`/events/${eventId}/resources/scanner/food`);
   };
   
   const handleConfigureResources = () => {

@@ -4,6 +4,7 @@ import { Suspense, lazy } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { useParams } from 'react-router-dom';
 
 // Import layouts
 import MainLayout from './layouts/MainLayout';
@@ -154,6 +155,12 @@ const SponsorRoute = ({ children }) => {
   // Redirect to the application root as a fallback.
   return <Navigate to="/" replace />;
 };
+
+// Add a wrapper for ScannerStation to inject eventId from params
+function ScannerStationWrapper() {
+  const { id: eventIdFromParams } = useParams();
+  return <ScannerStation eventId={eventIdFromParams} />;
+}
 
 const App = () => {
   return (
@@ -306,7 +313,7 @@ const App = () => {
                   </Route>
                   <Route path="resources">
                     {/* Specific route first */}
-                    <Route path="scanner" element={<ScannerStation />} />
+                    <Route path="scanner" element={<ScannerStationWrapper />} />
                     {/* Dynamic route next */}
                     <Route path=":resourceType" element={<ResourcesTab />} />
                     {/* Index route last (matches if no other sub-path is provided) */}

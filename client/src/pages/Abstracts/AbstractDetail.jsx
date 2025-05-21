@@ -68,7 +68,7 @@ function AbstractDetail({ eventId: propEventId, abstractId: propAbstractId }) {
       try {
         setLoading(true);
         // Use abstractIdToFetch for the service call AND eventIdForFetch
-        const response = await abstractService.getAbstractById(eventIdForFetch, abstractIdToFetch);
+        const response = await abstractService.getAbstractById(eventIdForFetch, abstractIdToFetch, currentUser?.role || 'registrant');
         
         if (!response.success) {
           throw new Error(response.message);
@@ -84,7 +84,7 @@ function AbstractDetail({ eventId: propEventId, abstractId: propAbstractId }) {
     };
     
     fetchAbstract();
-  }, [abstractIdToFetch, propEventId, params.id]);
+  }, [abstractIdToFetch, propEventId, params.id, currentUser?.role]);
   
   // Handle comment input change
   const handleCommentChange = (e) => {
@@ -552,7 +552,11 @@ function AbstractDetail({ eventId: propEventId, abstractId: propAbstractId }) {
       {/* Navigation */}
       <div className="flex justify-between items-center mt-6">
         <Link
-          to="/abstracts"
+          to={(() => {
+            // Prefer eventId from props, then params, then abstract.event
+            const eventId = propEventId || params.id || (abstract && abstract.event && (abstract.event._id || abstract.event));
+            return eventId ? `/events/${eventId}/abstracts` : '/abstracts';
+          })()}
           className="inline-flex items-center text-primary-600 hover:text-primary-800"
         >
           <i className="ri-arrow-left-line mr-2"></i> Back to All Abstracts

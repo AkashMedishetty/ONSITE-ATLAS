@@ -18,7 +18,8 @@ const {
   requestRevision,
   resubmitRevisedAbstract,
   getAbstractsByRegistration,
-  getAbstractsWithReviewProgress
+  getAbstractsWithReviewProgress,
+  autoAssignReviewers
 } = require('../controllers/abstract.controller');
 
 // Include middleware
@@ -114,5 +115,8 @@ router.route('/:id/download-attachment')
 // Upload file for own abstract (if owner)
 router.route('/:id/file')
   .post(protectRegistrant, uploadAbstractFile);
+
+// Add after other event-level routes
+router.route('/auto-assign-reviewers').post(protect, restrict('admin', 'staff'), autoAssignReviewers);
 
 module.exports = router; 

@@ -5,6 +5,7 @@ const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const User = require('../models/User'); // Import User model
+const ResourceSetting = require('./resource.controller').ResourceSetting || require('../models/ResourceSetting');
 
 /**
  * Get all events with pagination
@@ -107,7 +108,8 @@ const createEvent = asyncHandler(async (req, res) => {
 
     // Create the event
     const event = await Event.create(eventData);
-
+    // MIRROR: Create ResourceSettings docs for each type
+    await mirrorEventSettingsToResourceSettings(event._id, event);
     return sendSuccess(res, 201, 'Event created successfully', event);
   } catch (error) {
     console.error(`Error in createEvent: ${error.message}`);
@@ -158,6 +160,10 @@ const updateEvent = asyncHandler(async (req, res) => {
       return sendSuccess(res, 404, 'Event not found');
     }
 
+    // MIRROR: If resource settings fields are updated, mirror to ResourceSettings
+    if ('foodSettings' in updateData || 'kitSettings' in updateData || 'certificateSettings' in updateData) {
+      await mirrorEventSettingsToResourceSettings(eventId, event);
+    }
     return sendSuccess(res, 200, 'Event updated successfully', event);
   } catch (error) {
     console.error(`Error in updateEvent: ${error.message}`);
@@ -590,25 +596,27 @@ const getResourceConfig = asyncHandler(async (req, res) => {
     return sendSuccess(res, 400, 'Invalid event ID format');
   }
 
-  // Fetch event, selecting only resourceSettings
-  const event = await Event.findById(eventId).select('resourceSettings').lean();
-
-  if (!event || !event.resourceSettings) {
-    // Return empty config if event or settings not found
-    return sendSuccess(res, 200, 'Resource configuration not found or empty', { 
-      meals: [], 
-      kitItems: [], 
-      certificates: [] 
-    });
+  // Fetch ResourceSettings for each type
+  const types = [
+    { type: 'food', key: 'meals' },
+    { type: 'kitBag', key: 'kitItems' },
+    { type: 'certificate', key: 'certificates' }
+  ];
+  const config = {};
+  for (const { type, key } of types) {
+    const resourceSetting = await ResourceSetting.findOne({ event: eventId, type });
+    if (resourceSetting && resourceSetting.settings) {
+      if (type === 'food') {
+        config[key] = (resourceSetting.settings.meals || []).map(item => ({ id: item._id?.toString?.() || item.id || item, name: item.name || item.label || item }));
+      } else if (type === 'kitBag') {
+        config[key] = (resourceSetting.settings.items || []).map(item => ({ id: item._id?.toString?.() || item.id || item, name: item.name || item.label || item }));
+      } else if (type === 'certificate') {
+        config[key] = (resourceSetting.settings.types || []).map(item => ({ id: item._id?.toString?.() || item.id || item, name: item.name || item.label || item }));
+      }
+    } else {
+      config[key] = [];
+    }
   }
-
-  // Extract and format the configuration
-  const config = {
-    meals: event.resourceSettings.food?.items?.map(item => ({ id: item._id.toString(), name: item.name })) || [],
-    kitItems: event.resourceSettings.kits?.items?.map(item => ({ id: item._id.toString(), name: item.name })) || [],
-    certificates: event.resourceSettings.certificates?.types?.map(item => ({ id: item._id.toString(), name: item.name })) || [],
-  };
-
   return sendSuccess(res, 200, 'Resource configuration retrieved successfully', config);
 });
 
@@ -624,20 +632,31 @@ const getEventResourceConfig = asyncHandler(async (req, res, next) => {
     return sendSuccess(res, 400, 'Invalid Event ID format');
   }
 
-  const event = await Event.findById(eventId)
-    .select('name foodSettings kitSettings certificateSettings');
-
+  // Fetch ResourceSettings for each type
+  const types = [
+    { type: 'food', field: 'foodSettings', defaultSettings: { enabled: false, meals: [], days: [] } },
+    { type: 'kitBag', field: 'kitSettings', defaultSettings: { enabled: false, items: [] } },
+    { type: 'certificate', field: 'certificateSettings', defaultSettings: { enabled: false, types: [] } }
+  ];
+  const event = await Event.findById(eventId).select('name foodSettings kitSettings certificateSettings');
   if (!event) {
     return sendSuccess(res, 404, 'Event not found');
   }
-
-  const resourceConfig = {
-    eventName: event.name,
-    foodSettings: event.foodSettings || { enabled: false, meals: [], days: [] },
-    kitSettings: event.kitSettings || { enabled: false, items: [] },
-    certificateSettings: event.certificateSettings || { enabled: false, types: [] },
-  };
-
+  let updateNeeded = false;
+  const resourceConfig = { eventName: event.name };
+  for (const { type, field, defaultSettings } of types) {
+    const resourceSetting = await ResourceSetting.findOne({ event: eventId, type });
+    let settings = resourceSetting ? resourceSetting.settings : defaultSettings;
+    resourceConfig[field] = settings;
+    // If event doc is out of sync, update it
+    if (JSON.stringify(event[field]) !== JSON.stringify(settings)) {
+      event[field] = settings;
+      updateNeeded = true;
+    }
+  }
+  if (updateNeeded) {
+    await event.save();
+  }
   return sendSuccess(res, 200, 'Resource configuration retrieved successfully', resourceConfig);
 });
 
@@ -717,6 +736,18 @@ const updateAbstractSettings = asyncHandler(async (req, res) => {
     }
     
     console.log('Current abstract settings before update:', JSON.stringify(existingEvent.abstractSettings || {}));
+    
+    // Before updating, ensure reviewerIds are ObjectId
+    if (settings.categories && Array.isArray(settings.categories)) {
+      settings.categories = settings.categories.map(cat => {
+        if (cat.reviewerIds && Array.isArray(cat.reviewerIds)) {
+          cat.reviewerIds = cat.reviewerIds
+            .filter(id => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+        }
+        return cat;
+      });
+    }
     
     // Update the event with the new abstract settings
     const event = await Event.findByIdAndUpdate(
@@ -836,22 +867,93 @@ const updatePortalSettings = asyncHandler(async (req, res) => {
 const getEventReviewers = asyncHandler(async (req, res, next) => {
   const { eventId } = req.params;
 
+  // EXTENSIVE LOGGING START
+  console.log('--- [getEventReviewers] ---');
+  console.log('Request path:', req.originalUrl);
+  console.log('User state:', req.user ? {
+    id: req.user._id,
+    email: req.user.email,
+    role: req.user.role,
+    isActive: req.user.isActive
+  } : 'No user found');
+  console.log('Headers:', req.headers);
+  console.log('Raw eventId:', eventId, 'Type:', typeof eventId);
+
   if (!eventId) {
+    console.log('Event ID missing in params');
     return next(createApiError('Event ID is required', 400));
   }
 
-  // Fetch users with the 'reviewer' role and associated with the event
-  const reviewers = await User.find({
+  let eventObjectId;
+  try {
+    eventObjectId = new mongoose.Types.ObjectId(eventId);
+    console.log('Converted eventId to ObjectId:', eventObjectId, 'Type:', typeof eventObjectId);
+  } catch (e) {
+    console.log('Invalid Event ID format:', eventId, e);
+    return next(createApiError('Invalid Event ID format', 400));
+  }
+
+  // Log the query we're about to execute
+  const query = {
     role: 'reviewer',
-    managedEvents: eventId
-  }).select('name email');
+    managedEvents: { $in: [eventObjectId] }
+  };
+  console.log('MongoDB Query:', JSON.stringify(query));
+
+  // Fetch users with the 'reviewer' role and associated with the event
+  const reviewers = await User.find(query).select('name email managedEvents role');
+
+  console.log('Raw reviewers result:', reviewers);
+  if (Array.isArray(reviewers)) {
+    reviewers.forEach((r, i) => {
+      console.log(`Reviewer[${i}]:`, {
+        _id: r._id,
+        name: r.name,
+        email: r.email,
+        managedEvents: r.managedEvents,
+        role: r.role
+      });
+    });
+  }
+  console.log('Found reviewers count:', reviewers.length);
 
   if (!reviewers || reviewers.length === 0) {
+    console.log('No reviewers found for event:', eventId);
     return next(createApiError('No reviewers found for this event', 404));
   }
 
+  console.log('Returning reviewers:', reviewers.map(r => r.email));
   sendSuccess(res, 200, 'Reviewers retrieved successfully', reviewers);
+  console.log('--- [getEventReviewers END] ---');
 });
+
+// Utility: Mirror Event document resource settings to ResourceSettings
+async function mirrorEventSettingsToResourceSettings(eventId, eventDoc) {
+  const resourceTypes = [
+    { type: 'food', field: 'foodSettings', defaultSettings: { enabled: true, meals: [], days: [] } },
+    { type: 'kitBag', field: 'kitSettings', defaultSettings: { enabled: true, items: [] } },
+    { type: 'certificate', field: 'certificateSettings', defaultSettings: { enabled: true, types: [] } }
+  ];
+  for (const { type, field, defaultSettings } of resourceTypes) {
+    const settings = eventDoc[field] || defaultSettings;
+    let resourceSettingsDoc = await ResourceSetting.findOne({ event: eventId, type });
+    if (!resourceSettingsDoc) {
+      resourceSettingsDoc = new ResourceSetting({
+        event: eventId,
+        type,
+        settings,
+        isEnabled: settings.enabled !== false,
+        createdBy: eventDoc.createdBy || null,
+        updatedBy: eventDoc.updatedBy || null
+      });
+    } else {
+      resourceSettingsDoc.settings = settings;
+      resourceSettingsDoc.isEnabled = settings.enabled !== false;
+      resourceSettingsDoc.updatedBy = eventDoc.updatedBy || null;
+    }
+    await resourceSettingsDoc.save();
+  }
+}
 
 module.exports = {
   getEvents,

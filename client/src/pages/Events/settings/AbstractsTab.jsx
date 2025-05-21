@@ -20,6 +20,9 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
     allowFiles: false,
     maxFileSize: 5,
   });
+  const [reviewers, setReviewers] = useState([]);
+  const [loadingReviewers, setLoadingReviewers] = useState(false);
+  const [reviewerError, setReviewerError] = useState(null);
 
   // Load settings from event data on mount or when event changes
   useEffect(() => {
@@ -29,11 +32,21 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
     
     if (event.abstractSettings) {
       // Ensure all required fields are present
-      const settings = {
+      let settings = {
         ...abstractSettings, // Use default values as fallback
         ...event.abstractSettings, // Override with actual event values
       };
-      
+      // Sanitize reviewerIds in categories to only keep valid ObjectId strings
+      if (settings.categories && Array.isArray(settings.categories)) {
+        settings.categories = settings.categories.map(cat => {
+          if (cat.reviewerIds && Array.isArray(cat.reviewerIds)) {
+            cat.reviewerIds = cat.reviewerIds.filter(id =>
+              typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
+            );
+          }
+          return cat;
+        });
+      }
       console.log("Setting abstract settings:", settings);
       
       // Only update if there's an actual difference to prevent infinite loops
@@ -44,6 +57,26 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
     
     isFirstRender.current = false;
   }, [event?._id]); // Only run when event ID changes
+
+  // Fetch reviewers for this event
+  useEffect(() => {
+    if (!event || !event._id) return;
+    setLoadingReviewers(true);
+    setReviewerError(null);
+    eventService.getEventReviewers(event._id)
+      .then(res => {
+        if (res.success && Array.isArray(res.data)) setReviewers(res.data);
+        else {
+          setReviewers([]);
+          setReviewerError(res.message || 'Failed to load reviewers');
+        }
+      })
+      .catch(err => {
+        setReviewers([]);
+        setReviewerError(err.message || 'Error loading reviewers');
+      })
+      .finally(() => setLoadingReviewers(false));
+  }, [event?._id]);
 
   // Format date from ISO to YYYY-MM-DD
   const formatDateForInput = (dateString) => {
@@ -418,6 +451,41 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                               </div>
                             </div>
                             
+                            {/* Reviewer Assignment UI */}
+                            <div className="mt-2 mb-4">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Assign Reviewers</label>
+                              {loadingReviewers ? (
+                                <div className="text-gray-500 text-sm">Loading reviewers...</div>
+                              ) : reviewerError ? (
+                                <div className="text-red-500 text-sm">{reviewerError}</div>
+                              ) : reviewers.length === 0 ? (
+                                <div className="text-gray-500 text-sm">No reviewers available for this event.</div>
+                              ) : (
+                                <select
+                                  multiple
+                                  className="border rounded px-2 py-1 text-sm w-full min-h-[40px]"
+                                  value={category.reviewerIds ? category.reviewerIds.map(String) : []}
+                                  onChange={e => {
+                                    // Only store reviewer _id values (as strings)
+                                    const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
+                                    handleCategoryChange(index, 'reviewerIds', selected);
+                                  }}
+                                >
+                                  {reviewers.map(r => (
+                                    <option key={r._id} value={r._id}>{r.name} ({r.email})</option>
+                                  ))}
+                                </select>
+                              )}
+                              {category.reviewerIds && category.reviewerIds.length > 0 && reviewers.length > 0 && (
+                                <div className="mt-1 text-xs text-gray-600">
+                                  Assigned: {category.reviewerIds.map(id => {
+                                    const found = reviewers.find(r => String(r._id) === String(id));
+                                    return found ? `${found.name} (${found.email})` : id;
+                                  }).join(', ')}
+                                </div>
+                              )}
+                            </div>
+                            
                             {/* Sub-topics Section - Enhanced with better visibility */}
                             <div className="mt-4 border-t border-gray-200 pt-4">
                               <div className="flex justify-between items-center mb-3">
@@ -447,7 +515,7 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                               ) : (
                                 <div className="space-y-3">
                                   {category.subTopics.map((subTopic, subIndex) => (
-                                    <div key={subIndex} className="flex items-start space-x-2 bg-gray-50 p-3 rounded-md">
+                                    <div key={subTopic._id || subIndex} className="flex items-start space-x-2 bg-gray-50 p-3 rounded-md">
                                       <div className="flex-grow grid grid-cols-2 gap-3">
                                         <div>
                                           <Input
@@ -553,7 +621,7 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                       {cat.subTopics && cat.subTopics.length > 0 && (
                         <ul className="list-disc pl-5">
                           {cat.subTopics.map((sub, subIdx) => (
-                            <li key={subIdx} className={sub.name ? "text-green-600" : "text-red-600"}>
+                            <li key={sub._id || subIdx} className={sub.name ? "text-green-600" : "text-red-600"}>
                               Sub-topic {subIdx + 1}: {sub.name || "Missing name!"}
                             </li>
                           ))}

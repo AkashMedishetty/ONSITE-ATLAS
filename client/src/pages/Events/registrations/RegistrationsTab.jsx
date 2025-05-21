@@ -122,6 +122,9 @@ const RegistrationsTab = ({ eventId }) => {
   // --- Diagnostic State --- 
   const [updateCounter, setUpdateCounter] = useState(0); // Force re-render
 
+  // ADDED: State for event details for the modal
+  const [currentEventDetailsForModal, setCurrentEventDetailsForModal] = useState(null);
+
   // Effect to monitor print modal visibility state
   useEffect(() => {
     console.log(`[Effect Log] isPrintModalVisible changed to: ${isPrintModalVisible}`);
@@ -312,11 +315,27 @@ const RegistrationsTab = ({ eventId }) => {
     navigate(`/events/${eventId}/registrations/${registrationId}`);
   };
 
-  const handlePreviewRegistration = (registration) => {
-    console.log('[Action] handlePreviewRegistration triggered');
-    console.log('[Preview Data] Full registration object for preview:', registration);
-    console.log('[Preview Data] personalInfo for preview:', registration?.personalInfo);
+  const handlePreviewRegistration = async (registration) => {
+    console.log('[Preview Modal] handlePreviewRegistration triggered with:', registration);
     setSelectedRegistrant(registration);
+
+    // Fetch badge settings if not already loaded
+    if (!badgeSettings) {
+      console.log('[Preview Modal] Badge settings not loaded, fetching...');
+      try {
+        const fetchedSettings = await fetchBadgeSettings(eventId);
+        if (fetchedSettings) {
+          setBadgeSettings(fetchedSettings); // Update state
+          console.log('[Preview Modal] Fetched and set badgeSettings:', fetchedSettings);
+        } else {
+          console.warn('[Preview Modal] Failed to fetch badge settings for preview.');
+          // badgeSettings will remain null, BadgeTemplate will use fallback
+        }
+      } catch (error) {
+        console.error('[Preview Modal] Error fetching badge settings:', error);
+        // badgeSettings will remain null
+      }
+    }
     setPreviewModal(true);
   };
 
@@ -638,19 +657,31 @@ const RegistrationsTab = ({ eventId }) => {
     setLoading(true);
     try {
       const response = await registrationService.deleteRegistration(eventId, selectedRegistrant._id);
-      if (response && (response.status === 200 || response.status === 204 || response.data?.success)) {
+      if (response && response.success) {
         message.success('Registration deleted successfully');
         setDeleteModal(false);
         setSelectedRegistrant(null);
-        fetchRegistrations();
+
+        // Check if we need to adjust the page number
+        let pageToFetch = pagination.currentPage;
+        if (registrations.length === 1 && pagination.currentPage > 1) {
+          // If this was the last item on the current page (and not page 1)
+          pageToFetch = pagination.currentPage - 1;
+        }
+        
+        // Fetch with potentially adjusted page number
+        fetchRegistrations(pageToFetch, pagination.pageSize, searchTerm, categoryFilter, statusFilter);
+
       } else {
-        throw new Error(response?.data?.message || response?.message || 'Unknown error during deletion');
+        throw new Error(response?.message || response?.message || 'Unknown error during deletion');
       }
     } catch (err) {
       console.error("Error deleting registration:", err)
       message.error(`Failed to delete registration: ${err.message}`);
-      setLoading(false);
+      // setLoading(false); // Already in finally
       setDeleteModal(false);
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -684,17 +715,20 @@ const RegistrationsTab = ({ eventId }) => {
     setResourceUsage([]);
     setResourceConfig({ meals: [], kitItems: [], certificates: [] });
     setBadgeSettings(null);
+    setCurrentEventDetailsForModal(null); // Reset event details for modal
     
     try {
-      const [usageResponse, configResponse, fetchedBadgeSettings] = await Promise.all([
+      const [usageResponse, configResponse, fetchedBadgeSettings, eventDetailsResponse] = await Promise.all([
         registrationService.getResourceUsage(eventId, registration._id),
         eventService.getResourceConfig(eventId),
-        fetchBadgeSettings(eventId)
+        fetchBadgeSettings(eventId),
+        eventService.getEventById(eventId) // Fetch event details
       ]);
 
       console.log('[Details Fetch] Usage Response:', usageResponse);
       console.log('[Details Fetch] Config Response:', configResponse);
       console.log('[Details Fetch] Badge Settings Response:', fetchedBadgeSettings);
+      console.log('[Details Fetch] Event Details Response:', eventDetailsResponse);
 
       if (usageResponse?.success && Array.isArray(usageResponse.data)) {
         setResourceUsage(usageResponse.data);
@@ -720,6 +754,14 @@ const RegistrationsTab = ({ eventId }) => {
       } else {
         console.warn('[Details Fetch] Badge settings not found or failed to load for preview.');
         setBadgeSettings(null);
+      }
+
+      if (eventDetailsResponse?.success && eventDetailsResponse.data) {
+        setCurrentEventDetailsForModal(eventDetailsResponse.data);
+        console.log('[Details Fetch] Event details for modal state updated.');
+      } else {
+        console.warn('[Details Fetch] Failed to load event details for modal.');
+        setCurrentEventDetailsForModal(null);
       }
 
       setIsDetailModalOpen(true);
@@ -1201,48 +1243,53 @@ const RegistrationsTab = ({ eventId }) => {
       />
 
       {selectedRegistrant && (
-      <Modal
+        <Modal
           isOpen={previewModal}
-          onClose={() => setPreviewModal(false)}
-          title={`Preview: ${selectedRegistrant.personalInfo?.firstName} ${selectedRegistrant.personalInfo?.lastName}`}
+          onClose={() => {
+            console.log('[Preview Modal] Closing modal');
+            setPreviewModal(false);
+          }}
+          title={`Badge Preview: ${selectedRegistrant.personalInfo?.firstName} ${selectedRegistrant.personalInfo?.lastName}`}
+          centered={true}
         >
-          <div className="space-y-4">
-            <p><strong>ID:</strong> {selectedRegistrant.registrationId}</p>
-            <p><strong>Email:</strong> {selectedRegistrant.personalInfo?.email}</p>
-            <p><strong>Phone:</strong> {selectedRegistrant.personalInfo?.phone || 'N/A'}</p>
-            <p><strong>Organization:</strong> {selectedRegistrant.personalInfo?.organization || 'N/A'}</p>
-            <p><strong>Category:</strong> {selectedRegistrant.category?.name}</p>
-            <p><strong>Registered:</strong> {formatDate(selectedRegistrant.createdAt)}</p>
-            <div className="flex justify-center mt-4">
-               <QRCode value={selectedRegistrant.registrationId || 'no-id'} size={128} />
-                    </div>
+          <div className="flex flex-col items-center space-y-4">
+            {(() => {
+              console.log('[Preview Modal] Rendering badge preview. badgeSettings:', badgeSettings, 'selectedRegistrant:', selectedRegistrant);
+              if (badgeSettings) {
+                console.log('[Preview Modal] Rendering BadgeTemplate with badgeSettings.');
+                return (
+                  <div className="mb-4 p-4 border rounded flex justify-center bg-white">
+                    <BadgeTemplate 
+                      registrationData={selectedRegistrant} 
+                      badgeSettings={badgeSettings}
+                      previewMode={true}
+                    />
+                  </div>
+                );
+              } else {
+                console.log('[Preview Modal] badgeSettings missing, rendering fallback preview.');
+                return (
+                  <div className="mb-4 p-4 border rounded flex flex-col items-center bg-white">
+                    <div className="font-bold text-lg mb-2">{selectedRegistrant.personalInfo?.firstName} {selectedRegistrant.personalInfo?.lastName}</div>
+                    <div className="text-gray-600 mb-2">ID: {selectedRegistrant.registrationId}</div>
+                    <QRCode value={selectedRegistrant.registrationId || 'no-id'} size={96} />
+                  </div>
+                );
+              }
+            })()}
+            <div className="flex justify-end space-x-3 w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  console.log('[Preview Modal] Close button clicked');
+                  setPreviewModal(false);
+                }}
+              >
+                Close
+              </Button>
+            </div>
           </div>
-          <div className="mt-6 flex justify-end space-x-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSendCertificate(selectedRegistrant)}
-                        leadingIcon={<EnvelopeIcon className="h-4 w-4" />}
-              loading={isSendingCertificate}
-                      >
-                        Send Certificate
-                      </Button>
-                <Button
-              variant="secondary"
-                  size="sm"
-              onClick={() => handlePrintBadgeClick(selectedRegistrant)}
-              leadingIcon={<PrinterIcon className="h-4 w-4" />}
-                >
-              Print Badge
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPreviewModal(false)}
-                >
-                  Close
-                </Button>
-              </div>
         </Modal>
       )}
 
@@ -1327,6 +1374,7 @@ const RegistrationsTab = ({ eventId }) => {
           isOpen={deleteModal}
           onClose={() => setDeleteModal(false)}
           title="Confirm Deletion"
+          centered={true}
         >
           <p>Are you sure you want to delete registration for 
              <strong> {selectedRegistrant.personalInfo?.firstName} {selectedRegistrant.personalInfo?.lastName}</strong> ({selectedRegistrant.registrationId})?
@@ -1503,20 +1551,60 @@ const RegistrationsTab = ({ eventId }) => {
               </div>
 
               <div className="md:col-span-2 space-y-8">
-                <div className="flex flex-col items-center p-2 bg-gray-50 rounded-lg border border-gray-200">
-                  <h4 className="text-base font-semibold mb-3 text-gray-800">Badge Preview</h4>
-                  {badgeSettings ? (
-                    <div className="p-1 bg-white border rounded-md shadow-sm overflow-hidden">
-                      <BadgeTemplate
-                        registrationData={selectedRegistrant} 
-                        badgeSettings={badgeSettings} 
+                <div className="flex flex-col items-center p-4 bg-white rounded-lg border border-gray-200 shadow">
+                  <h4 className="text-base font-semibold mb-4 text-gray-700">Badge Preview</h4>
+                  
+                  <div 
+                    className="w-full max-w-xs p-5 border border-gray-300 rounded-xl bg-slate-50 shadow-lg flex flex-col items-center space-y-3 text-center"
+                    style={{ minHeight: '320px' }} // Increased height
+                  >
+                    {/* Event Name - Placed at the top */}
+                    {currentEventDetailsForModal?.name && (
+                      <div className="text-xs text-gray-500 mb-1 w-full truncate px-2">
+                        {currentEventDetailsForModal.name}
+                      </div>
+                    )}
+
+                    {/* Category Tag */}
+                    <div 
+                      className="px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-md tracking-wide"
+                      style={{ backgroundColor: selectedRegistrant.category?.color || '#3B82F6' }}
+                    >
+                      {selectedRegistrant.category?.name || 'N/A'}
+                    </div>
+
+                    {/* Full Name */}
+                    <div className="font-bold text-2xl text-gray-800 pt-2">
+                      {`${selectedRegistrant.personalInfo?.firstName || ''} ${selectedRegistrant.personalInfo?.lastName || ''}`}
+                    </div>
+
+                    {/* Registration ID */}
+                    <div className="text-md text-gray-600">
+                      ID: {selectedRegistrant.registrationId || 'N/A'}
+                    </div>
+
+                    {/* QR Code - with more space around it */}
+                    <div className="p-2.5 bg-white border-2 border-gray-200 rounded-lg inline-block shadow-md my-3">
+                      <QRCode 
+                        value={selectedRegistrant.registrationId || 'no-id'} 
+                        size={110} // Adjusted size
+                        level="H"
                       />
                     </div>
-                  ) : (
-                    <p className="text-xs text-gray-500 italic p-4">
-                      Badge preview unavailable (settings not loaded).
-                    </p>
-                  )}
+
+                    {/* Organization - Placed at the bottom */}
+                    {selectedRegistrant.personalInfo?.organization && (
+                        <div className="text-sm text-gray-500 pt-2 border-t border-gray-200 w-full mt-auto">
+                           {selectedRegistrant.personalInfo.organization}
+                        </div>
+                    )}
+                     {!selectedRegistrant.personalInfo?.organization && (
+                        <div className="text-sm text-gray-400 italic pt-2 border-t border-gray-200 w-full mt-auto">
+                           No Organization
+                        </div>
+                    )}
+                  </div>
+                  
                 </div>
                 
                 <div className="mt-4">

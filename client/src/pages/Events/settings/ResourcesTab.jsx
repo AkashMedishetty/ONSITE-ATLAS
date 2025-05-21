@@ -67,79 +67,111 @@ const convertFromPxGlobal = (pxValue, unit) => {
   return pxValue; 
 };
 
-// Moved StaticCertificateBackground to be a top-level component
-const StaticCertificateBackground = React.memo(({ templateImageUrl }) => {
-  console.log('[StaticCertificateBackground] Rendering. Image URL:', templateImageUrl);
+// Update StaticCertificateBackground to use PNG and check aspect ratio, add onError and debug border
+const StaticCertificateBackground = React.memo(({ templateImageUrl, onImageLoad }) => {
+  const imgRef = useRef(null);
+  const [imgError, setImgError] = useState(false);
 
-  const controlledPdfUrl = useMemo(() => {
+  useEffect(() => {
+    if (imgRef.current && onImageLoad) {
+      imgRef.current.onload = () => {
+        onImageLoad(imgRef.current);
+      };
+    }
+  }, [templateImageUrl, onImageLoad]);
+
     if (!templateImageUrl) return null;
-    return `${templateImageUrl}#toolbar=0&scrollbar=0&navpanes=0&view=FitH&pagemode=none`;
-  }, [templateImageUrl]);
-
-  if (!controlledPdfUrl) return null;
-
+  if (imgError) return <div style={{width: '100%', height: '100%', background: '#fee', color: '#900', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #f00', position: 'absolute', top: 0, left: 0, zIndex: 1}}>Image failed to load</div>;
   return (
-    <object
-      data={controlledPdfUrl}
-      type="application/pdf"
-      style={{ display: 'block', width: '100%', height: '100%', opacity: 0.7, position: 'absolute', top: 0, left: 0, zIndex: 1 }}
-    >
-      <p>PDF preview is not available. <a href={templateImageUrl} target="_blank" rel="noopener noreferrer">Open PDF directly</a>.</p>
-    </object>
+    <img
+      ref={imgRef}
+      src={templateImageUrl}
+      alt="Certificate Template Preview"
+      style={{
+        display: 'block',
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        opacity: 0.7,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        zIndex: 1,
+        border: '2px dashed #007bff', // debug border
+        background: '#fff', // debug background
+      }}
+      onError={() => setImgError(true)}
+    />
   );
 });
 
-// Moved CertificatePreview to be a top-level component
+// Update CertificatePreview to lock to A4 landscape and overlay fields, and fix dragging
 const CertificatePreview = React.memo(
-  ({ 
-    previewContainerRef, // Now passed as a prop
-    templateImageUrl, 
-    fields, 
-    templateUnit = 'pt', 
-    onFieldDragStart 
-  }) => {
-    console.log('[CertificatePreview] Rendering. Fields count:', fields?.length, 'Unit:', templateUnit);
+  ({ previewContainerRef, templateImageUrl, fields, templateUnit = 'pt', onFieldDragStart, printableArea, onImageLoad }) => {
+    // A4 landscape: 297mm x 210mm. At 3.78 px/mm: 1122 x 794 px. We'll use 1122 x 794 px for preview.
+    const A4_WIDTH_PX = 1122;
+    const A4_HEIGHT_PX = 794;
+    // For field dragging
+    const fieldRefs = useRef([]);
 
+    // Helper to start drag and pass ref
     const handleFieldMouseDown = (e, index) => {
-      e.preventDefault();
-      if (!fields[index] || !fields[index].position) {
-        console.warn('[CertificatePreview] handleFieldMouseDown: Field or field position is undefined for index:', index, fields[index]);
-        return;
-      }
-
-      const originalFieldXUnit = fields[index].position.x || 0;
-      const originalFieldYUnit = fields[index].position.y || 0;
-      
+      if (onFieldDragStart) {
+        const field = fields[index];
+        const x = field.position?.x || 0;
+        const y = field.position?.y || 0;
       onFieldDragStart(
         index,
-        originalFieldXUnit,
-        originalFieldYUnit,
+          x,
+          y,
         e.clientX,
         e.clientY,
-        e.currentTarget, 
+          fieldRefs.current[index],
         templateUnit 
       );
+      }
     };
 
     return (
       <div 
-        ref={previewContainerRef} // Use the passed ref
-        style={{ position: 'relative', border: '1px dashed #ccc', maxWidth: '600px', margin: 'auto', userSelect: 'none', height: '500px' }}
+        ref={previewContainerRef}
+        style={{
+          position: 'relative',
+          border: '1px dashed #ccc',
+          width: `${A4_WIDTH_PX}px`,
+          height: `${A4_HEIGHT_PX}px`,
+          margin: 'auto',
+          userSelect: 'none',
+          background: '#fff',
+          overflow: 'hidden',
+        }}
       >
-        <StaticCertificateBackground templateImageUrl={templateImageUrl} />
-        
+        <StaticCertificateBackground templateImageUrl={templateImageUrl} onImageLoad={onImageLoad} />
+        {printableArea && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${printableArea.left || 0}px`,
+              top: `${printableArea.top || 0}px`,
+              width: `${printableArea.width || (A4_WIDTH_PX - (printableArea.left || 0))}px`,
+              height: `${printableArea.height || (A4_HEIGHT_PX - (printableArea.top || 0))}px`,
+              border: '2px dashed #007bff',
+              zIndex: 3,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
         {fields && fields.map((field, index) => {
-          // Use the global conversion functions
           const xPos = convertToPxGlobal(field.position?.x || 0, templateUnit);
           const yPos = convertToPxGlobal(field.position?.y || 0, templateUnit);
           const fontSize = convertToPxGlobal(field.style?.fontSize || 12, templateUnit);
           const previewText = field.label || `Field ${index + 1}`;
           const rotation = field.style?.rotation || 0;
-
           return (
             <div
               key={field.id || index}
-              onMouseDown={(e) => handleFieldMouseDown(e, index)}
+              ref={el => fieldRefs.current[index] = el}
+              onMouseDown={e => handleFieldMouseDown(e, index)}
               style={{
                 position: 'absolute',
                 left: `${xPos}px`,
@@ -151,8 +183,8 @@ const CertificatePreview = React.memo(
                 padding: '2px',
                 whiteSpace: 'nowrap', 
                 cursor: 'grab',
-                zIndex: 2,
-                transform: `rotate(${rotation}deg)` // Added rotation transform
+                zIndex: 4,
+                transform: `rotate(${rotation}deg)`
               }}
             >
               {previewText}
@@ -162,24 +194,14 @@ const CertificatePreview = React.memo(
       </div>
     );
   },
-  (prevProps, nextProps) => { // Custom comparison function remains
-    const imageSame = prevProps.templateImageUrl === nextProps.templateImageUrl;
-    const fieldsRefSame = prevProps.fields === nextProps.fields;
-    const unitSame = prevProps.templateUnit === nextProps.templateUnit;
-    const callbackSame = prevProps.onFieldDragStart === nextProps.onFieldDragStart;
-    const refSame = prevProps.previewContainerRef === nextProps.previewContainerRef;
-
-    let logReason = '';
-    if (!imageSame) logReason += 'templateImageUrl changed; ';
-    if (!fieldsRefSame) logReason += 'fields prop reference CHANGED; ';
-    if (!unitSame) logReason += 'templateUnit changed; ';
-    if (!callbackSame) logReason += 'onFieldDragStart callback changed; ';
-    if (!refSame) logReason += 'previewContainerRef changed; ';
-
-    if (logReason) {
-      console.warn(`[CertificatePreview memo] Re-rendering because: ${logReason}`);
-    }
-    return imageSame && fieldsRefSame && unitSame && callbackSame && refSame;
+  (prevProps, nextProps) => {
+    // ... existing memo logic ...
+    return prevProps.templateImageUrl === nextProps.templateImageUrl &&
+      prevProps.fields === nextProps.fields &&
+      prevProps.templateUnit === nextProps.templateUnit &&
+      prevProps.onFieldDragStart === nextProps.onFieldDragStart &&
+      prevProps.previewContainerRef === nextProps.previewContainerRef &&
+      prevProps.printableArea === nextProps.printableArea;
   }
 );
 
@@ -651,6 +673,12 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
             if (uploadResponse && uploadResponse.success && uploadResponse.data?.templateUrl) {
               const { file, ...restOfTemplate } = processedTemplate;
               processedTemplate = { ...restOfTemplate, templateUrl: uploadResponse.data.templateUrl };
+              // Show backend warning if present
+              if (uploadResponse.data.aspectWarning) {
+                setTemplateFileError(uploadResponse.data.aspectWarning);
+              } else {
+                setTemplateFileError(null);
+              }
             } else {
               allTemplatesValid = false;
               console.error(`[SaveCertPrint] Upload Failure for "${processedTemplate.name || 'Unnamed'}"`);
@@ -1662,6 +1690,18 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
       setFormChanged(true); // Ensure form is marked as changed
     };
 
+    // Add this inside ResourcesTab component, before renderCertificatePrintingConfig
+    const handleTemplateImageLoad = (img) => {
+      // A4 landscape: 297mm x 210mm, aspect ratio ≈ 1.414
+      const expectedAspect = 297 / 210;
+      const actualAspect = img.naturalWidth / img.naturalHeight;
+      if (Math.abs(actualAspect - expectedAspect) > 0.05) {
+        setTemplateFileError('Warning: Uploaded template is not A4 landscape (297x210mm). Preview may not match print.');
+      } else {
+        setTemplateFileError(null);
+      }
+    };
+
     return (
       <Card 
         className="mb-6"
@@ -1884,6 +1924,8 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
                     fields={currentEditingFields}
                     templateUnit={currentTemplate.templateUnit || 'pt'}
                     onFieldDragStart={handleFieldDragStart} // Pass down the callback
+                    printableArea={currentTemplate.printableArea}
+                    onImageLoad={handleTemplateImageLoad}
                   />
                 );
               })()}

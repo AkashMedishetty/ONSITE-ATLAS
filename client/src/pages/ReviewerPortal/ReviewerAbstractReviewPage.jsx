@@ -16,7 +16,7 @@ const ReviewerAbstractReviewPage = () => {
   const { user: authUser, isAuthenticated, loading: authLoading } = useAuth(); // Get all relevant values
 
   // Extract eventId from location state
-  const eventId = location.state?.eventId;
+  const eventId = location.state?.eventId || localStorage.getItem('currentEventId');
 
   const [abstract, setAbstract] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,8 +50,8 @@ const ReviewerAbstractReviewPage = () => {
         return;
       }
       if (!eventId) {
-        setError("Event ID not found. Cannot fetch abstract details.");
-        console.warn("[ReviewerAbstractReviewPage] Fetch blocked: eventId is not available from location state.");
+        setError("Event ID not found. Please log in via an event-specific reviewer portal link.");
+        console.warn("[ReviewerAbstractReviewPage] Fetch blocked: eventId is not available from location state or localStorage.");
         setLoading(false);
         return;
       }

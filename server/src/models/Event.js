@@ -163,6 +163,11 @@ const eventSchema = new mongoose.Schema({
         description: {
           type: String
         }
+      }],
+      reviewerIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: []
       }]
     }],
     notifyOnSubmission: {

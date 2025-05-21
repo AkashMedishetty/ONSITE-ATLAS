@@ -19,7 +19,8 @@ const LayoutContent = () => {
     updateActiveEventId, 
     activeEventDetails, 
     isLoadingEventDetails,
-    eventDetailsError 
+    eventDetailsError,
+    isSyncingEventId
   } = useActiveEvent();
 
   // Navigation items, potentially dynamic based on event features later
@@ -162,13 +163,13 @@ const LayoutContent = () => {
       {renderMobileNav()}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-4 sm:px-0">
-          {isLoadingEventDetails && !activeEventDetails && (
+          {(isSyncingEventId || isLoadingEventDetails) && (
             <div className="flex justify-center items-center h-64">
               <Spinner size="xl" />
               <p className="ml-3 text-lg">Loading event data...</p>
             </div>
           )}
-          {!isLoadingEventDetails && eventDetailsError && (
+          {!isSyncingEventId && !isLoadingEventDetails && eventDetailsError && (
              <div className="text-center p-8 bg-red-50 border border-red-200 rounded-lg">
                <h2 className="text-xl font-semibold text-red-700">Error Loading Event</h2>
                <p className="text-red-600 mt-2 mb-4">
@@ -179,7 +180,7 @@ const LayoutContent = () => {
                </Button>
              </div>
           )}
-          {!isLoadingEventDetails && !eventDetailsError && !activeEventId && (
+          {!isSyncingEventId && !isLoadingEventDetails && !eventDetailsError && !activeEventId && (
             <div className="text-center p-8 bg-yellow-50 border border-yellow-200 rounded-lg">
               <h2 className="text-xl font-semibold text-yellow-700">Event Context Missing</h2>
               <p className="text-yellow-600 mt-2 mb-4">
@@ -190,7 +191,7 @@ const LayoutContent = () => {
               </Button>
             </div>
           )}
-          {!isLoadingEventDetails && !eventDetailsError && activeEventId && (
+          {!isSyncingEventId && !isLoadingEventDetails && !eventDetailsError && activeEventId && (
             <Outlet /> // Render child routes only if eventId exists and no error
           )}
         </div>

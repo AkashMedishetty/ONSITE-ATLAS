@@ -23,7 +23,7 @@ const ReviewerDashboardPage = () => {
   useEffect(() => {
     const fetchAssignedAbstracts = async () => {
       if (!currentEventId) {
-        setError('No active event selected. Cannot load abstracts.');
+        setError('No active event selected. Please log in via an event-specific reviewer portal link.');
         console.warn('[ReviewerDashboardPage] currentEventId is not set in AuthContext. Abstracts will not be loaded.');
         setLoading(false);
         setAssignedAbstracts([]);
@@ -61,7 +61,7 @@ const ReviewerDashboardPage = () => {
     };
 
     if (user && currentEventId) {
-    fetchAssignedAbstracts();
+      fetchAssignedAbstracts();
     } else if (!user) {
       setLoading(false);
     } else if (user && !currentEventId) {

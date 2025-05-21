@@ -617,6 +617,20 @@ function EventPortal() {
   
   // The tab content - render all tabs but only show the active one
   const renderAllTabContents = () => {
+    // Check for scanner route first
+    const scannerPathRegex = /^\/events\/([^\/]+)\/resources\/scanner\/([^\/]+)$/;
+    const scannerMatch = location.pathname.match(scannerPathRegex);
+
+    if (scannerMatch && scannerMatch[1] === id) { // Ensure it's for the current event
+      const scanType = scannerMatch[2];
+      // Potentially pass scanType to ScannerStation if it needs it, or ScannerStation can get it from URL
+      return (
+        <TabErrorBoundary tabName="Scanner Station">
+          <ScannerStation eventId={id} />
+        </TabErrorBoundary>
+      );
+    }
+
     // First check if we have any error or loading state
     if (error) {
       return (
@@ -706,9 +720,6 @@ function EventPortal() {
         break;
       case "announcements":
         activeTabContent = <TabErrorBoundary tabName="Announcements"><AnnouncementsTab eventId={id} /></TabErrorBoundary>;
-        break;
-      case "scanner":
-        activeTabContent = <TabErrorBoundary tabName="Scanner"><ScannerStation eventId={id} /></TabErrorBoundary>;
         break;
       case "landing-pages":
         activeTabContent = (
