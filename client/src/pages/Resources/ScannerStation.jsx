@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import eventService from "../../services/eventService";
 import resourceService, { normalizeResourceType } from "../../services/resourceService";
 import registrationService from "../../services/registrationService";
+import Modal from '../../components/common/Modal';
 
 // Helper function to get the API base URL (add this)
 const getApiBaseUrl = () => {
@@ -56,6 +57,13 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
   const [scannerType, setScannerType] = useState("camera");
   const [manualInput, setManualInput] = useState("");
   const [printFieldsOnly, setPrintFieldsOnly] = useState(true);
+  const [showReprintModal, setShowReprintModal] = useState(false);
+  const [reprintData, setReprintData] = useState(null);
+  const [showAbstractModal, setShowAbstractModal] = useState(false);
+  const [abstractOptions, setAbstractOptions] = useState([]);
+  const [selectedAbstractIds, setSelectedAbstractIds] = useState([]);
+  const [abstractModalMessage, setAbstractModalMessage] = useState('');
+  const [abstractModalLoading, setAbstractModalLoading] = useState(false);
   
   const scannerRef = useRef(null);
   const scannerDivRef = useRef(null);
@@ -236,7 +244,8 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         if (settingsResponse && settingsResponse.success && settingsResponse.data) {
           console.log('[FetchResourceOptions - CertPrint] response.data:', JSON.stringify(settingsResponse.data, null, 2));
           if (Array.isArray(settingsResponse.data.settings?.templates)) {
-            const templateList = settingsResponse.data.settings.templates.map(template => ({ _id: template._id, name: template.name || 'Unnamed Template' }));
+            // Store the full template object, not just _id and name
+            const templateList = settingsResponse.data.settings.templates;
             setResourceOptions(templateList);
             currentResourceOptions = templateList; // Keep track
             if (templateList.length > 0) setSelectedResource(templateList[0]._id);
@@ -379,6 +388,76 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       const cleanQrCode = qrData.toString().trim();
       const validationResponse = await resourceService.validateScan(eventId, selectedResourceType, selectedResource, cleanQrCode);
       if (!validationResponse || !validationResponse.success) {
+        // If already used error for certificatePrinting, fetch abstracts and show abstract modal instead of reprint modal
+        if (
+          selectedResourceType === 'certificatePrinting' &&
+          validationResponse?.message?.includes('already been used by this registration')
+        ) {
+          // Fetch approved abstracts and show modal
+          let registrationIdForPdf = validationResponse.data?.registration?._id || cleanQrCode;
+          const templateIdForPdf = selectedResource;
+          const selectedOptionObj = resourceOptions.find(opt => opt._id === selectedResource);
+          console.log('[ScannerStation] Attempting to fetch abstracts for registration:', registrationIdForPdf, 'event:', eventId);
+          // Fallback: If registrationIdForPdf is not a valid ObjectId, fetch registration by QR code
+          if (!registrationIdForPdf || typeof registrationIdForPdf !== 'string' || registrationIdForPdf.length !== 24) {
+            console.warn('[ScannerStation] registrationIdForPdf is not a valid ObjectId. Attempting to fetch registration by QR code:', cleanQrCode);
+            try {
+              const regResponse = await registrationService.scanRegistration(eventId, { qrCode: cleanQrCode });
+              if (regResponse && regResponse.data && regResponse.data.data && regResponse.data.data._id) {
+                registrationIdForPdf = regResponse.data.data._id;
+                console.log('[ScannerStation] Resolved registration ObjectId:', registrationIdForPdf);
+              } else {
+                console.error('[ScannerStation] Could not resolve registration ObjectId from QR code:', cleanQrCode, regResponse);
+                setAbstractModalMessage('Could not resolve registration for this QR code.');
+                setAbstractModalLoading(false);
+                return;
+              }
+            } catch (err) {
+              console.error('[ScannerStation] Error fetching registration by QR code:', err);
+              setAbstractModalMessage('Error resolving registration for this QR code.');
+              setAbstractModalLoading(false);
+              return;
+            }
+          }
+          setAbstractModalLoading(true);
+          setShowAbstractModal(true);
+          setAbstractOptions([]);
+          setSelectedAbstractIds([]);
+          setAbstractModalMessage('Loading approved abstracts...');
+          try {
+            console.log('[ScannerStation] Fetching abstracts for event:', eventId, 'registration:', registrationIdForPdf);
+            const response = await resourceService.getAbstractsByRegistration(eventId, registrationIdForPdf, 'approved');
+            const abstracts = response.data?.data || [];
+            console.log('[ScannerStation] Abstracts API response:', abstracts);
+            if (!Array.isArray(abstracts) || abstracts.length === 0) {
+              setAbstractModalMessage('No approved abstracts found for this registration.');
+              setAbstractOptions([]);
+              setSelectedAbstractIds([]);
+              setAbstractModalLoading(false);
+              return;
+            }
+            setAbstractOptions(abstracts);
+            setAbstractModalMessage('Select one or more approved abstracts to reprint certificates for.');
+            setSelectedAbstractIds([]); // Clear previous selection
+            setAbstractModalLoading(false);
+            // Store reprint context for use after selection
+            setReprintData({
+              registrationId: registrationIdForPdf,
+              registrationIdString: validationResponse?.data?.registration?.registrationId || cleanQrCode,
+              templateId: templateIdForPdf,
+              resourceInfo: { type: selectedResourceType, selectedOption: selectedOptionObj, eventId, resourceOptionId: selectedResource, selectedResource, force: true, registrationId: registrationIdForPdf },
+              attendeeName: validationResponse?.data?.registration?.personalInfo?.firstName || ''
+            });
+          } catch (err) {
+            console.error('[ScannerStation] Error loading abstracts:', err);
+            setAbstractModalMessage('Error loading abstracts.');
+            setAbstractOptions([]);
+            setSelectedAbstractIds([]);
+            setAbstractModalLoading(false);
+          }
+          setScanResult(null);
+          return;
+        }
         setScanResult({ success: false, message: validationResponse?.message || "Invalid scan", details: validationResponse?.details || `Unable to validate this ${resourceLower} scan` });
         return;
       }
@@ -399,18 +478,7 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         const registrationIdForPdf = validationResponse.data?.registration?._id;
         const templateIdForPdf = selectedResource;
         if (registrationIdForPdf && templateIdForPdf && eventId) {
-          resourceService.getCertificatePdfBlob(eventId, templateIdForPdf, registrationIdForPdf, !printFieldsOnly)
-            .then(pdfResponse => {
-              if (pdfResponse.success && pdfResponse.blob) {
-                const fileURL = URL.createObjectURL(pdfResponse.blob);
-                window.open(fileURL, '_blank');
-                toast.success('Certificate PDF generated and opened.');
-                toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
-              } else {
-                toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
-              }
-            })
-            .catch(err => { console.error("Error in getCertificatePdfBlob call:", err); toast.error('Error generating certificate PDF.'); });
+          await handleCertificatePrint(registrationIdForPdf, templateIdForPdf, selectedOptionObj);
         }
       }
       await fetchRecentScans();
@@ -419,6 +487,139 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       console.error("Error processing QR code:", err);
       setScanResult({ success: false, message: "Error processing scan", details: err.message || "An unexpected error occurred" });
     }
+  };
+  
+  // Helper to check if template references Abstract fields
+  const templateReferencesAbstract = (template) => {
+    if (!template || !Array.isArray(template.fields)) return false;
+    return template.fields.some(f => f.dataSource && f.dataSource.startsWith('Abstract.'));
+  };
+
+  // Handler to trigger certificate printing with abstract selection logic
+  const handleCertificatePrint = async (registrationIdForPdf, templateIdForPdf, templateObj) => {
+    if (!templateReferencesAbstract(templateObj)) {
+      // No abstract fields, proceed as usual
+      resourceService.getCertificatePdfBlob(eventId, templateIdForPdf, registrationIdForPdf, !printFieldsOnly)
+        .then(pdfResponse => {
+          if (pdfResponse.success && pdfResponse.blob) {
+            const fileURL = URL.createObjectURL(pdfResponse.blob);
+            window.open(fileURL, '_blank');
+            toast.success('Certificate PDF generated and opened.');
+            toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
+          } else {
+            toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
+          }
+        })
+        .catch(err => { console.error("Error in getCertificatePdfBlob call:", err); toast.error('Error generating certificate PDF.'); });
+      return;
+    }
+    // Abstract fields present: fetch approved abstracts
+    // Fallback: If registrationIdForPdf is not a valid ObjectId, fetch registration by QR code
+    if (!registrationIdForPdf || typeof registrationIdForPdf !== 'string' || registrationIdForPdf.length !== 24) {
+      console.warn('[ScannerStation] registrationIdForPdf is not a valid ObjectId. Attempting to fetch registration by QR code:', registrationIdForPdf);
+      try {
+        const regResponse = await registrationService.scanRegistration(eventId, { qrCode: registrationIdForPdf });
+        if (regResponse && regResponse.data && regResponse.data.data && regResponse.data.data._id) {
+          registrationIdForPdf = regResponse.data.data._id;
+          console.log('[ScannerStation] Resolved registration ObjectId:', registrationIdForPdf);
+        } else {
+          console.error('[ScannerStation] Could not resolve registration ObjectId from QR code:', registrationIdForPdf, regResponse);
+          setAbstractModalMessage('Could not resolve registration for this QR code.');
+          setAbstractModalLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('[ScannerStation] Error fetching registration by QR code:', err);
+        setAbstractModalMessage('Error resolving registration for this QR code.');
+        setAbstractModalLoading(false);
+        return;
+      }
+    }
+    setAbstractModalLoading(true);
+    setShowAbstractModal(true);
+    setAbstractOptions([]);
+    setSelectedAbstractIds([]);
+    setAbstractModalMessage('Loading approved abstracts...');
+    try {
+      console.log('[ScannerStation] Fetching abstracts for event:', eventId, 'registration:', registrationIdForPdf);
+      const response = await resourceService.getAbstractsByRegistration(eventId, registrationIdForPdf, 'approved');
+      const abstracts = response.data?.data || [];
+      console.log('[ScannerStation] Abstracts API response:', abstracts);
+      if (!Array.isArray(abstracts) || abstracts.length === 0) {
+        setAbstractModalMessage('No approved abstracts found for this registration.');
+        setAbstractOptions([]);
+        setSelectedAbstractIds([]);
+        setAbstractModalLoading(false);
+        return;
+      }
+      setAbstractOptions(abstracts);
+      setAbstractModalMessage('Select one or more approved abstracts to print certificates for.');
+      setSelectedAbstractIds([]); // Clear previous selection
+      setAbstractModalLoading(false);
+    } catch (err) {
+      console.error('[ScannerStation] Error loading abstracts:', err);
+      setAbstractModalMessage('Error loading abstracts.');
+      setAbstractOptions([]);
+      setSelectedAbstractIds([]);
+      setAbstractModalLoading(false);
+    }
+  };
+
+  // Handler for modal selection
+  const handleAbstractModalPrint = () => {
+    if (!selectedAbstractIds.length) return;
+    setShowAbstractModal(false);
+    // If reprintData is set, this is a reprint flow
+    if (reprintData) {
+      selectedAbstractIds.forEach(async (abstractId) => {
+        const usageResponse = await resourceService.recordResourceUsage({
+          ...reprintData.resourceInfo,
+          force: true,
+          registrationId: reprintData.registrationId
+        }, reprintData.registrationIdString);
+        let registrationObjectId = reprintData.registrationId;
+        if (usageResponse && usageResponse.success) {
+          // Use ObjectId for PDF generation
+          if (usageResponse.data && usageResponse.data.registration) {
+            registrationObjectId = usageResponse.data.registration;
+          }
+          const pdfResponse = await resourceService.getCertificatePdfBlob(
+            reprintData.resourceInfo.eventId,
+            reprintData.templateId,
+            registrationObjectId,
+            !printFieldsOnly,
+            { abstractId }
+          );
+          if (pdfResponse.success && pdfResponse.blob) {
+            const fileURL = URL.createObjectURL(pdfResponse.blob);
+            window.open(fileURL, '_blank');
+            toast.success('Certificate PDF generated and opened.');
+            toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
+          } else {
+            toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
+          }
+        } else {
+          toast.error(usageResponse?.message || 'Failed to reprint certificate.');
+        }
+      });
+      setReprintData(null); // Clear reprint context
+      return;
+    }
+    // Normal print flow for each selected abstract
+    selectedAbstractIds.forEach(abstractId => {
+      resourceService.getCertificatePdfBlob(eventId, selectedResource, scanResult?.registration?._id, !printFieldsOnly, { abstractId })
+        .then(pdfResponse => {
+          if (pdfResponse.success && pdfResponse.blob) {
+            const fileURL = URL.createObjectURL(pdfResponse.blob);
+            window.open(fileURL, '_blank');
+            toast.success('Certificate PDF generated and opened.');
+            toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
+          } else {
+            toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
+          }
+        })
+        .catch(err => { console.error("Error in getCertificatePdfBlob call:", err); toast.error('Error generating certificate PDF.'); });
+    });
   };
   
   useEffect(() => {
@@ -564,17 +765,32 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         </div>
         
         {selectedResourceType === 'certificatePrinting' && (
-          <div className="mb-6 flex items-center">
-            <input
-              type="checkbox"
-              id="printFieldsOnly"
-              className="mr-2"
-              checked={printFieldsOnly}
-              onChange={e => setPrintFieldsOnly(e.target.checked)}
-            />
-            <label htmlFor="printFieldsOnly" className="text-sm text-gray-700">
-              Print fields only (for pre-printed certificates)
-            </label>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Certificate Print Mode</label>
+            <div className="flex items-center space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="printMode"
+                  value="fieldsOnly"
+                  checked={printFieldsOnly}
+                  onChange={() => setPrintFieldsOnly(true)}
+                  className="mr-2"
+                />
+                Preprinted (Fields Only)
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="printMode"
+                  value="withBackground"
+                  checked={!printFieldsOnly}
+                  onChange={() => setPrintFieldsOnly(false)}
+                  className="mr-2"
+                />
+                With Background
+              </label>
+            </div>
           </div>
         )}
         
@@ -823,6 +1039,121 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
         )}
         </div>
       </Card>
+      {showReprintModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-30">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full">
+            <Alert type="error" message={`This certificate has already been printed for this registration.`} />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  setShowReprintModal(false);
+                  setScanResult({ success: null, message: 'Reprinting...' });
+                  // Directly record resource usage (bypassing validation) with force flag
+                  const usageResponse = await resourceService.recordResourceUsage({
+                    ...reprintData.resourceInfo,
+                    force: true // Allow forced reprint
+                  }, reprintData.registrationIdString);
+                  let registrationObjectId = null;
+                  if (usageResponse && usageResponse.success) {
+                    setScanResult({ success: true, message: `Certificate reprinted!` });
+                    fetchRecentScans();
+                    fetchStatistics();
+                    // --- Use ObjectId from resource usage response if available ---
+                    if (usageResponse.data && usageResponse.data.registration) {
+                      registrationObjectId = usageResponse.data.registration;
+                    } else {
+                      // Fallback: Try to fetch registration ObjectId using scanRegistration
+                      try {
+                        const regResponse = await registrationService.scanRegistration(reprintData.resourceInfo.eventId, { qrCode: reprintData.registrationIdString });
+                        if (regResponse && regResponse.data && regResponse.data.data && regResponse.data.data._id) {
+                          registrationObjectId = regResponse.data.data._id;
+                        } else {
+                          toast.error('Could not find registration for PDF generation.');
+                          return;
+                        }
+                      } catch (err) {
+                        toast.error('Error fetching registration details for PDF.');
+                        return;
+                      }
+                    }
+                    // --- Use ObjectId for PDF generation ---
+                    const pdfResponse = await resourceService.getCertificatePdfBlob(
+                      reprintData.resourceInfo.eventId,
+                      reprintData.templateId,
+                      registrationObjectId, // Use ObjectId, not regId string
+                      !printFieldsOnly // Use the current value of printFieldsOnly
+                    );
+                    if (pdfResponse.success && pdfResponse.blob) {
+                      const fileURL = URL.createObjectURL(pdfResponse.blob);
+                      window.open(fileURL, '_blank');
+                      toast.success('Certificate PDF generated and opened.');
+                      toast('Please select "Landscape" in the print dialog for correct output.', { icon: '🖨️', duration: 8000 });
+                    } else {
+                      toast.error(`Failed to generate certificate: ${pdfResponse.message || 'Unknown error'}`);
+                    }
+                  } else {
+                    setScanResult({ success: false, message: usageResponse?.message || 'Failed to reprint certificate.' });
+                  }
+                }}
+              >
+                Reprint
+              </Button>
+              <Button variant="outline" onClick={() => setShowReprintModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      <Modal
+        isOpen={showAbstractModal}
+        onClose={() => setShowAbstractModal(false)}
+        title="Select Abstract(s) for Certificate Printing"
+        size="lg"
+        centered
+      >
+        {abstractModalLoading ? (
+          <div className="py-8 text-center text-gray-500">Loading...</div>
+        ) : abstractOptions.length === 0 ? (
+          <div className="py-8 text-center text-gray-500">{abstractModalMessage}</div>
+        ) : (
+          <div>
+            <div className="mb-4 text-gray-700">{abstractModalMessage}</div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {abstractOptions.map(abs => (
+                <label key={abs._id} className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50 cursor-pointer border border-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={selectedAbstractIds.includes(abs._id)}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedAbstractIds(ids => [...ids, abs._id]);
+                      else setSelectedAbstractIds(ids => ids.filter(id => id !== abs._id));
+                    }}
+                    className="form-checkbox h-5 w-5 text-blue-600"
+                  />
+                  <div className="flex flex-col">
+                    <span className="font-medium text-base text-gray-900">{abs.title}</span>
+                    <span className="text-xs text-gray-500">{abs.authors}</span>
+                    <span className="text-xs text-gray-400">Category: <span className="font-semibold text-gray-700">{abs.category?.name || 'No Category'}</span></span>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => setShowAbstractModal(false)}
+              >Cancel</button>
+              <button
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={!selectedAbstractIds.length}
+                onClick={handleAbstractModalPrint}
+              >Print Certificate{selectedAbstractIds.length > 1 ? 's' : ''}</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

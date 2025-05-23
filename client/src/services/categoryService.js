@@ -192,36 +192,24 @@ const categoryService = {
   updateCategoryPermissions: async (categoryId, eventId, data) => {
     try {
       console.log(`Updating permissions for category ${categoryId} in event ${eventId}`);
-      
-      if (!categoryId || !eventId) {
-        console.error('Missing category ID or event ID');
+      if (!categoryId) {
+        console.error('Missing category ID');
         return {
           success: false,
-          message: 'Category ID and event ID are required',
+          message: 'Category ID is required',
           data: null
         };
       }
-
-      // Ensure we have proper structure for meal entitlements with day/meal info
-      const formattedData = {
-        ...data,
+      // Prepare payload: permissions and entitlements at root
+      const payload = {
         permissions: data.permissions || {},
         mealEntitlements: Array.isArray(data.mealEntitlements) ? data.mealEntitlements : [],
         kitItemEntitlements: Array.isArray(data.kitItemEntitlements) ? data.kitItemEntitlements : [],
         certificateEntitlements: Array.isArray(data.certificateEntitlements) ? data.certificateEntitlements : []
       };
-
-      // Debug information
-      console.log('Permissions payload:', formattedData);
-      
-      // Make API call
-      const response = await api.patch(`/events/${eventId}/categories/${categoryId}/permissions`, formattedData);
-      
-      return {
-        success: true,
-        message: 'Category permissions updated successfully',
-        data: response.data
-      };
+      // Use PUT and correct path
+      const response = await api.put(`/categories/${categoryId}/permissions`, payload);
+      return response.data;
     } catch (error) {
       console.error('Error updating category permissions:', error);
       return {

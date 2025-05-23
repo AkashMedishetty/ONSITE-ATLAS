@@ -718,8 +718,9 @@ const RegistrationsTab = ({ eventId }) => {
     setCurrentEventDetailsForModal(null); // Reset event details for modal
     
     try {
+      // Use new modal endpoint for resource usage
       const [usageResponse, configResponse, fetchedBadgeSettings, eventDetailsResponse] = await Promise.all([
-        registrationService.getResourceUsage(eventId, registration._id),
+        resourceService.getRegistrationResourceUsageModal(eventId, registration._id),
         eventService.getResourceConfig(eventId),
         fetchBadgeSettings(eventId),
         eventService.getEventById(eventId) // Fetch event details
@@ -730,6 +731,7 @@ const RegistrationsTab = ({ eventId }) => {
       console.log('[Details Fetch] Badge Settings Response:', fetchedBadgeSettings);
       console.log('[Details Fetch] Event Details Response:', eventDetailsResponse);
 
+      // Use enriched resource usage from new endpoint
       if (usageResponse?.success && Array.isArray(usageResponse.data)) {
         setResourceUsage(usageResponse.data);
       } else {
@@ -811,20 +813,6 @@ const RegistrationsTab = ({ eventId }) => {
     } finally {
       setIsVoiding(false);
     }
-  };
-  
-  const getResourceName = (type, optionId) => {
-      let name = optionId;
-      try {
-        if (type === 'food' && resourceConfig.meals) {
-            name = resourceConfig.meals.find(m => m._id === optionId)?.name || optionId;
-        } else if (type === 'kitBag' && resourceConfig.kitItems) {
-            name = resourceConfig.kitItems.find(k => k._id === optionId)?.name || optionId;
-        } else if (type === 'certificate' && resourceConfig.certificates) {
-            name = resourceConfig.certificates.find(c => c._id === optionId)?.name || optionId;
-        }
-      } catch(e) { console.error("Error finding resource name:", e); }
-      return name;
   };
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1615,7 +1603,7 @@ const RegistrationsTab = ({ eventId }) => {
                         <div key={item._id} className={`flex justify-between items-center p-2 rounded border ${item.isVoided ? 'bg-gray-100 border-gray-200 opacity-60' : 'bg-white border-gray-300'}`}>
                           <div>
                              <span className={`font-medium ${item.isVoided ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
-                               {getResourceName(item.type, item.details?.option)} 
+                               {item.displayName}
                              </span>
                              <span className="block text-xs text-gray-500">
                                {item.type.charAt(0).toUpperCase() + item.type.slice(1)} - {formatDate(item.actionDate || item.createdAt)}

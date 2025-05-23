@@ -558,9 +558,9 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
       days.push({
         date: currentDate.toISOString().split('T')[0],
         meals: [
-          { name: 'Breakfast', time: '08:00', enabled: true },
-          { name: 'Lunch', time: '12:00', enabled: true },
-          { name: 'Dinner', time: '18:00', enabled: true },
+          { name: 'Breakfast', startTime: '08:00', endTime: '09:00', enabled: true },
+          { name: 'Lunch', startTime: '12:00', endTime: '14:00', enabled: true },
+          { name: 'Dinner', startTime: '18:00', endTime: '20:00', enabled: true },
         ]
       });
       currentDate.setDate(currentDate.getDate() + 1);
@@ -576,10 +576,14 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
         console.log("Saving generated food days to server...");
         await resourceService.updateFoodSettings(event._id, newFoodSettings);
         console.log("Food days generated and saved successfully");
+        showToast('Food days and default meals generated!', 'success');
+        // Reload settings from backend to update UI
+        await loadResourceSettings('food', event._id);
         return newFoodSettings;
     } catch (saveError) {
         console.error("Error saving generated food days:", saveError);
         setError("Failed to save auto-generated food days. Please save manually.");
+        showToast('Failed to save auto-generated food days. Please save manually.', 'error');
         return null;
     }
   };

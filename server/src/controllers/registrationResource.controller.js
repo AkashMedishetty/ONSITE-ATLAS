@@ -29,7 +29,9 @@ exports.getRegistrationResources = asyncHandler(async (req, res, next) => {
   // Build query object
   const query = {
     event: eventId,
-    registration: registrationId
+    registration: registrationId,
+    status: { $ne: 'voided' },
+    isVoided: { $ne: true }
   };
   
   // Filter by resource type if provided
@@ -103,11 +105,13 @@ exports.updateResourceUsage = asyncHandler(async (req, res, next) => {
   const resource = await Resource.findOne({
     _id: resourceId,
     event: eventId,
-    registration: registrationId
+    registration: registrationId,
+    status: { $ne: 'voided' },
+    isVoided: { $ne: true }
   });
   
   if (!resource) {
-    return next(new ErrorResponse('Resource not found', 404));
+    return next(new ErrorResponse('Resource not found or already voided', 404));
   }
   
   // Update resource status based on isUsed flag

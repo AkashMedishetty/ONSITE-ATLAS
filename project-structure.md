@@ -1,1 +1,3 @@
 - `utils/excelHelper.js`: Helpers for Excel import/export (registrations, abstracts). Includes `generateAbstractsExcel` for exporting abstracts as Excel files, used by the abstracts download endpoint. 
+- `server/src/controllers/registrationResourceModal.controller.js`: Controller for the registration resource modal. Fetches all resources for a registration, enriches them with display names using event resource settings, and returns them for modal display.
+- `server/src/routes/registrationResourceModal.routes.js`: Route for the registration resource modal endpoint. Exposes `/api/events/:eventId/registrations/:registrationId/resource-usage-modal` for fetching enriched resource usage for a registration. 

@@ -6,7 +6,7 @@ const eventRoutes = require('./events.routes');
 const userRoutes = require('./user.routes');
 const authRoutes = require('./auth.routes');
 const registrationRoutes = require('./registration.routes');
-// const registrationResourceRoutes = require('./registrationResource.routes'); // No longer mounted here
+const registrationResourceRoutes = require('./registrationResource.routes');
 const dashboardRoutes = require('./dashboard.routes');
 const analyticsRoutes = require('./analytics.routes');
 const reportRoutes = require('./report.routes');
@@ -17,6 +17,7 @@ const abstractRoutes = require('./abstract.routes.js'); // IMPORT abstract.route
 const registrantPortalRoutesFile = require('./registrantPortalRoutes.js'); // CORRECTED FILENAME (plural Routes)
 const scheduleRoutes = require('./schedule.routes'); // IMPORT schedule.routes
 const sponsorAuthRoutes = require('./sponsorAuth.routes'); // Added Sponsor Auth Routes
+const registrationResourceModalRoutes = require('./registrationResourceModal.routes');
 
 // Mount routes
 router.use('/events', eventRoutes);
@@ -24,7 +25,7 @@ router.use('/users', userRoutes);
 router.use('/auth', authRoutes);
 router.use('/sponsor-auth', sponsorAuthRoutes); // Added Sponsor Auth Routes
 router.use('/events/:eventId/registrations', registrationRoutes);
-// router.use('/events', registrationResourceRoutes); // REMOVED - This was likely causing conflict
+router.use('/events', registrationResourceRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/reports', reportRoutes);
@@ -47,5 +48,7 @@ router.use(scheduleRoutes); // MOUNT scheduleRoutes
 
 // Mount registrant portal routes
 router.use('/registrant-portal', registrantPortalRoutesFile); // Use the correctly required file
+
+router.use(registrationResourceModalRoutes);
 
 module.exports = router; 

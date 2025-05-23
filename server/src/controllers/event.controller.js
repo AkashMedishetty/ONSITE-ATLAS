@@ -707,8 +707,9 @@ const updateAbstractSettings = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { settings } = req.body;
     
-    console.log(`Updating abstract settings for event ${id}`);
-    console.log('New settings:', JSON.stringify(settings));
+    console.log('--- [DEBUG] updateAbstractSettings called ---');
+    console.log(`[DEBUG] Incoming event ID:`, id);
+    console.log(`[DEBUG] Incoming settings:`, JSON.stringify(settings, null, 2));
     
     if (!id) {
       return res.status(400).json({
@@ -728,23 +729,25 @@ const updateAbstractSettings = asyncHandler(async (req, res) => {
     const existingEvent = await Event.findById(id);
     
     if (!existingEvent) {
-      console.log(`Event not found with ID: ${id}`);
+      console.log(`[DEBUG] Event not found with ID: ${id}`);
       return res.status(404).json({
         success: false,
         message: `Event not found with ID: ${id}`
       });
     }
     
-    console.log('Current abstract settings before update:', JSON.stringify(existingEvent.abstractSettings || {}));
+    console.log('[DEBUG] Current abstract settings before update:', JSON.stringify(existingEvent.abstractSettings, null, 2));
     
     // Before updating, ensure reviewerIds are ObjectId
     if (settings.categories && Array.isArray(settings.categories)) {
       settings.categories = settings.categories.map(cat => {
+        console.log(`[DEBUG] Category: ${cat.name} - reviewerIds before:`, cat.reviewerIds);
         if (cat.reviewerIds && Array.isArray(cat.reviewerIds)) {
           cat.reviewerIds = cat.reviewerIds
             .filter(id => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
             .map(id => new mongoose.Types.ObjectId(id));
         }
+        console.log(`[DEBUG] Category: ${cat.name} - reviewerIds after:`, cat.reviewerIds);
         return cat;
       });
     }
@@ -757,19 +760,24 @@ const updateAbstractSettings = asyncHandler(async (req, res) => {
     );
     
     if (!event) {
-      console.log(`Failed to update event with ID: ${id}`);
+      console.log(`[DEBUG] Failed to update event with ID: ${id}`);
       return res.status(500).json({
         success: false,
         message: `Failed to update event with ID: ${id}`
       });
     }
     
-    console.log('Updated abstract settings:', JSON.stringify(event.abstractSettings));
+    console.log('[DEBUG] Updated abstract settings:', JSON.stringify(event.abstractSettings, null, 2));
+    if (event.abstractSettings && Array.isArray(event.abstractSettings.categories)) {
+      event.abstractSettings.categories.forEach(cat => {
+        console.log(`[DEBUG] Category: ${cat.name} - reviewerIds in DB:`, cat.reviewerIds);
+      });
+    }
     
     // Save the event to ensure the changes are persisted
     await event.save();
     
-    console.log('Event saved successfully with updated abstract settings');
+    console.log('[DEBUG] Event saved successfully with updated abstract settings');
     
     return res.status(200).json({
       success: true,
@@ -777,7 +785,7 @@ const updateAbstractSettings = asyncHandler(async (req, res) => {
       data: event.abstractSettings
     });
   } catch (error) {
-    console.error(`Error updating abstract settings: ${error.message}`);
+    console.error(`[DEBUG] Error updating abstract settings: ${error.message}`);
     console.error(error.stack);
     return res.status(500).json({
       success: false,

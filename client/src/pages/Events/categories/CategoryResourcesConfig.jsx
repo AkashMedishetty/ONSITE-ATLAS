@@ -237,28 +237,23 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
 
   // Prepare data for saving
   const handleSave = async () => {
-    if (!category || !eventId) {
-      console.error('Missing category or event ID');
+    if (!category) {
+      console.error('Missing category');
       setError('Missing required data');
       return;
     }
-
     setSaving(true);
     setSuccess(null);
     setError(null);
-
     try {
-      const result = await categoryService.updateCategoryPermissions(category._id, eventId, {
+      const result = await categoryService.updateCategoryPermissions(category._id, null, {
         permissions: permissions,
         mealEntitlements: mealEntitlements,
         kitItemEntitlements: kitItemEntitlements,
         certificateEntitlements: certificateEntitlements
       });
-
       setSaving(false);
       setSuccess('Category permissions updated successfully');
-      
-      // Auto-close after success
       setTimeout(() => {
         setSuccess(null);
         onClose && onClose(result);
@@ -699,16 +694,16 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
         )}
         
         {!loadingFood && foodItems.length > 0 && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             {/* Display days in chronological order */}
             {sortedDays.length > 0 ? (
               sortedDays.map(day => (
-                <div key={day} className="border rounded-md overflow-hidden">
+                <div key={day} className="border rounded-md overflow-hidden mb-6">
                   <div className="bg-gray-50 px-4 py-2 font-medium border-b">
                     {day !== 'unspecified' ? formatDate(day) : 'Other Meals (No Date)'}
                   </div>
                   <div className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Sort meals by start time within each day */}
                       {foodItemsByDay[day]
                         .sort((a, b) => {
@@ -716,12 +711,12 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                           return a.startTime.localeCompare(b.startTime);
                         })
                         .map((item) => (
-                          <div key={item._id || String(Math.random())} className="border rounded-md p-4 bg-white shadow-sm">
-                            <div className="font-semibold">
+                          <div key={item._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
+                            <div className="font-semibold text-base mb-1">
                               {typeof item.name === 'string' ? item.name : 'Unknown Item'}
                             </div>
                             {item.description && typeof item.description === 'string' && (
-                              <div className="text-sm text-gray-600 mt-1">{item.description}</div>
+                              <div className="text-sm text-gray-600 mt-1 mb-2">{item.description}</div>
                             )}
                             <div className="flex items-center justify-between mt-3">
                               <span className={`text-xs px-2 py-1 rounded ${
@@ -733,9 +728,9 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                               </span>
                               <Switch
                                 checked={selectedFoodItems.includes(item._id)}
-                      onChange={() => toggleFoodItem(item._id)}
-                      disabled={!permissions.meals}
-                    />
+                                onChange={() => toggleFoodItem(item._id)}
+                                disabled={!permissions.meals}
+                              />
                             </div>
                           </div>
                         ))}
@@ -745,14 +740,14 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
               ))
             ) : (
               // Simple list if no day information is available
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {foodItems.map((item) => (
-                  <div key={item._id || String(Math.random())} className="border rounded-md p-4 bg-white shadow-sm">
-                    <div className="font-semibold">
+                  <div key={item._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
+                    <div className="font-semibold text-base mb-1">
                       {typeof item.name === 'string' ? item.name : 'Unknown Item'}
-                  </div>
+                    </div>
                     {item.description && typeof item.description === 'string' && (
-                      <div className="text-sm text-gray-600 mt-1">{item.description}</div>
+                      <div className="text-sm text-gray-600 mt-1 mb-2">{item.description}</div>
                     )}
                     <div className="flex items-center justify-between mt-3">
                       <span className={`text-xs px-2 py-1 rounded ${
@@ -764,11 +759,11 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                       </span>
                       <Switch
                         checked={selectedFoodItems.includes(item._id)}
-                      onChange={() => toggleFoodItem(item._id)}
-                      disabled={!permissions.meals}
-                    />
+                        onChange={() => toggleFoodItem(item._id)}
+                        disabled={!permissions.meals}
+                      />
+                    </div>
                   </div>
-                </div>
                 ))}
               </div>
             )}
@@ -791,17 +786,17 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
         )}
         
         {!loadingKit && kitItems.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {kitItems.map((item) => (
-              <div key={item._id || String(Math.random())} className="border rounded-md p-3 bg-white shadow-sm">
-                <div className="font-semibold">
+              <div key={item._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
+                <div className="font-semibold text-base mb-1">
                   {typeof item.name === 'string' ? item.name : 'Unknown Item'}
-                  </div>
+                </div>
                 {item.description && typeof item.description === 'string' && (
-                  <div className="text-sm text-gray-600">{item.description}</div>
+                  <div className="text-sm text-gray-600 mb-2">{item.description}</div>
                 )}
                 {item.quantity !== undefined && (
-                  <div className="text-sm text-gray-700">
+                  <div className="text-sm text-gray-700 mb-2">
                     Quantity: {typeof item.quantity === 'number' ? item.quantity : 'N/A'}
                   </div>
                 )}
@@ -814,9 +809,9 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                   <Switch
                     checked={selectedKitItems.includes(item._id)}
                     onChange={(checked) => toggleKitItem(item._id)}
-                    />
-                  </div>
+                  />
                 </div>
+              </div>
             ))}
           </div>
         )}
@@ -837,14 +832,14 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
         )}
         
         {!loadingCertificate && certificateTypes.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {certificateTypes.map((type) => (
-              <div key={type._id || String(Math.random())} className="border rounded-md p-3 bg-white shadow-sm">
-                <div className="font-semibold">
+              <div key={type._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
+                <div className="font-semibold text-base mb-1">
                   {typeof type.name === 'string' ? type.name : 'Unknown Type'}
-                  </div>
+                </div>
                 {type.description && typeof type.description === 'string' && (
-                  <div className="text-sm text-gray-600">{type.description}</div>
+                  <div className="text-sm text-gray-600 mb-2">{type.description}</div>
                 )}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
@@ -855,9 +850,9 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                   <Switch
                     checked={selectedCertificateTypes.includes(type._id)}
                     onChange={(checked) => toggleCertificateType(type._id)}
-                    />
-                  </div>
+                  />
                 </div>
+              </div>
             ))}
           </div>
         )}
@@ -923,7 +918,7 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
             )}
             
             {!loadingRegistrants && registrants && registrants.length > 0 && (
-              <div className="overflow-x-auto border rounded-lg">
+              <div className="overflow-x-auto border rounded-lg max-h-[400px] overflow-y-auto bg-white">
                 <table className="min-w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
@@ -1094,61 +1089,53 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
   };
   
   if (!isOpen) return null;
-  
+  const registrantWarning = registrants.length < (category?.registrantCount || 0);
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={`Configure Resources: ${category?.name || 'Category'}`}
-      className="max-w-[90vw] w-[1400px] mx-auto"
+      className="max-w-[98vw] w-full md:w-[1200px] lg:w-[1400px] mx-auto"
       contentClassName="p-0 overflow-visible"
       overlayClassName="overflow-visible"
     >
       {error && (
         <Alert type="error" message={error} onClose={() => setError(null)} className="m-4" />
       )}
-      
       {success && (
         <Alert type="success" message={success} onClose={() => setSuccess(null)} className="m-4" />
       )}
-      
+      {registrantWarning && (
+        <Alert type="warning" message={`Only showing ${registrants.length} of ${category?.registrantCount} registrants. Not all registrants are displayed.`} className="m-4" />
+      )}
       {loading ? (
         <div className="flex flex-col items-center justify-center p-8">
           <Spinner />
           <p className="mt-4 text-gray-500">Loading resource settings...</p>
         </div>
       ) : (
-        <div className="flex flex-col h-full">
-          <div className="px-4 pt-2">
-          <Tabs 
-            value={activeTab} 
+        <div className="flex flex-col h-[80vh] min-h-[600px]">
+          <div className="px-6 pt-4 pb-2 bg-white sticky top-0 z-10 border-b">
+            <Tabs 
               onChange={(tabValue) => {
                 console.log(`Switching to tab: ${tabValue} from ${activeTab}`);
                 setActiveTab(tabValue);
-                setTimeout(() => {
-                  if (tabValue === 'food') fetchFoodSettings().catch(err => setError('Failed to load food settings'));
-                  else if (tabValue === 'kit') fetchKitSettings().catch(err => setError('Failed to load kit settings'));
-                  else if (tabValue === 'certificate') fetchCertificateSettings().catch(err => setError('Failed to load certificate settings'));
-                  else if (tabValue === 'registrants') fetchRegistrants().catch(err => setError('Failed to load registrants'));
-                }, 0);
               }}
-            tabs={[
-                { value: 'food', label: 'Food', icon: <FaUtensils className="mr-2" />, badge: foodItems.length > 0 ? foodItems.length : null },
-                { value: 'kit', label: 'Kit Bags', icon: <FaBox className="mr-2" />, badge: kitItems.length > 0 ? kitItems.length : null },
-                { value: 'certificate', label: 'Certificates', icon: <FaCertificate className="mr-2" />, badge: certificateTypes.length > 0 ? certificateTypes.length : null },
-                { value: 'registrants', label: 'Registrants', icon: <FaUsers className="mr-2" />, badge: registrants.length > 0 ? registrants.length : null }
+              tabs={[
+                { label: <span className="flex items-center gap-2"><FaUtensils /> Food</span>, value: 'food' },
+                { label: <span className="flex items-center gap-2"><FaBox /> Kit</span>, value: 'kit' },
+                { label: <span className="flex items-center gap-2"><FaCertificate /> Certificate</span>, value: 'certificate' },
+                { label: <span className="flex items-center gap-2"><FaUsers /> Registrants</span>, value: 'registrants' },
               ]}
-              className="mb-2"
+              className="mb-0"
             />
           </div>
-          
-          <div className="flex-grow px-4">
+          <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
             {renderTabContent()}
           </div>
-          
-          <div className="flex justify-end space-x-3 p-4 border-t border-gray-200">
+          <div className="flex justify-end gap-3 px-6 py-4 bg-white border-t sticky bottom-0 z-10">
             <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button variant="primary" onClick={handleSave} loading={saving} disabled={saving}>Save Configuration</Button>
+            <Button variant="primary" onClick={handleSave} loading={saving}>Save</Button>
           </div>
         </div>
       )}

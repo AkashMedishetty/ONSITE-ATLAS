@@ -76,8 +76,7 @@ router.route('/')
 
 // Route to void a specific resource usage record
 // Correct Path: /api/events/:eventId/registrations/:registrationId/resources/:resourceUsageId/void
-// Relative Path: /:resourceUsageId/void
-router.route('/:resourceUsageId/void')
+router.route('/:eventId/registrations/:registrationId/resources/:resourceUsageId/void')
     .put(protect, voidResourceUsage);
 
 module.exports = router; 

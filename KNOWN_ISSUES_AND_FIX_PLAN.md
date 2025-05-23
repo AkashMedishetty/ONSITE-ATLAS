@@ -3,21 +3,21 @@
 ## Table of Contents
 1. [Event Portal Tab Re-rendering](#event-portal-tab-re-rendering)
 2. [Sponsor Tab: Add Preview](#sponsor-tab-add-preview)
-3. [Certificate Printing in Scanning Station](#certificate-printing-in-scanning-station)
-4. [Resources Tab: Open Scanner Button Not Working](#resources-tab-open-scanner-button-not-working)
-5. [Resource Scanning Issues](#resource-scanning-issues)
+3. [Certificate Printing in Scanning Station](#certificate-printing-in-scanning-station)DONE
+4. [Resources Tab: Open Scanner Button Not Working](#resources-tab-open-scanner-button-not-working)DONE
+5. [Resource Scanning Issues](#resource-scanning-issues)DONE
 6. [Resource Dashboard/UI Not Updating](#resource-dashboardui-not-updating)
-7. [Resource Settings Fetch/Update Issues](#resource-settings-fetchupdate-issues)
-8. [Certificate Printing: Workshop & Abstract Connection](#certificate-printing-workshop-abstract-connection)
-9. [Food Day 1 Scanning Issues](#food-day-1-scanning-issues)
-10. [Resource Void Option in Registration List Preview](#resource-void-option-in-registration-list-preview)
-11. [Disable Resource for Single Registration](#disable-resource-for-single-registration)
-12. [Category-Based Scanning](#category-based-scanning)
-13. [Registrant Portal Routing Issues](#registrant-portal-routing-issues)
-14. [Abstract Portal Login Issues](#abstract-portal-login-issues)
+7. [Resource Settings Fetch/Update Issues](#resource-settings-fetchupdate-issues)DONE
+8. [Certificate Printing: Workshop & Abstract Connection](#certificate-printing-workshop-abstract-connection)Done
+9. [Food Day 1 Scanning Issues](#food-day-1-scanning-issues)DONE
+10. [Resource Void Option in Registration List Preview](#resource-void-option-in-registration-list-preview)DONE
+11. [Disable Resource for Single Registration](#disable-resource-for-single-registration)Not Required too much hassle
+12. [Category-Based Scanning](#category-based-scanning)Not Required 
+13. [Registrant Portal Routing Issues](#registrant-portal-routing-issues)NEED TO CHECK
+14. [Abstract Portal Login Issues](#abstract-portal-login-issues)DONE
 15. [General Planning & Progress Tracking](#general-planning--progress-tracking)
 16. [Fixed Issues](#fixed-issues)
-17. [Certificate Template Upload & Printing: PDF-to-Image Conversion and Preview](#certificate-template-upload--printing-pdf-to-image-conversion-and-preview)
+17. [Certificate Template Upload & Printing: PDF-to-Image Conversion and Preview](#certificate-template-upload--printing-pdf-to-image-conversion-and-preview)DONE 
 
 ---
 

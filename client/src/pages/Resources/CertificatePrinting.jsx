@@ -310,6 +310,35 @@ const CertificatePrinting = () => {
   // Get the current selected template
   const selectedTemplate = templates.find(t => t.id === templateId) || null;
   
+  // Add a handler for reprinting a certificate
+  const handleReprint = async (print) => {
+    setLoading(true);
+    setPrintStatus(null);
+    try {
+      // Use the same data as the original print
+      const printResponse = await resourceService.processCertificatePrinting(
+        eventId,
+        templates.find(t => t.name === print.templateName)?.id || print.templateName,
+        print.registrationId,
+        print.certificateData
+      );
+      if (!printResponse.success) {
+        throw new Error(printResponse.message || 'Failed to reprint certificate');
+      }
+      setPrintStatus({
+        type: 'success',
+        message: `Certificate reprinted for ${print.attendeeName}!`
+      });
+    } catch (error) {
+      setPrintStatus({
+        type: 'error',
+        message: error.message || 'Failed to reprint certificate.'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       <h2 className="text-2xl font-bold mb-6">Certificate Printing</h2>
@@ -472,6 +501,15 @@ const CertificatePrinting = () => {
                           ))}
                       </div>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => handleReprint(print)}
+                      disabled={loading}
+                    >
+                      Reprint
+                    </Button>
                   </div>
                 ))
               )}

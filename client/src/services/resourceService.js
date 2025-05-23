@@ -721,6 +721,11 @@ const resourceService = {
         eventId: resourceInfo.eventId
       };
       
+      // If force is present in resourceInfo, include it at the top level
+      if (resourceInfo.force === true) {
+        requestPayload.force = true;
+      }
+      
       console.log('📤 Making resource usage API call with payload:', JSON.stringify(requestPayload));
       
       // Make the API request
@@ -1360,12 +1365,15 @@ const resourceService = {
    */
   // ... (rest of the service object)
 
-  getCertificatePdfBlob: async (eventId, templateId, registrationId, background = true) => {
+  getCertificatePdfBlob: async (eventId, templateId, registrationId, background = true, options = {}) => {
     if (!eventId || !templateId || !registrationId) {
       console.error('[getCertificatePdfBlob] Missing required IDs', { eventId, templateId, registrationId });
       return { success: false, message: 'Event ID, Template ID, and Registration ID are required.', blob: null, filename: 'error.pdf' };
     }
-    const url = `/resources/events/${eventId}/certificate-templates/${templateId}/registrations/${registrationId}/generate-pdf?background=${background}`;
+    let url = `/resources/events/${eventId}/certificate-templates/${templateId}/registrations/${registrationId}/generate-pdf?background=${background}`;
+    if (options && options.abstractId) {
+      url += `&abstractId=${options.abstractId}`;
+    }
     try {
       console.log(`[getCertificatePdfBlob] Fetching PDF from: ${url}`);
       const response = await api.get(url, { 
@@ -1399,6 +1407,45 @@ const resourceService = {
         errorMessage = errorData.message;
       }
       return { success: false, message: errorMessage, blob: null, filename: 'error.pdf' };
+    }
+  },
+
+  /**
+   * Get abstracts for a registration in an event, with optional status filter
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ObjectId
+   * @param {string} [status] - Optional status filter (e.g., 'approved')
+   * @returns {Promise} - API response with abstracts
+   */
+  getAbstractsByRegistration: async (eventId, registrationId, status = 'approved') => {
+    try {
+      const response = await api.get(`/events/${eventId}/abstracts/by-registration/${registrationId}?status=${status}`);
+      return response;
+    } catch (error) {
+      handleError(error, 'Error fetching abstracts by registration');
+      return {
+        data: { success: false, message: error.response?.data?.message || 'Failed to fetch abstracts', data: [] }
+      };
+    }
+  },
+
+  /**
+   * Get enriched resource usage for a registration (for modal)
+   * @param {string} eventId - Event ID
+   * @param {string} registrationId - Registration ID
+   * @returns {Promise} - API response with enriched resource usage
+   */
+  getRegistrationResourceUsageModal: async (eventId, registrationId) => {
+    try {
+      const response = await api.get(`/events/${eventId}/registrations/${registrationId}/resource-usage-modal`);
+      return response.data;
+    } catch (error) {
+      handleError(error, 'Error fetching registration resource usage for modal');
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch registration resource usage',
+        data: []
+      };
     }
   }
 };

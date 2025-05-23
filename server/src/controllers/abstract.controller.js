@@ -54,16 +54,74 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
   const page = parseInt(req.query.page, 10) || 1;
   const limit = parseInt(req.query.limit, 10) || 20;
   const skip = (page - 1) * limit;
-  // Add search support: If req.query.search is present, filter by authorName, registrationId, or registration.personalInfo
+
+  // If search is present, use aggregation pipeline to support registration fields
   if (req.query.search && typeof req.query.search === 'string' && req.query.search.trim()) {
     const searchTerm = req.query.search.trim();
-    // Use $or for authorName, registrationId, and registration.personalInfo fields
-    filters.$or = [
-      { authorName: { $regex: searchTerm, $options: 'i' } },
-      { registrationId: { $regex: searchTerm, $options: 'i' } },
-      // For registration.personalInfo, need to use $lookup or aggregation, but for now, match on registrationId and authorName
+    console.log('[all-event-abstracts] Search term:', searchTerm);
+    // Only search on Abstract fields for robust search
+    const orFilters = [
+      { title: { $regex: searchTerm, $options: 'i' } },
+      { authors: { $regex: searchTerm, $options: 'i' } },
+      { authorAffiliations: { $regex: searchTerm, $options: 'i' } },
+      { topic: { $regex: searchTerm, $options: 'i' } },
+      { subTopic: { $regex: searchTerm, $options: 'i' } },
+      { content: { $regex: searchTerm, $options: 'i' } },
+      { keywords: { $elemMatch: { $regex: searchTerm, $options: 'i' } } },
+      { registrationId: { $regex: searchTerm, $options: 'i' } }, // Only if present on Abstract
     ];
+    // Use a simple find with $or for robust search
+    filters.$or = orFilters;
+    // Debug log for filters
+    console.log('[all-event-abstracts] MongoDB filters (robust):', JSON.stringify(filters));
+    let [abstracts, total] = await Promise.all([
+      Abstract.find(filters)
+        .populate('registration', 'registrationId personalInfo')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Abstract.countDocuments(filters)
+    ]);
+    // Debug log for number of results
+    console.log(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts.length} on this page.`);
+    function flattenRegistrationInfo(abstract) {
+      if (!abstract) return abstract;
+      if (abstract.registration && abstract.registration.registrationId) {
+        abstract.registrationId = abstract.registration.registrationId;
+      } else if (!abstract.registrationId) {
+        console.warn('[DEBUG] registrationId missing after population:', abstract._id);
+      }
+      if (abstract.registration && abstract.registration.personalInfo) {
+        abstract.personalInfo = abstract.registration.personalInfo;
+      }
+      return abstract;
+    }
+    if (Array.isArray(abstracts)) {
+      abstracts = abstracts.map(a => flattenRegistrationInfo(a.toObject ? a.toObject() : a));
+      abstracts.forEach(abs => {
+        let catId = abs.category;
+        if (catId && typeof catId === 'object' && catId.$oid) catId = catId.$oid;
+        else if (catId && catId._id) catId = catId._id;
+        else if (catId) catId = String(catId);
+        const match = embeddedCategories.find(cat => {
+          let embeddedId = cat._id;
+          if (embeddedId && typeof embeddedId === 'object' && embeddedId.$oid) embeddedId = embeddedId.$oid;
+          else if (embeddedId && embeddedId._id) embeddedId = embeddedId._id;
+          else if (embeddedId) embeddedId = String(embeddedId);
+          return embeddedId === catId;
+        });
+        abs.categoryName = match ? match.name : 'N/A';
+      });
+      abstracts.forEach(abs => {
+        console.log('[all-event-abstracts] Abstract:', abs._id, 'category field:', abs.category, 'categoryName:', abs.categoryName);
+      });
+    }
+    return sendPaginated(res, 200, 'Abstracts retrieved successfully', abstracts, page, limit, total);
   }
+  // ... existing code ...
+
+  // Debug log for filters
+  console.log('[all-event-abstracts] MongoDB filters:', JSON.stringify(filters));
   // Populate fields
   let [abstracts, total] = await Promise.all([
     Abstract.find(filters)
@@ -73,6 +131,8 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
       .limit(limit),
     Abstract.countDocuments(filters)
   ]);
+  // Debug log for number of results
+  console.log(`[all-event-abstracts] Found ${total} abstracts for filters. Returned ${abstracts.length} on this page.`);
   function flattenRegistrationInfo(abstract) {
     if (!abstract) return abstract;
     if (abstract.registration && abstract.registration.registrationId) {
@@ -116,6 +176,7 @@ const getAbstracts = asyncHandler(async (req, res, next) => {
  */
 const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
   const { eventId, registrationId } = req.params;
+  const { status } = req.query;
 
   if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
     return next(createApiError('Valid Event ID is required', 400));
@@ -142,15 +203,21 @@ const getAbstractsByRegistration = asyncHandler(async (req, res, next) => {
     return next(createApiError(`Registration ${registrationId} is not associated with event ${eventId}.`, 400));
   }
 
-  logger.info(`[getAbstractsByRegistration] Admin/Staff ${req.user._id} fetching abstracts for registration ${registrationId} in event ${eventId}`);
+  logger.info(`[getAbstractsByRegistration] Admin/Staff ${req.user._id} fetching abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
 
-  let abstracts = await Abstract.find({
-    event: eventId,
-    registration: registrationId
-  })
+  // Build query
+  let query = { event: eventId, registration: registrationId };
+  if (status) {
+    query.status = status;
+  }
+  logger.info(`[getAbstractsByRegistration] MongoDB query: ${JSON.stringify(query)}`);
+
+  let abstracts = await Abstract.find(query)
     .populate('registration', 'registrationId personalInfo')
     .populate('category', 'name')
     .sort({ createdAt: -1 });
+
+  logger.info(`[getAbstractsByRegistration] Found ${abstracts.length} abstracts for registration ${registrationId} in event ${eventId} with status: ${status}`);
 
   // Utility to flatten registrationId and personalInfo on each abstract
   function flattenRegistrationInfo(abstract) {

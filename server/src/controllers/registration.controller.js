@@ -1095,20 +1095,27 @@ const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
     return sendSuccess(res, 400, 'QR code or Registration ID is required in the request body.');
   }
 
-  // Find the registration by QR code or registrationId string
-  // The 'qrCode' field in the model stores the unique QR code content.
-  // The 'registrationId' field stores the human-readable ID like "REG-1234".
-  // The scanned value could be either.
-  const registration = await Registration.findOne({
-    event: eventId,
-    $or: [
-      { qrCode: qrCode },
-      { registrationId: qrCode }
-    ]
-  })
-  .populate('event', 'name startDate endDate logo')
-  .populate('category', 'name color permissions resourcePermissions') // Added resourcePermissions
-  .populate('personalInfo'); // Assuming personalInfo is a subdocument or separate populated field
+  let registration = null;
+  // If qrCode is a valid ObjectId, try by _id first
+  if (mongoose.Types.ObjectId.isValid(qrCode)) {
+    registration = await Registration.findOne({ event: eventId, _id: qrCode })
+      .populate('event', 'name startDate endDate logo')
+      .populate('category', 'name color permissions resourcePermissions')
+      .populate('personalInfo');
+  }
+  // If not found, or not a valid ObjectId, try by registrationId or qrCode fields
+  if (!registration) {
+    registration = await Registration.findOne({
+      event: eventId,
+      $or: [
+        { qrCode: qrCode },
+        { registrationId: qrCode }
+      ]
+    })
+    .populate('event', 'name startDate endDate logo')
+    .populate('category', 'name color permissions resourcePermissions')
+    .populate('personalInfo');
+  }
 
   if (!registration) {
     logger.warn(`[getRegistrationDetailsByScan] Registration not found for event ${eventId} with QR/ID: ${qrCode}`);

@@ -34,4 +34,6 @@
     - Add data editing functionality.
 
 ### Documentation
-- Create/update documentation tracking these dashboard features, hurdles, and TODOs. 
+- Create/update documentation tracking these dashboard features, hurdles, and TODOs.
+
+- [x] 2024-06-08: Created new registration resource modal endpoint and controller (`registrationResourceModal.controller.js`, `registrationResourceModal.routes.js`) to provide enriched resource usage for a registration, without affecting existing logic. 

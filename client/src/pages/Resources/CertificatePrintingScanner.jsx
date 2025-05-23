@@ -39,6 +39,8 @@ const CertificatePrintingScanner = () => {
   const [scannerType, setScannerType] = useState("camera");
   const [manualInput, setManualInput] = useState("");
   const [attendeeDetails, setAttendeeDetails] = useState(null);
+  const [showReprintModal, setShowReprintModal] = useState(false);
+  const [reprintData, setReprintData] = useState(null);
   
   // Refs
   const scannerRef = useRef(null);
@@ -396,6 +398,17 @@ const CertificatePrintingScanner = () => {
       );
       
       if (!printResponse.success) {
+        // If already used error, show reprint modal
+        if (printResponse.message && printResponse.message.includes('already been used by this registration')) {
+          setReprintData({
+            registrationId: registration.registrationId,
+            templateId: selectedTemplate,
+            certificateData,
+            attendeeName: `${attendeeInfo.firstName} ${attendeeInfo.lastName}`
+          });
+          setShowReprintModal(true);
+          return;
+        }
         setScanResult({
           success: false,
           message: printResponse.message || "Failed to process certificate printing."
@@ -773,6 +786,40 @@ const CertificatePrintingScanner = () => {
           )}
         </div>
       </Card>
+      {showReprintModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-30">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full">
+            <Alert type="error" message={`This certificate has already been printed for ${reprintData?.attendeeName}.`} />
+            <div className="flex justify-end gap-2 mt-4">
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  setShowReprintModal(false);
+                  setScanResult({ success: null, message: 'Reprinting...' });
+                  const reprintResponse = await resourceService.processCertificatePrinting(
+                    eventId,
+                    reprintData.templateId,
+                    reprintData.registrationId,
+                    reprintData.certificateData
+                  );
+                  if (reprintResponse.success) {
+                    setScanResult({ success: true, message: `Certificate reprinted for ${reprintData.attendeeName}!` });
+                    fetchRecentScans();
+                    fetchStatistics();
+                  } else {
+                    setScanResult({ success: false, message: reprintResponse.message || 'Failed to reprint certificate.' });
+                  }
+                }}
+              >
+                Reprint
+              </Button>
+              <Button variant="outline" onClick={() => setShowReprintModal(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

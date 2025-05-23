@@ -814,7 +814,8 @@ exports.validateResourceScan = asyncHandler(async (req, res, next) => {
     registration: registration._id,
     type: resourceType,
     'details.option': resourceOptionId,
-    status: 'used'
+    status: 'used',
+    isVoided: { $ne: true } // Exclude voided resources
   });
 
   if (existingResource) {
@@ -894,6 +895,10 @@ exports.recordResourceUsage = asyncHandler(async (req, res, next) => {
     console.log(`[recordResourceUsage] Using resourceOptionId as is (no prefix): ${resourceOptionId}`);
   }
 
+  // Option 1: Allow forced reprints for certificatePrinting
+  // If req.body.force is true and resourceType is 'certificatePrinting', skip duplicate check
+  const isForceReprint = req.body.force === true && dbResourceType === 'certificatePrinting';
+
   // --- Check if this specific meal has already been used TODAY --- 
   let mealAlreadyUsedToday = false;
   if (dbResourceType === 'food') {
@@ -914,7 +919,8 @@ exports.recordResourceUsage = asyncHandler(async (req, res, next) => {
       actionDate: {
         $gte: todayStart,
         $lte: todayEnd
-      }
+      },
+      isVoided: { $ne: true } // Exclude voided resources
     });
 
     if (existingFoodResourceToday) {
@@ -933,7 +939,8 @@ exports.recordResourceUsage = asyncHandler(async (req, res, next) => {
     registration: registration._id,
     type: dbResourceType,
     'details.option': cleanedOptionId, // *** USE CLEANED ID ***
-    status: 'used'
+    status: 'used',
+    isVoided: { $ne: true } // Exclude voided resources
   });
 
   if (existingResource) {
@@ -944,7 +951,7 @@ exports.recordResourceUsage = asyncHandler(async (req, res, next) => {
   if (mealAlreadyUsedToday) { // Prioritize the date-specific check for food
     console.log(`[recordResourceUsage] Blocking duplicate FOOD scan for today.`); // Log block reason
     return next(createApiError(400, `This meal has already been scanned for this registration today.`));
-  } else if (dbResourceType !== 'food' && existingResource) { // Use original check for non-food items
+  } else if (!isForceReprint && dbResourceType !== 'food' && existingResource) { // Use original check for non-food items, unless force reprint
     console.log(`[recordResourceUsage] Blocking duplicate NON-FOOD scan.`); // Log block reason
     return next(createApiError(400, `This ${resourceType} has already been used by this registration.`));
   }
@@ -1190,10 +1197,14 @@ const getResourceUsage = asyncHandler(async (req, res) => {
 const voidResourceUsage = asyncHandler(async (req, res, next) => {
   const { eventId, registrationId, resourceUsageId } = req.params;
 
+  // Log received IDs for debugging
+  console.log('[voidResourceUsage] Received:', { eventId, registrationId, resourceUsageId });
+
   // Validate IDs
   if (!mongoose.Types.ObjectId.isValid(eventId) || 
       !mongoose.Types.ObjectId.isValid(registrationId) || 
       !mongoose.Types.ObjectId.isValid(resourceUsageId)) {
+    console.error('[voidResourceUsage] Invalid ID format:', { eventId, registrationId, resourceUsageId });
     return next(createApiError(400, 'Invalid ID format'));
   }
 
@@ -1201,32 +1212,39 @@ const voidResourceUsage = asyncHandler(async (req, res, next) => {
   const resourceUsage = await Resource.findById(resourceUsageId);
 
   if (!resourceUsage) {
+    console.error('[voidResourceUsage] Resource usage record not found:', resourceUsageId);
     return next(createApiError(404, 'Resource usage record not found'));
   }
 
-  // Check if it belongs to the correct registration and event (optional but good practice)
-  if (resourceUsage.event.toString() !== eventId || resourceUsage.registration.toString() !== registrationId) {
-      return next(createApiError(400, 'Resource usage record does not match event/registration'));
-  }
+  // Void ALL matching resources for this registration/event/type/option
+  await Resource.updateMany(
+    {
+      event: resourceUsage.event,
+      registration: resourceUsage.registration,
+      type: resourceUsage.type,
+      "details.option": resourceUsage.details.option,
+      status: "used",
+      isVoided: { $ne: true }
+    },
+    {
+      $set: {
+        status: "voided",
+        isVoided: true,
+        voidedAt: new Date(),
+        voidedBy: req.user._id,
+        updatedAt: new Date()
+      }
+    }
+  );
 
-  // Check if already voided
-  if (resourceUsage.isVoided) {
-    return sendSuccess(res, 200, 'Resource usage already voided', resourceUsage); // Or 400 if preferred
-  }
-
-  // Mark as voided
-  resourceUsage.isVoided = true;
-  resourceUsage.voidedAt = new Date();
-  resourceUsage.voidedBy = req.user._id; // Assuming user is available from auth middleware
-  resourceUsage.updatedAt = new Date(); // Update timestamp
-
-  await resourceUsage.save();
+  // Re-fetch the voided resource for response
+  const updatedResource = await Resource.findById(resourceUsageId);
 
   // Log the action
-  logger.info(`Resource usage ${resourceUsageId} voided by user ${req.user.id}`);
+  logger.info(`All matching resource usages voided for registration ${resourceUsage.registration}, event ${resourceUsage.event}, type ${resourceUsage.type}, option ${resourceUsage.details.option} by user ${req.user.id}`);
 
   // Return the updated record
-  sendSuccess(res, 200, 'Resource usage voided successfully', resourceUsage);
+  sendSuccess(res, 200, 'All matching resource usages voided successfully', updatedResource);
 });
 
 /**
@@ -1731,6 +1749,7 @@ const uploadCertificateTemplateFile = asyncHandler(async (req, res, next) => {
 
 /**
  * @desc    Generate Certificate PDF
+ * @note    Abstract fields in templates (e.g., Abstract.title) are now supported by always fetching the Abstract for the registration (if it exists), even if no abstractId is provided. This allows certificate templates to use Abstract fields for any registration that has an associated abstract.
  * @route   GET /api/resources/events/:eventId/certificate-templates/:templateId/registrations/:registrationId/generate-pdf?background=true|false
  * @access  Private
  * @param   background (optional, default true): if false, only text fields are rendered (for pre-printed certificates)
@@ -1786,6 +1805,10 @@ exports.generateCertificatePdf = asyncHandler(async (req, res, next) => {
         if (abstractData && abstractData.registration._id.toString() !== registrationId) {
              return next(createApiError(400, 'Abstract does not belong to the specified registration.'));
         }
+    } else {
+        // --- ADDED: Always fetch the first Abstract for this registration if it exists ---
+        abstractData = await Abstract.findOne({ registration: registrationId, event: eventId });
+        // No need to check registration match, as it's by query
     }
 
     let workshopData = null;

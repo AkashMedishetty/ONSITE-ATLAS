@@ -58,6 +58,7 @@ const AbstractsTab = ({ event }) => {
 
   // Search state
   const [searchInput, setSearchInput] = useState('');
+  const [searchRawInput, setSearchRawInput] = useState('');
 
   // Category filter state
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -66,6 +67,9 @@ const AbstractsTab = ({ event }) => {
   const [pageSize, setPageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // 1. Add a new state to store all abstracts
+  const [allAbstracts, setAllAbstracts] = useState([]);
 
   // Memoized map of categoryId to name for fast lookup
   const categoryIdToName = useMemo(() => {
@@ -105,8 +109,17 @@ const AbstractsTab = ({ event }) => {
     setCurrentPage(1);
   }, [activeTab, searchInput]);
 
-  // Update fetchAbstracts to include status param based on activeTab
+  // Debounce searchRawInput -> searchInput
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setSearchInput(searchRawInput);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [searchRawInput]);
+
+  // 2. Update fetchAbstracts to fetch all abstracts at once (high limit, no search param)
   const fetchAbstracts = useCallback(async () => {
+    console.log('[AbstractsTab] fetchAbstracts called');
     if (!event || !event._id) {
       setError('Event data is not available.');
       setLoading(false);
@@ -116,7 +129,7 @@ const AbstractsTab = ({ event }) => {
       setError(null);
       setBulkActionError(null);
       setBulkActionSuccess(null);
-      const params = { page: currentPage, limit: pageSize };
+      const params = { page: 1, limit: 2000 };
       if (categoryFilter && /^[a-f\d]{24}$/i.test(categoryFilter)) {
         params.category = categoryFilter;
       }
@@ -128,47 +141,73 @@ const AbstractsTab = ({ event }) => {
         else if (currentStatusFilter === 'pending') params.status = 'pending';
         else if (currentStatusFilter === 'rejected') params.status = 'rejected';
       }
-      // Send search param to backend if present
-      if (searchInput.trim()) {
-        params.search = searchInput.trim();
-      }
       let userRole = currentUser?.role;
       if (!['admin', 'staff', 'reviewer'].includes(userRole)) {
         userRole = 'admin';
       }
+      console.log('[AbstractsTab] Fetching abstracts with params:', params, 'userRole:', userRole);
       const response = await abstractService.getAbstracts(event._id, params, userRole);
+      console.log('[AbstractsTab] API response:', response);
       if (response.success) {
-        setAbstracts(response.data || []);
-        if (response.pagination) {
-          setCurrentPage(response.pagination.page || 1);
-          setTotalPages(response.pagination.totalPages || 1);
-          setTotalCount(response.pagination.total || (response.data ? response.data.length : 0));
-        } else {
-          setCurrentPage(1);
-          setTotalPages(1);
-          setTotalCount((response.data || []).length);
-        }
+        setAllAbstracts(response.data || []);
+        setLoading(false);
       } else {
         setError(response.message || 'Failed to fetch abstracts.');
-        setAbstracts([]);
-        setTotalPages(1);
-        setTotalCount(0);
+        setAllAbstracts([]);
+        setLoading(false);
       }
     } catch (err) {
+      console.error('[AbstractsTab] Error fetching abstracts:', err);
       setError('An unexpected error occurred while fetching abstracts.');
-      setAbstracts([]);
-      setTotalPages(1);
-      setTotalCount(0);
-    } finally {
+      setAllAbstracts([]);
       setLoading(false);
     }
-  }, [event, categoryFilter, currentPage, pageSize, currentUser, searchInput, activeTab]);
+  }, [event, categoryFilter, currentUser, activeTab]);
   
-  // Update useEffect to include activeTab and searchInput
+  // 3. Filter and paginate abstracts in memory
+  const filteredAbstracts = useMemo(() => {
+    let filtered = allAbstracts;
+    // Filter by search input
+    if (searchInput.trim()) {
+      const q = searchInput.trim().toLowerCase();
+      filtered = filtered.filter(abs => {
+        // Search in abstract fields
+        const fields = [
+          abs.title,
+          abs.authors,
+          abs.authorAffiliations,
+          abs.topic,
+          abs.subTopic,
+          abs.content,
+          abs.registrationId,
+          // Registration personalInfo fields
+          abs.personalInfo?.firstName,
+          abs.personalInfo?.lastName,
+          abs.personalInfo?.email,
+          abs.personalInfo?.organization,
+          abs.personalInfo?.designation,
+          abs.personalInfo?.country
+        ];
+        return fields.some(f => f && f.toLowerCase().includes(q));
+      });
+    }
+    return filtered;
+  }, [allAbstracts, searchInput]);
+
+  // Paginate in memory
+  const paginatedAbstracts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredAbstracts.slice(start, start + pageSize);
+  }, [filteredAbstracts, currentPage, pageSize]);
+
+  // Update totalCount and totalPages based on filteredAbstracts
   useEffect(() => {
-    setLoading(true);
-    fetchAbstracts();
-  }, [event, categoryFilter, currentPage, pageSize, activeTab, searchInput]);
+    setTotalCount(filteredAbstracts.length);
+    setTotalPages(Math.max(1, Math.ceil(filteredAbstracts.length / pageSize)));
+    if (currentPage > Math.ceil(filteredAbstracts.length / pageSize)) {
+      setCurrentPage(1);
+    }
+  }, [filteredAbstracts, pageSize]);
   
   useEffect(() => {
     if (showAssignReviewerModal && event?._id && (currentUser?.role === 'admin' || currentUser?.role === 'event-manager')) {
@@ -585,15 +624,14 @@ const AbstractsTab = ({ event }) => {
     setCurrentPage(1);
   };
 
-  // Add debounced search effect
+  // Ensure fetchAbstracts is called on mount and when dependencies change
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setSearchInput(searchInput);
-    }, 400);
-    return () => clearTimeout(handler);
-  }, [searchInput]);
+    setLoading(true);
+    fetchAbstracts();
+  }, [event, categoryFilter, activeTab, currentUser]);
 
   if (loading) {
+    console.log('[AbstractsTab] Still loading...');
     return (
       <div className="flex justify-center items-center h-64">
         <Spinner size="lg" />
@@ -602,6 +640,7 @@ const AbstractsTab = ({ event }) => {
   }
   
   if (error) {
+    console.log('[AbstractsTab] Error:', error);
     return (
       <Alert 
         type="error" 
@@ -873,8 +912,8 @@ const AbstractsTab = ({ event }) => {
             type="text"
             className="border rounded px-3 py-2 w-full md:w-80 text-sm"
             placeholder="Search by author, registration name, or registration ID..."
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
+            value={searchRawInput}
+            onChange={e => setSearchRawInput(e.target.value)}
           />
         </div>
         {selectedAbstractIds.size > 0 && (
@@ -964,7 +1003,7 @@ const AbstractsTab = ({ event }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {abstracts.map((abstract) => (
+              {paginatedAbstracts.map((abstract) => (
                 <tr key={abstract._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     <input

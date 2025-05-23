@@ -23,40 +23,33 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
   const [reviewers, setReviewers] = useState([]);
   const [loadingReviewers, setLoadingReviewers] = useState(false);
   const [reviewerError, setReviewerError] = useState(null);
+  const lastEventIdRef = useRef(null);
 
   // Load settings from event data on mount or when event changes
   useEffect(() => {
     if (!event || !event._id) return;
-    
-    console.log("Loading abstract settings from event:", event.abstractSettings);
-    
-    if (event.abstractSettings) {
-      // Ensure all required fields are present
+    if (lastEventIdRef.current !== event._id) {
+      console.log('[AbstractsTab] Loading settings from event', event._id);
       let settings = {
         ...abstractSettings, // Use default values as fallback
         ...event.abstractSettings, // Override with actual event values
       };
-      // Sanitize reviewerIds in categories to only keep valid ObjectId strings
+      // Sanitize reviewerIds in categories to only keep valid ObjectId strings and convert to string
       if (settings.categories && Array.isArray(settings.categories)) {
         settings.categories = settings.categories.map(cat => {
           if (cat.reviewerIds && Array.isArray(cat.reviewerIds)) {
-            cat.reviewerIds = cat.reviewerIds.filter(id =>
-              typeof id === 'string' && /^[a-f\d]{24}$/i.test(id)
-            );
+            cat.reviewerIds = cat.reviewerIds
+              .filter(id => (typeof id === 'string' || (id && typeof id === 'object' && id.toString)))
+              .map(id => typeof id === 'string' ? id : (id && id.toString ? id.toString() : ''))
+              .filter(id => /^[a-f\d]{24}$/i.test(id));
           }
           return cat;
         });
       }
-      console.log("Setting abstract settings:", settings);
-      
-      // Only update if there's an actual difference to prevent infinite loops
-      if (JSON.stringify(settings) !== JSON.stringify(abstractSettings)) {
-        setAbstractSettings(settings);
-      }
+      setAbstractSettings(settings);
+      lastEventIdRef.current = event._id;
     }
-    
-    isFirstRender.current = false;
-  }, [event?._id]); // Only run when event ID changes
+  }, [event?._id]);
 
   // Fetch reviewers for this event
   useEffect(() => {
@@ -153,18 +146,30 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
     }));
   };
 
+  // Add debug log before handleCategoryChange
+  console.log('reviewers', reviewers);
+
   const handleCategoryChange = (index, field, value) => {
     userInitiatedChange.current = true;
     const updatedCategories = [...abstractSettings.categories];
+    let newValue = value; // For reviewerIds, 'value' is the 'selected' array from select onChange
+
+    // If 'value' (the 'selected' array from onChange) is already processed to be _id strings,
+    // no further mapping/filtering is needed here.
+    // The select onChange handler is now responsible for providing a clean array of _id strings.
+    
     updatedCategories[index] = {
       ...updatedCategories[index],
-      [field]: value
+      [field]: newValue 
     };
-    
     setAbstractSettings(prev => ({
       ...prev,
       categories: updatedCategories
     }));
+    // Debug log
+    if (field === 'reviewerIds') {
+      console.log('[AbstractsTab HIDEBUG] handleCategoryChange for reviewerIds. New value:', newValue, 'for category index:', index);
+    }
   };
 
   const handleAddSubTopic = (categoryIndex) => {
@@ -243,17 +248,24 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
       
       console.log('Abstract settings saved successfully:', response);
 
-      // Update the event object in parent component to ensure data persistence
+      // Fetch the latest event data from the backend to ensure UI is up to date
       if (response && response.success) {
-        if (updateAbstractSettings) {
-          updateAbstractSettings(abstractSettings);
-        } else if (setEvent) {
-          setEvent(prevEvent => ({
-            ...prevEvent,
-            abstractSettings: response.data || abstractSettings
-          }));
+        const latestEventResp = await eventService.getEventById(event._id);
+        if (latestEventResp && latestEventResp.success && latestEventResp.data) {
+          if (setEvent) {
+            setEvent(latestEventResp.data);
+          }
+        } else {
+          // fallback: update only abstractSettings if event fetch fails
+          if (updateAbstractSettings) {
+            updateAbstractSettings(abstractSettings);
+          } else if (setEvent) {
+            setEvent(prevEvent => ({
+              ...prevEvent,
+              abstractSettings: response.data || abstractSettings
+            }));
+          }
         }
-        
         // After saving, settings are no longer "changed" by the user
         userInitiatedChange.current = false;
         setFormChanged(false);
@@ -423,7 +435,7 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                 ) : (
                   <div className="space-y-6">
                 {abstractSettings.categories.map((category, index) => (
-                      <div key={index} className="border border-gray-200 rounded-md p-4 bg-white">
+                      <div key={category._id || index} className="border border-gray-200 rounded-md p-4 bg-white">
                         <div className="flex justify-between items-start mb-4">
                           <div className="w-full">
                             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -454,6 +466,8 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                             {/* Reviewer Assignment UI */}
                             <div className="mt-2 mb-4">
                               <label className="block text-sm font-medium text-gray-700 mb-1">Assign Reviewers</label>
+                              {console.log('category.reviewerIds', category.reviewerIds)}
+                              {console.log('[AbstractsTab HIDEBUG] reviewers array:', reviewers)}
                               {loadingReviewers ? (
                                 <div className="text-gray-500 text-sm">Loading reviewers...</div>
                               ) : reviewerError ? (
@@ -461,20 +475,52 @@ const AbstractsTab = ({ event, setEvent, updateAbstractSettings, setFormChanged 
                               ) : reviewers.length === 0 ? (
                                 <div className="text-gray-500 text-sm">No reviewers available for this event.</div>
                               ) : (
-                                <select
-                                  multiple
-                                  className="border rounded px-2 py-1 text-sm w-full min-h-[40px]"
-                                  value={category.reviewerIds ? category.reviewerIds.map(String) : []}
-                                  onChange={e => {
-                                    // Only store reviewer _id values (as strings)
-                                    const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
-                                    handleCategoryChange(index, 'reviewerIds', selected);
-                                  }}
-                                >
-                                  {reviewers.map(r => (
-                                    <option key={r._id} value={r._id}>{r.name} ({r.email})</option>
-                                  ))}
-                                </select>
+                                <>
+                                  {console.log('Rendering select with reviewers:', reviewers)}
+                                  <select
+                                    multiple
+                                    className="border rounded px-2 py-1 text-sm w-full min-h-[40px]"
+                                    value={category.reviewerIds ? category.reviewerIds.map(String) : []}
+                                    onChange={e => {
+                                      if (loadingReviewers || reviewers.length === 0) {
+                                        // This alert might be disruptive if reviewers load slightly late.
+                                        // console.warn('Reviewers are still loading or not available.');
+                                        return;
+                                      }
+
+                                      console.log('[AbstractsTab HIDEBUG] --- Reviewer Select onChange Fired ---');
+                                      console.log('[AbstractsTab HIDEBUG] Raw e.target.selectedOptions:', e.target.selectedOptions);
+                                      console.log('[AbstractsTab HIDEBUG] Raw e.target.selectedOptions.length:', e.target.selectedOptions.length);
+
+                                      const rawValues = [];
+                                      for (let i = 0; i < e.target.selectedOptions.length; i++) {
+                                        const opt = e.target.selectedOptions[i];
+                                        console.log(`[AbstractsTab HIDEBUG] Option ${i}: value="${opt.value}", text="${opt.text}", selected="${opt.selected}"`);
+                                        rawValues.push(opt.value);
+                                      }
+                                      console.log('[AbstractsTab HIDEBUG] Raw values from selected options:', rawValues);
+
+                                      // Process selected options to get reviewer _id strings
+                                      const selectedReviewerIds = Array.from(e.target.selectedOptions).map(opt => {
+                                        // opt.value should be the reviewer._id or id
+                                        if (/^[a-f\d]{24}$/i.test(opt.value)) {
+                                          return String(opt.value);
+                                        }
+                                        // Fallback (should ideally not be needed if option values are _ids)
+                                        console.warn(`[AbstractsTab HIDEBUG] opt.value "${opt.value}" is not a valid ObjectId. Trying to find by display text.`);
+                                        const foundReviewer = reviewers.find(r => `${r.name} (${r.email})` === opt.text || String(r._id || r.id) === opt.value);
+                                        return foundReviewer ? String(foundReviewer._id || foundReviewer.id) : null;
+                                      }).filter(id => id && /^[a-f\d]{24}$/i.test(id));
+                                      
+                                      console.log('[AbstractsTab HIDEBUG] Processed selected reviewer IDs:', selectedReviewerIds);
+                                      handleCategoryChange(index, 'reviewerIds', selectedReviewerIds);
+                                    }}
+                                  >
+                                    {reviewers.map(r => (
+                                      <option key={String(r._id || r.id)} value={String(r._id || r.id)}>{r.name} ({r.email})</option>
+                                    ))}
+                                  </select>
+                                </>
                               )}
                               {category.reviewerIds && category.reviewerIds.length > 0 && reviewers.length > 0 && (
                                 <div className="mt-1 text-xs text-gray-600">
