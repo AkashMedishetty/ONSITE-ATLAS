@@ -173,17 +173,21 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
   // Normalize the resource type from the request for DB operations
   let requestType = type.toLowerCase();
   let dbType = requestType;
-  
-  // Convert variants to the correct database type with proper casing
   if (requestType === 'kits' || requestType === 'kit' || requestType === 'kitbag') {
-    dbType = 'kitBag';  // Ensure correct casing
+    dbType = 'kitBag';
     console.log(`[updateResourceSettings] Normalized request type '${requestType}' to db type 'kitBag'`);
   } else if (requestType === 'certificates' || requestType === 'certificate') {
     dbType = 'certificate';
     console.log(`[updateResourceSettings] Normalized request type '${requestType}' to db type 'certificate'`);
   } else if (requestType === 'certificateprinting') {
-    dbType = 'certificatePrinting';  // Ensure correct casing
+    dbType = 'certificatePrinting';
     console.log(`[updateResourceSettings] Normalized request type '${requestType}' to db type 'certificatePrinting'`);
+  }
+
+  // --- FLATTEN MEALS LOGIC ---
+  if (dbType === 'food' && settings.days) {
+    settings.meals = flattenMeals(settings);
+    console.log(`[ResourceSettings] Flattened ${settings.meals.length} meals before save (type: food, event: ${eventId})`);
   }
 
   // Check for valid type using case-insensitive comparison
@@ -260,6 +264,11 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
 
     // MIRROR: Update event document to keep in sync
     await mirrorResourceSettingsToEvent(eventId, dbType, resourceSettingsDoc.settings, resourceSettingsDoc.isEnabled);
+
+    // --- NEW: Ensure all categories have entitlements for all meals (food type only)
+    if (dbType === 'food' && resourceSettingsDoc.settings.meals) {
+      await ensureMealEntitlementsForAllCategories(eventId, resourceSettingsDoc.settings.meals);
+    }
 
     // Return the updated settings
     return res.status(200).json({
@@ -750,11 +759,9 @@ exports.validateResourceScan = asyncHandler(async (req, res, next) => {
   if (!qrCode) {
     return next(createApiError(400, 'QR code is required'));
   }
-
   if (!resourceType) {
     return next(createApiError(400, 'Resource type is required'));
   }
-
   if (!resourceOptionId) {
     return next(createApiError(400, 'Resource option ID is required'));
   }
@@ -791,17 +798,33 @@ exports.validateResourceScan = asyncHandler(async (req, res, next) => {
     return next(createApiError(404, 'Category not found'));
   }
 
-  // Check if category has permission for this resource type
+  // --- SPECIFIC ENTITLEMENT CHECKS ---
   let hasPermission = false;
-  
+  let entitled = true;
   if (resourceType === 'food') {
     hasPermission = category.permissions.meals;
+    entitled = category.mealEntitlements?.some(e => e.mealId?.toString() === resourceOptionId && e.entitled);
+    if (!entitled) {
+      console.log(`[validateResourceScan] Category ${category.name} is NOT entitled to meal ${resourceOptionId}`);
+      return next(createApiError(400, 'This category is not entitled to this meal.'));
+    }
   } else if (resourceType === 'kits' || resourceType === 'kitBag') {
     hasPermission = category.permissions.kitItems;
+    entitled = category.kitItemEntitlements?.some(e => e.itemId?.toString() === resourceOptionId && e.entitled);
+    if (!entitled) {
+      console.log(`[validateResourceScan] Category ${category.name} is NOT entitled to kit item ${resourceOptionId}`);
+      return next(createApiError(400, 'This category is not entitled to this kit item.'));
+    }
   } else if (resourceType === 'certificates' || resourceType === 'certificate') {
     hasPermission = category.permissions.certificates;
+    entitled = category.certificateEntitlements?.some(e => e.certificateId?.toString() === resourceOptionId && e.entitled);
+    if (!entitled) {
+      console.log(`[validateResourceScan] Category ${category.name} is NOT entitled to certificate ${resourceOptionId}`);
+      return next(createApiError(400, 'This category is not entitled to this certificate.'));
+    }
   } else if (resourceType === 'certificatePrinting') {
-    hasPermission = category.permissions.certificates; // Use the same permission as regular certificates
+    hasPermission = category.permissions.certificates;
+    // No entitlement check for certificatePrinting (assume all allowed if certificates allowed)
   }
 
   if (!hasPermission) {
@@ -2030,6 +2053,59 @@ async function mirrorResourceSettingsToEvent(eventId, type, settings, isEnabled)
   if (Object.keys(update).length > 0) {
     await Event.findByIdAndUpdate(eventId, { $set: update });
   }
+}
+
+// Utility: Ensure all categories for an event have entitlements for all meals
+async function ensureMealEntitlementsForAllCategories(eventId, meals) {
+  const Category = require('../models/Category');
+  const categories = await Category.find({ event: eventId });
+  const validMealIds = new Set(meals.map(m => m._id.toString()));
+  for (const category of categories) {
+    let updated = false;
+    // Remove entitlements for meals that no longer exist
+    category.mealEntitlements = (category.mealEntitlements || []).filter(e =>
+      e.mealId && validMealIds.has(e.mealId.toString())
+    );
+    // Add missing entitlements
+    for (const meal of meals) {
+      const mealId = meal._id && meal._id.toString();
+      if (!mealId) continue;
+      const found = category.mealEntitlements.find(e => e.mealId && e.mealId.toString() === mealId);
+      if (!found) {
+        category.mealEntitlements.push({ mealId: meal._id, entitled: true });
+        updated = true;
+        console.log(`[ensureMealEntitlementsForAllCategories] Added entitlement for meal ${meal.name} (${mealId}) to category ${category.name}`);
+      }
+    }
+    if (updated) {
+      await category.save();
+      console.log(`[ensureMealEntitlementsForAllCategories] Updated category ${category.name} for event ${eventId}`);
+    }
+  }
+}
+
+// Utility: Flatten all meals from all days into a flat array (no duplicates)
+function flattenMeals(settings) {
+  const allMeals = [];
+  const seen = new Set();
+  (settings.days || []).forEach(day => {
+    (day.meals || []).forEach(meal => {
+      // If meal._id is missing, generate one
+      if (!meal._id) {
+        meal._id = new mongoose.Types.ObjectId();
+      }
+      // If entitled is missing, set to true by default
+      if (meal.entitled === undefined) {
+        meal.entitled = true;
+      }
+      const idStr = meal._id && meal._id.toString();
+      if (idStr && !seen.has(idStr)) {
+        allMeals.push(meal);
+        seen.add(idStr);
+      }
+    });
+  });
+  return allMeals;
 }
 
 module.exports = {

@@ -242,4 +242,38 @@
 
 .badge-element.draggable {
   cursor: move;
+}
+
+@media print {
+  .print-badge-designer {
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+    color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-badge-designer .designer-toolbar,
+  .print-badge-designer .designer-controls,
+  .print-badge-designer .designer-sidebar,
+  .print-badge-designer .designer-header,
+  .print-badge-designer .designer-footer {
+    display: none !important;
+  }
+  .print-badge-designer .badge-canvas {
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+  }
+}
+
+/* Optional: highlight overlap or out-of-bounds (for screen only) */
+.badge-element.overlap {
+  outline: 2px solid #f59e42;
+  z-index: 1000;
+}
+.badge-element.out-of-bounds {
+  outline: 2px dashed #ef4444;
+  z-index: 1000;
 } 

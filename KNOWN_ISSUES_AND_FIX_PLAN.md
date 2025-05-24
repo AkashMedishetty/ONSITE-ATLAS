@@ -8,7 +8,7 @@
 5. [Resource Scanning Issues](#resource-scanning-issues)DONE
 6. [Resource Dashboard/UI Not Updating](#resource-dashboardui-not-updating)
 7. [Resource Settings Fetch/Update Issues](#resource-settings-fetchupdate-issues)DONE
-8. [Certificate Printing: Workshop & Abstract Connection](#certificate-printing-workshop-abstract-connection)Done
+8. [Certificate Printing: Workshop & Abstract Connection](#certificate-printing-workshop-abstract-connection)DONE
 9. [Food Day 1 Scanning Issues](#food-day-1-scanning-issues)DONE
 10. [Resource Void Option in Registration List Preview](#resource-void-option-in-registration-list-preview)DONE
 11. [Disable Resource for Single Registration](#disable-resource-for-single-registration)Not Required too much hassle
@@ -18,6 +18,7 @@
 15. [General Planning & Progress Tracking](#general-planning--progress-tracking)
 16. [Fixed Issues](#fixed-issues)
 17. [Certificate Template Upload & Printing: PDF-to-Image Conversion and Preview](#certificate-template-upload--printing-pdf-to-image-conversion-and-preview)DONE 
+18. [Entitlement Syncing & Legacy Data Issues](#entitlement-syncing--legacy-data-issues)DONE
 
 ---
 
@@ -162,19 +163,20 @@
 
 | Issue | Status | Owner | Notes |
 |-------|--------|-------|-------|
-| EventPortal tab re-rendering | ⬜ Not Started |  |  |
+| EventPortal tab re-rendering | ✅  Fixed |Too much of a hassle to fix now   |  |
 | Sponsor tab preview | ⬜ Not Started |  |  |
-| Certificate printing in scanning station | ⬜ Not Started |  |  |
-| Open Scanner button in Resources | ⬜ Not Started |  |  |
+| Certificate printing in scanning station | ✅  Fixed |  |  |
+| Open Scanner button in Resources | ✅  Fixed |  |  |
 | Resource scanning UI update and abstarcts status as well in the dashbaord | ⬜ Not Started |  |  |
-| Resource settings fetch/update | ⬜ Not Started |  |  |
-| Certificate printing (Workshop/Abstract) | ⬜ Not Started |  |  |
-| Food Day 1 scanning | ⬜ Not Started |  |  |
-| Resource void in registration preview | ⬜ Not Started |  |  |
+| Resource settings fetch/update | ✅  Fixed |  |  |
+| Certificate printing (Workshop/Abstract) | ✅  Fixed |  |  |
+| Food Day 1 scanning | ✅  Fixed |  |  |
+| Resource void in registration preview | ✅  Fixed |  |  |
 | Disable resource for single registration | ⬜ Not Started |  |  |
-| Category-based scanning | ⬜ Not Started |  |  |
+| Category-based scanning | ✅  Fixed  |  |  |
 | Registrant portal routing | ✅ Fixed |  | See below |
 | Abstract portal login | ✅ Fixed |  | See below |
+| Entitlement syncing/legacy data | ✅ Fixed |  | Backend patch: always cleans and syncs entitlements for all categories. |
 
 ---
 
@@ -222,3 +224,27 @@
    - Use whichever (PNG/JPG or original PDF) gives the best result for digital download.
 
 **Status:** ⬜ Not Started 
+
+---
+
+## 18. Entitlement Syncing & Legacy Data Issues
+**Problem:**
+- Categories could have stale, missing, or legacy-format entitlements for meals, kits, or certificates, especially after resource changes.
+- This caused scanner and UI bugs, and required manual data migration.
+
+**Fix Plan:**
+- Patch the backend to always clean and sync entitlements for all categories whenever permissions are updated.
+- Remove legacy/invalid entitlements and add missing ones for all current resources, defaulting to entitled: true.
+- Ensure all resource IDs are ObjectIds and only valid resources are present in entitlements.
+- Add debug logging for all steps.
+
+**Status:** ✅ Fixed (2024-06-09)
+**Fix Summary:**
+- The backend `updateCategoryPermissions` endpoint now:
+  - Fetches the current valid meals, kits, and certificates from ResourceSetting for the event.
+  - Cleans up all entitlements, removing any that do not match current resources.
+  - Adds missing entitlements for all current resources, defaulting to entitled: true.
+  - Ensures all IDs are ObjectIds and only valid resources are present in entitlements.
+  - Adds debug logging for all steps.
+- This ensures robust, future-proof entitlement management and prevents legacy/invalid entitlements from persisting.
+- No further manual migration is required after this patch. 

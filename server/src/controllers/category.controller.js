@@ -1,4 +1,4 @@
-const { Category, Event, Registration } = require('../models');
+const { Category, Event, Registration, ResourceSetting } = require('../models');
 const { createApiError } = require('../middleware/error');
 const logger = require('../utils/logger');
 const { sendSuccess, sendPaginated } = require('../utils/responseFormatter');
@@ -284,7 +284,6 @@ const updateCategoryPermissions = async (req, res, next) => {
 
     // Find category
     let category = await Category.findById(id);
-
     if (!category) {
       return next(createApiError(404, 'Category not found'));
     }
@@ -294,56 +293,92 @@ const updateCategoryPermissions = async (req, res, next) => {
     if (req.user.role !== 'admin' && event.createdBy.toString() !== req.user._id.toString()) {
       return next(createApiError(403, 'Not authorized to update this category'));
     }
-
     // Verify this is the right event
     if (eventId && category.event.toString() !== eventId) {
       return next(createApiError(400, 'Category does not belong to specified event'));
     }
 
-    // Prepare update data
+    // --- Fetch current resource settings for this event ---
+    const [foodSetting, kitSetting, certSetting] = await Promise.all([
+      ResourceSetting.findOne({ event: category.event, type: 'food' }),
+      ResourceSetting.findOne({ event: category.event, type: 'kitBag' }),
+      ResourceSetting.findOne({ event: category.event, type: 'certificate' })
+    ]);
+    const flattenMeals = (settings) => {
+      const allMeals = [];
+      const seen = new Set();
+      (settings?.days || []).forEach(day => {
+        (day.meals || []).forEach(meal => {
+          const idStr = meal._id && meal._id.toString();
+          if (idStr && !seen.has(idStr)) {
+            allMeals.push(meal);
+            seen.add(idStr);
+          }
+        });
+      });
+      return allMeals;
+    };
+    const validMeals = foodSetting ? flattenMeals(foodSetting.settings) : [];
+    const validMealIds = new Set(validMeals.map(m => m._id.toString()));
+    const validKits = kitSetting?.settings?.items || [];
+    const validKitIds = new Set(validKits.map(k => k._id.toString()));
+    const validCerts = certSetting?.settings?.types || [];
+    const validCertIds = new Set(validCerts.map(c => c._id.toString()));
+
+    // --- Clean and sync entitlements ---
+    let mealEntitlements = Array.isArray(req.body.mealEntitlements) ? req.body.mealEntitlements : category.mealEntitlements || [];
+    let kitItemEntitlements = Array.isArray(req.body.kitItemEntitlements) ? req.body.kitItemEntitlements : category.kitItemEntitlements || [];
+    let certificateEntitlements = Array.isArray(req.body.certificateEntitlements) ? req.body.certificateEntitlements : category.certificateEntitlements || [];
+
+    // Meals
+    mealEntitlements = mealEntitlements.filter(e => e.mealId && validMealIds.has(e.mealId.toString()));
+    for (const meal of validMeals) {
+      const mealId = meal._id.toString();
+      if (!mealEntitlements.some(e => e.mealId && e.mealId.toString() === mealId)) {
+        mealEntitlements.push({ mealId: meal._id, entitled: true });
+        logger.info(`[updateCategoryPermissions] Added missing meal entitlement for meal ${meal.name} (${mealId}) to category ${category.name}`);
+      }
+    }
+    // Kits
+    kitItemEntitlements = kitItemEntitlements.filter(e => e.itemId && validKitIds.has(e.itemId.toString()));
+    for (const kit of validKits) {
+      const kitId = kit._id.toString();
+      if (!kitItemEntitlements.some(e => e.itemId && e.itemId.toString() === kitId)) {
+        kitItemEntitlements.push({ itemId: kit._id, entitled: true });
+        logger.info(`[updateCategoryPermissions] Added missing kit entitlement for kit ${kit.name} (${kitId}) to category ${category.name}`);
+      }
+    }
+    // Certificates
+    certificateEntitlements = certificateEntitlements.filter(e => e.certificateId && validCertIds.has(e.certificateId.toString()));
+    for (const cert of validCerts) {
+      const certId = cert._id.toString();
+      if (!certificateEntitlements.some(e => e.certificateId && e.certificateId.toString() === certId)) {
+        certificateEntitlements.push({ certificateId: cert._id, entitled: true });
+        logger.info(`[updateCategoryPermissions] Added missing certificate entitlement for certificate ${cert.name} (${certId}) to category ${category.name}`);
+      }
+    }
+
+    // --- Prepare update data ---
     const updateData = {
       permissions: {
         meals: permissions.meals || false,
         kitItems: permissions.kitItems || false,
         certificates: permissions.certificates || false,
         abstractSubmission: permissions.abstractSubmission || false
-      }
+      },
+      mealEntitlements,
+      kitItemEntitlements,
+      certificateEntitlements
     };
 
-    // Process meal entitlements
-    if (permissions.mealEntitlements && Array.isArray(permissions.mealEntitlements)) {
-      updateData.mealEntitlements = permissions.mealEntitlements.map(mealId => ({
-        mealId,
-        entitled: true
-      }));
-    }
-
-    // Process kit item entitlements
-    if (permissions.kitItemEntitlements && Array.isArray(permissions.kitItemEntitlements)) {
-      updateData.kitItemEntitlements = permissions.kitItemEntitlements.map(itemId => ({
-        itemId,
-        entitled: true
-      }));
-    }
-
-    // Process certificate entitlements
-    if (permissions.certificateEntitlements && Array.isArray(permissions.certificateEntitlements)) {
-      updateData.certificateEntitlements = permissions.certificateEntitlements.map(certificateId => ({
-        certificateId,
-        entitled: true
-      }));
-    }
-
-    // Update only permissions and entitlements
+    // --- Save and respond ---
     category = await Category.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
     );
-
-    logger.info(`Category permissions updated: ${category.name} by ${req.user.email}`);
-
-    return sendSuccess(res, 200, 'Category permissions updated successfully', category);
+    logger.info(`[updateCategoryPermissions] Category permissions and entitlements updated and synced: ${category.name} by ${req.user.email}`);
+    return sendSuccess(res, 200, 'Category permissions updated and entitlements synced successfully', category);
   } catch (error) {
     next(error);
   }

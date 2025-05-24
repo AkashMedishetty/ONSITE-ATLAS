@@ -5,6 +5,11 @@ import resourceService from '../../../services/resourceService';
 import categoryService from '../../../services/categoryService';
 import registrationService from '../../../services/registrationService';
 
+// Utility: Check for valid MongoDB ObjectId (24 hex chars)
+function isValidObjectId(id) {
+  return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
+}
+
 const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave }) => {
   const [activeTab, setActiveTab] = useState('food');
   const [loading, setLoading] = useState(false);
@@ -92,12 +97,13 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
       }));
     }
 
-    // Map foodItems to format expected by mealEntitlements
+    // Map foodItems to format expected by mealEntitlements (use ObjectId, not string keys)
     const meals = foodItems.map((food) => ({
-      mealId: food._id,
+      mealId: food._id, // FIXED: use ObjectId
       entitled: updatedFoodItems.includes(food._id)
     }));
     setMealEntitlements(meals);
+    console.log('[CategoryResourcesConfig] Updated mealEntitlements:', meals);
   };
 
   // Toggle kit item selection
@@ -116,12 +122,13 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
       }));
     }
 
-    // Map kitItems to format expected by kitItemEntitlements
+    // Map kitItems to format expected by kitItemEntitlements (use itemId, not kitItemId)
     const kits = kitItems.map((kit) => ({
-      kitItemId: kit._id,
+      itemId: kit._id, // FIXED: use itemId
       entitled: updatedKitItems.includes(kit._id)
     }));
     setKitItemEntitlements(kits);
+    console.log('[CategoryResourcesConfig] Updated kitItemEntitlements:', kits);
   };
 
   // Toggle certificate type selection
@@ -246,11 +253,33 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
     setSuccess(null);
     setError(null);
     try {
+      console.log('[CategoryResourcesConfig] Saving category entitlements:', {
+        permissions,
+        mealEntitlements,
+        kitItemEntitlements,
+        certificateEntitlements
+      });
+
+      // Filter out invalid entitlements before sending to backend
+      const filteredMealEntitlements = (mealEntitlements || []).filter(e => e.mealId && isValidObjectId(e.mealId));
+      const filteredKitItemEntitlements = (kitItemEntitlements || []).filter(e => e.itemId && isValidObjectId(e.itemId));
+      const filteredCertificateEntitlements = (certificateEntitlements || []).filter(e => e.certificateId && isValidObjectId(e.certificateId));
+
+      if (filteredMealEntitlements.length !== (mealEntitlements || []).length) {
+        console.warn('[handleSave] Filtered out invalid mealEntitlements:', mealEntitlements);
+      }
+      if (filteredKitItemEntitlements.length !== (kitItemEntitlements || []).length) {
+        console.warn('[handleSave] Filtered out invalid kitItemEntitlements:', kitItemEntitlements);
+      }
+      if (filteredCertificateEntitlements.length !== (certificateEntitlements || []).length) {
+        console.warn('[handleSave] Filtered out invalid certificateEntitlements:', certificateEntitlements);
+      }
+
       const result = await categoryService.updateCategoryPermissions(category._id, null, {
         permissions: permissions,
-        mealEntitlements: mealEntitlements,
-        kitItemEntitlements: kitItemEntitlements,
-        certificateEntitlements: certificateEntitlements
+        mealEntitlements: filteredMealEntitlements,
+        kitItemEntitlements: filteredKitItemEntitlements,
+        certificateEntitlements: filteredCertificateEntitlements
       });
       setSaving(false);
       setSuccess('Category permissions updated successfully');
@@ -703,7 +732,7 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
                     {day !== 'unspecified' ? formatDate(day) : 'Other Meals (No Date)'}
                   </div>
                   <div className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                       {/* Sort meals by start time within each day */}
                       {foodItemsByDay[day]
                         .sort((a, b) => {
@@ -740,7 +769,7 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
               ))
             ) : (
               // Simple list if no day information is available
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {foodItems.map((item) => (
                   <div key={item._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
                     <div className="font-semibold text-base mb-1">
@@ -786,7 +815,7 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
         )}
         
         {!loadingKit && kitItems.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {kitItems.map((item) => (
               <div key={item._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
                 <div className="font-semibold text-base mb-1">
@@ -832,7 +861,7 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
         )}
         
         {!loadingCertificate && certificateTypes.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {certificateTypes.map((type) => (
               <div key={type._id || String(Math.random())} className="border rounded-md p-6 bg-white shadow-sm mb-2">
                 <div className="font-semibold text-base mb-1">
@@ -1095,7 +1124,9 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
       isOpen={isOpen}
       onClose={onClose}
       title={`Configure Resources: ${category?.name || 'Category'}`}
-      className="max-w-[98vw] w-full md:w-[1200px] lg:w-[1400px] mx-auto"
+      size="full"
+      fullWidth={true}
+      className="max-w-[98vw] w-full mx-auto"
       contentClassName="p-0 overflow-visible"
       overlayClassName="overflow-visible"
     >

@@ -11,6 +11,7 @@ import badgeTemplateService from '../../services/badgeTemplateService';
 import eventService from '../../services/eventService';
 import defaultBadgeTemplate from '../../components/badges/DefaultBadgeTemplate';
 import './BadgeDesigner.css';
+import { nanoid } from 'nanoid';
 
 /**
  * Badge Designer Component
@@ -63,7 +64,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
     lastName: 'Doe',
     organization: 'Acme Corporation',
     registrationId: 'REG-12345',
-    category: 'Attendee',
+    category: { name: 'Attendee', color: '#3B82F6' },
     country: 'United States',
     email: 'john.doe@example.com'
   });
@@ -184,26 +185,64 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
     }
   };
   
+  // --- Validation function ---
+  const VALID_TYPES = ['text', 'image', 'qrCode', 'shape', 'category'];
+  const VALID_FIELD_TYPES = ['name', 'organization', 'registrationId', 'category', 'country', 'custom', 'qrCode', 'image', 'shape'];
+  function validateTemplate(template) {
+    const ids = new Set();
+    for (const el of template.elements) {
+      if (!el.id || !el.type || !el.fieldType || !el.position) {
+        toast.error('All elements must have id, type, fieldType, and position.');
+        return false;
+      }
+      if (!VALID_TYPES.includes(el.type)) {
+        toast.error(`Element type '${el.type}' is not valid.`);
+        return false;
+      }
+      if (!VALID_FIELD_TYPES.includes(el.fieldType)) {
+        toast.error(`Element fieldType '${el.fieldType}' is not valid.`);
+        return false;
+      }
+      if (ids.has(el.id)) {
+        toast.error('Duplicate element IDs found.');
+        return false;
+      }
+      ids.add(el.id);
+    }
+    // Overlap detection (simple bounding box check)
+    for (let i = 0; i < template.elements.length; i++) {
+      const a = template.elements[i];
+      if (!a.size) continue;
+      for (let j = i + 1; j < template.elements.length; j++) {
+        const b = template.elements[j];
+        if (!b.size) continue;
+        if (
+          a.position.x < b.position.x + b.size.width &&
+          a.position.x + a.size.width > b.position.x &&
+          a.position.y < b.position.y + b.size.height &&
+          a.position.y + a.size.height > b.position.y
+        ) {
+          toast.warn('Some elements overlap. Please adjust their positions.');
+          // Not a hard error, just a warning
+        }
+      }
+    }
+    return true;
+  }
+  
   // Save template to database
   const handleSaveTemplate = async () => {
+    if (!validateTemplate(template)) return;
     setSaving(true);
     try {
       let response;
-      
       if (templateId) {
-        // Update existing template
-        console.log('[BadgeDesigner] Updating template with ID:', templateId, 'Data:', template);
         response = await badgeTemplateService.updateTemplate(templateId, template);
       } else {
-        // Create new template
-        console.log('[BadgeDesigner] Creating new template with Data:', template);
         response = await badgeTemplateService.createTemplate(template);
       }
-      
       if (response.success) {
         toast.success('Template saved successfully');
-        
-        // If new template was created, redirect to the template's edit page
         if (!templateId && response.data._id) {
           navigate(`/events/${eventId}/badge-designer/${response.data._id}`);
         }
@@ -247,33 +286,27 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
   // DRAG AND DROP HANDLERS - REORDERED DEFINITIONS
 
   const stableMouseMoveHandler = useCallback((event) => {
-    console.log('[MouseMoveAttempt] Entered stable handler. isDragging:', isDraggingRef.current, 'elementBeingDragged:', !!elementBeingDraggedRef.current);
     if (!isDraggingRef.current || !elementBeingDraggedRef.current) {
       return;
     }
     event.preventDefault();
-
     const { mouseX: initialMouseX, mouseY: initialMouseY, 
             elementX: initialElementX, elementY: initialElementY } = initialDragPositionRef.current;
-    
     const currentMouseX = event.clientX;
     const currentMouseY = event.clientY;
-
     const deltaX = currentMouseX - initialMouseX;
     const deltaY = currentMouseY - initialMouseY;
-
-    const newX = initialElementX + (deltaX / scale);
-    const newY = initialElementY + (deltaY / scale);
-    
-    console.log(
-      `[Drag] Mouse: ${currentMouseX},${currentMouseY} | ` +
-      `InitialMouse: ${initialMouseX},${initialMouseY} | ` +
-      `InitialElement: ${initialElementX},${initialElementY} | ` +
-      `Delta: ${deltaX},${deltaY} | ScaledDelta: ${(deltaX/scale).toFixed(2)},${(deltaY/scale).toFixed(2)} | ` +
-      `NewPos: ${newX.toFixed(2)},${newY.toFixed(2)}`
-    );
-    
-    const draggedId = elementBeingDraggedRef.current.id;
+    let newX = initialElementX + (deltaX / scale);
+    let newY = initialElementY + (deltaY / scale);
+    // Prevent out of bounds
+    const badgeWidth = (template.size.width || 0) * (template.unit === 'in' ? 100 : template.unit === 'cm' ? 39.37 : template.unit === 'mm' ? 3.937 : 1);
+    const badgeHeight = (template.size.height || 0) * (template.unit === 'in' ? 100 : template.unit === 'cm' ? 39.37 : template.unit === 'mm' ? 3.937 : 1);
+    const draggedEl = elementBeingDraggedRef.current;
+    const elWidth = draggedEl.size?.width || 0;
+    const elHeight = draggedEl.size?.height || 0;
+    newX = Math.max(0, Math.min(newX, badgeWidth - elWidth));
+    newY = Math.max(0, Math.min(newY, badgeHeight - elHeight));
+    const draggedId = draggedEl.id;
     setTemplate(prevTemplate => {
       return {
         ...prevTemplate,
@@ -282,7 +315,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
         )
       };
     });
-  }, [scale, setTemplate]);
+  }, [scale, setTemplate, template.size, template.unit]);
 
   const stableMouseUpHandler = useCallback(() => {
     console.log('[MouseUp] Fired stable handler. Dragging was:', isDraggingRef.current, 'El:', !!elementBeingDraggedRef.current);
@@ -328,7 +361,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
 
   // ELEMENT CREATION LOGIC (Moved and adapted from BadgeDesignerPart2)
   const handleAddElement = useCallback((type) => {
-    const id = Date.now().toString();
+    const id = nanoid();
     let newElementBase = {
       id,
       type,
@@ -336,7 +369,6 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
       zIndex: (template.elements?.length || 0) + 1,
     };
     let specificProps = {};
-
     switch (type) {
       case 'text':
         specificProps = {
@@ -372,56 +404,95 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
         break;
       case 'category':
         specificProps = {
-            fieldType: 'categoryName',
-            content: '',
-            size: { width: 120, height: 30 },
-            style: { fontSize: 14, fontFamily: 'Arial', fontWeight: 'normal', color: '#FFFFFF', backgroundColor: '#3B82F6', padding: 5, borderRadius: 16, textAlign: 'center' },
+          fieldType: 'category',
+          content: '',
+          size: { width: 120, height: 30 },
+          style: { fontSize: 14, fontFamily: 'Arial', fontWeight: 'normal', color: '#FFFFFF', backgroundColor: '#3B82F6', padding: 5, borderRadius: 16, textAlign: 'center' },
         };
         break;
       default:
         console.warn('Unknown element type:', type);
         return;
     }
-
     const newElement = { ...newElementBase, ...specificProps };
-    
+    // Prevent overlap: check if new element overlaps any existing
+    const overlaps = template.elements.some(el => {
+      if (!el.size) return false;
+      return (
+        newElement.position.x < el.position.x + el.size.width &&
+        newElement.position.x + newElement.size.width > el.position.x &&
+        newElement.position.y < el.position.y + el.size.height &&
+        newElement.position.y + newElement.size.height > el.position.y
+      );
+    });
+    if (overlaps) {
+      toast.warn('New element overlaps an existing element. Please move it after adding.');
+    }
     setTemplate(prevTemplate => {
       const updatedElements = [...(prevTemplate.elements || []), newElement];
       const nextTemplateState = { ...prevTemplate, elements: updatedElements };
       stableAddToHistory(nextTemplateState);
+      // Select the new element from the updated elements
+      setSelectedElement(updatedElements.find(el => el.id === id));
       return nextTemplateState;
     });
-    setSelectedElement(newElement);
     console.log("Added element:", newElement, "Current elements:", template.elements); 
   }, [template.elements, stableAddToHistory, setSelectedElement, setTemplate]);
 
   const handleUpdateElement = useCallback((elementId, updates) => {
+    // Input validation for size and style
+    if (updates.size) {
+      if (updates.size.width !== undefined && updates.size.width <= 0) {
+        toast.error('Width must be positive.');
+        return;
+      }
+      if (updates.size.height !== undefined && updates.size.height <= 0) {
+        toast.error('Height must be positive.');
+        return;
+      }
+    }
+    if (updates.style) {
+      if (updates.style.fontSize !== undefined && updates.style.fontSize <= 0) {
+        toast.error('Font size must be positive.');
+        return;
+      }
+      if (updates.style.borderWidth !== undefined && updates.style.borderWidth < 0) {
+        toast.error('Border width cannot be negative.');
+        return;
+      }
+      if (updates.style.borderRadius !== undefined && updates.style.borderRadius < 0) {
+        toast.error('Border radius cannot be negative.');
+        return;
+      }
+      if (updates.style.opacity !== undefined && (updates.style.opacity < 0 || updates.style.opacity > 1)) {
+        toast.error('Opacity must be between 0 and 1.');
+        return;
+      }
+      if (updates.style.padding !== undefined && updates.style.padding < 0) {
+        toast.error('Padding cannot be negative.');
+        return;
+      }
+    }
     setTemplate(prevTemplate => {
       const updatedElements = prevTemplate.elements.map(el => 
         el.id === elementId ? { ...el, ...updates, style: {...el.style, ...updates.style}, size: {...el.size, ...updates.size} } : el
       );
       const newTemplateState = { ...prevTemplate, elements: updatedElements };
       stableAddToHistory(newTemplateState);
+      setSelectedElement(updatedElements.find(el => el.id === elementId));
       return newTemplateState;
     });
-    // If the selected element is being updated, ensure its state is also refreshed
-    // This might be an issue if setSelectedElement is called with a stale version after an update.
-    // Consider updating selectedElement state directly here IF NEEDED, but often re-render handles it.
-    setSelectedElement(prevSelected => prevSelected && prevSelected.id === elementId 
-      ? { ...prevSelected, ...updates, style: {...prevSelected.style, ...updates.style}, size: {...prevSelected.size, ...updates.size} } 
-      : prevSelected
-    );
-
   }, [setTemplate, stableAddToHistory, setSelectedElement]);
 
   const handleDeleteElement = useCallback((elementId) => {
+    if (!window.confirm('Are you sure you want to delete this element?')) return;
     setTemplate(prevTemplate => {
       const updatedElements = prevTemplate.elements.filter(el => el.id !== elementId);
       const newTemplateState = { ...prevTemplate, elements: updatedElements };
       stableAddToHistory(newTemplateState);
       return newTemplateState;
     });
-    setSelectedElement(null); // Clear selection as the element is gone
+    setSelectedElement(prev => (prev && prev.id === elementId ? null : prev));
   }, [setTemplate, stableAddToHistory, setSelectedElement]);
 
   // Add default template elements
@@ -446,10 +517,21 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
     toast.success('Default template elements added');
   };
 
+  // Sync selectedElement with latest template.elements
+  useEffect(() => {
+    if (!selectedElement) return;
+    const latest = template.elements.find(el => el.id === selectedElement.id);
+    if (!latest) {
+      setSelectedElement(null);
+    } else if (latest !== selectedElement) {
+      setSelectedElement(latest);
+    }
+  }, [template.elements]);
+
   if (loading) return <Container className="py-5 text-center"><Spinner animation="border" /> Loading Designer...</Container>;
 
   return (
-    <div className="badge-designer-container bg-light">
+    <div className="badge-designer-container bg-light print-badge-designer">
       {/* Top Bar */}
       <header className="bg-white shadow-sm p-3 d-flex justify-content-between align-items-center">
         <Button variant="outline-secondary" size="sm" onClick={() => navigate(`/events/${eventId}/settings/badges`)}>
@@ -585,6 +667,9 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
               ref={canvasWrapperRef}
               className="badge-preview-canvas-body"
               style={{ position: 'relative', overflow: 'hidden' }}
+              onClick={e => {
+                if (e.target === e.currentTarget) setSelectedElement(null);
+              }}
             >
               {template.elements && template.elements.length === 0 && (
                 <div className="empty-badge-placeholder">
@@ -595,7 +680,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
               )}
                 <BadgeTemplate
                 registrationData={sampleRegistration}
-                badgeSettings={template}
+                badgeSettings={{ ...template, elements: [...(template.elements || [])].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1)) }}
                   previewMode={true}
                 scale={scale}
                 className="badge-visual-preview shadow-lg"
@@ -639,7 +724,11 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
                 </Form.Group>
                 <Form.Group className="mb-2">
                   <Form.Label className="small">Category</Form.Label>
-                  <Form.Control size="sm" type="text" value={sampleRegistration.category} onChange={(e) => setSampleRegistration(s => ({...s, category: e.target.value}))} />
+                  <Form.Control size="sm" type="text" value={sampleRegistration.category.name} onChange={(e) => setSampleRegistration(s => ({...s, category: { ...s.category, name: e.target.value } }))} />
+                </Form.Group>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small">Category Color</Form.Label>
+                  <Form.Control size="sm" type="color" value={sampleRegistration.category.color} onChange={(e) => setSampleRegistration(s => ({...s, category: { ...s.category, color: e.target.value } }))} />
                 </Form.Group>
                 <Form.Group className="mb-2">
                   <Form.Label className="small">Registration ID</Form.Label>

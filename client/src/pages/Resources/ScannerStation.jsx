@@ -378,15 +378,32 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       setScanResult({ success: false, message: "Event ID or resource is missing", details: "Please check your configuration" });
       return;
     }
-    console.log(`Processing QR Code: ${qrData} for resource ${selectedResource} in event ${eventId}`);
+    console.log(`[ScannerStation] Processing QR Code: ${qrData} for resource ${selectedResource} in event ${eventId}`);
     setScanResult({ processing: true });
     try {
       const resourceDisplay = getResourceTypeDisplay();
       const resourceLower = resourceDisplay ? resourceDisplay.toLowerCase() : 'resource';
-      const selectedOptionObj = resourceOptions.find(opt => opt._id === selectedResource);
-      const resourceInfo = { type: selectedResourceType, selectedOption: selectedOptionObj, eventId, resourceOptionId: selectedResource, selectedResource };
+      let resourceOptionIdToSend = selectedResource;
+      let selectedOptionObj = resourceOptions.find(opt => opt._id === selectedResource);
+      // --- Mapping layer for meals: convert string key to ObjectId ---
+      if (selectedResourceType === 'food') {
+        // If selectedResource is a string like '0_Breakfast', map to ObjectId using resourceOptions
+        if (selectedOptionObj && selectedOptionObj.originalMeal && selectedOptionObj.originalMeal._id) {
+          resourceOptionIdToSend = selectedOptionObj.originalMeal._id;
+          console.log(`[ScannerStation] Mapped meal string key '${selectedResource}' to ObjectId: ${resourceOptionIdToSend}`);
+        } else {
+          console.warn(`[ScannerStation] Could not map meal string key '${selectedResource}' to ObjectId. Using as is.`);
+        }
+      }
+      const resourceInfo = { type: selectedResourceType, selectedOption: selectedOptionObj, eventId, resourceOptionId: resourceOptionIdToSend, selectedResource };
       const cleanQrCode = qrData.toString().trim();
-      const validationResponse = await resourceService.validateScan(eventId, selectedResourceType, selectedResource, cleanQrCode);
+      console.log('[ScannerStation] Sending scan validation request:', {
+        eventId,
+        resourceType: selectedResourceType,
+        resourceOptionId: resourceOptionIdToSend,
+        qrCode: cleanQrCode
+      });
+      const validationResponse = await resourceService.validateScan(eventId, selectedResourceType, resourceOptionIdToSend, cleanQrCode);
       if (!validationResponse || !validationResponse.success) {
         // If already used error for certificatePrinting, fetch abstracts and show abstract modal instead of reprint modal
         if (

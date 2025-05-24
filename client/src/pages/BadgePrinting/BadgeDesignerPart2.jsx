@@ -21,7 +21,7 @@ const BadgeDesignerPart2 = ({
   console.log('BadgeDesignerPart2 received eventId:', eventId);
   // Elements tab - add new element
   const handleAddElement = (type) => {
-    const id = nanoid(8);
+    const id = nanoid();
     let newElement = {
       id,
       type,
@@ -87,6 +87,20 @@ const BadgeDesignerPart2 = ({
         
       default:
         break;
+    }
+    
+    // Overlap detection
+    const overlaps = template.elements.some(el => {
+      if (!el.size || !newElement.size) return false;
+      return (
+        newElement.position.x < el.position.x + (el.size.width || 0) &&
+        newElement.position.x + (newElement.size.width || 0) > el.position.x &&
+        newElement.position.y < el.position.y + (el.size.height || 0) &&
+        newElement.position.y + (newElement.size.height || 0) > el.position.y
+      );
+    });
+    if (overlaps) {
+      window.alert('New element overlaps an existing element. Please move it after adding.');
     }
     
     updateTemplate({
