@@ -330,7 +330,7 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
   // Get external registration link
   const getExternalLink = () => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/register/${id}`;
+    return `${baseUrl}/portal/register/${id}`;
   };
 
   return (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Switch, Button, Textarea } from '../../../components/common';
-import BadgeTemplate from '../../../components/common/BadgeTemplate';
+import BadgeTemplate from '../../../components/badges/BadgeTemplate';
+import defaultBadgeTemplate from '../../../components/badges/DefaultBadgeTemplate';
 import { useNavigate, useParams } from 'react-router-dom';
 import badgeTemplateService from '../../../services/badgeTemplateService';
 import { toast } from 'react-toastify';
@@ -63,15 +64,25 @@ const BadgesTab = ({ event, setEvent, setFormChanged }) => {
         if (response.success && Array.isArray(response.data)) {
           console.log('[BadgesTab] Templates fetched successfully:', response.data);
           setAvailableTemplates(response.data);
+
+          // Find default template
+          const defaultTemplate = response.data.find(t => t.isDefault);
+          if (defaultTemplate) {
+            setSelectedTemplateValue(defaultTemplate._id);
+          } else {
+            setSelectedTemplateValue('standard');
+          }
         } else {
           console.error('[BadgesTab] Failed to fetch templates or response format incorrect. Expected response.data to be an array. Received:', response);
           toast.error(response.message || 'Failed to load custom badge templates.');
           setAvailableTemplates([]);
+          setSelectedTemplateValue('standard');
         }
       } catch (error) {
         console.error('[BadgesTab] Error fetching badge templates:', error);
         toast.error('An error occurred while fetching templates.');
         setAvailableTemplates([]);
+        setSelectedTemplateValue('standard');
       } finally {
         setLoadingTemplates(false);
       }
@@ -409,9 +420,13 @@ const BadgesTab = ({ event, setEvent, setFormChanged }) => {
           </div>
           
           <div className="flex justify-center p-4 bg-gray-50 rounded-lg">
-            <BadgeTemplate 
+            <BadgeTemplate
+              template={
+                selectedTemplateValue !== 'standard' && selectedTemplateValue !== 'divider'
+                  ? (availableTemplates.find(t => t._id === selectedTemplateValue) || defaultBadgeTemplate)
+                  : defaultBadgeTemplate
+              }
               registrationData={sampleRegistration}
-              badgeSettings={badgeSettings}
               previewMode={true}
               scale={1}
               className="scale-100"

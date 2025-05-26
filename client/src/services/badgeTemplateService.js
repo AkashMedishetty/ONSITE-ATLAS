@@ -113,22 +113,11 @@ const badgeTemplateService = {
    * @returns {Promise} - API response
    */
   setDefaultTemplate: async (eventId, templateId) => {
-    try {
-      if (!eventId || !templateId) {
-        throw new Error('Event ID and Template ID are required to set default template.');
-      }
-      const response = await api.put(`/events/${eventId}/badges/${templateId}/default`);
-      return {
-        success: true,
-        data: response.data
-      };
-    } catch (error) {
-      console.error(`Error setting template ${templateId} as default for event ${eventId}:`, error);
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Failed to set default template'
-      };
+    if (!eventId || !templateId) {
+      throw new Error('Event ID and Template ID are required to set default template.');
     }
+    const response = await api.post(`/badge-templates/${eventId}/${templateId}/set-default`);
+    return response.data;
   },
 
   /**

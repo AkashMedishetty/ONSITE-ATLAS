@@ -53,6 +53,10 @@ const badgeTemplateSchema = new mongoose.Schema({
   logo: {
     type: String
   },
+  isDefault: {
+    type: Boolean,
+    default: false
+  },
   elements: [{
     type: {
       type: String,

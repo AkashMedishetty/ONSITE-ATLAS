@@ -47,8 +47,19 @@ const getRegistrations = asyncHandler(async (req, res) => {
     }, 400);
   }
   
-  if (categoryId) filter.category = categoryId;
+  // Support both 'category' and 'categoryId' as query params
+  const categoryFilter = req.query.categoryId || req.query.category;
+  if (categoryFilter) filter.category = categoryFilter;
+  
   if (status) filter.status = status;
+  
+  // Add support for badgePrinted and registrationType filters
+  if (req.query.badgePrinted !== undefined && req.query.badgePrinted !== '') {
+    filter.badgePrinted = req.query.badgePrinted === 'true';
+  }
+  if (req.query.registrationType) {
+    filter.registrationType = req.query.registrationType;
+  }
   
   if (search) {
     filter.$or = [

@@ -81,6 +81,15 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
   const canvasWrapperRef = useRef(null);
   const scale = 1.5;
   
+  // Add state for activeAccordionKeys
+  const [activeAccordionKeys, setActiveAccordionKeys] = useState([]);
+  
+  // Drag state
+  const dragInfoRef = useRef(null);
+
+  // Add at the top-level of the component, after other state declarations
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
+
   // Load template or create new one on mount
   useEffect(() => {
     const loadData = async () => {
@@ -517,16 +526,149 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
     toast.success('Default template elements added');
   };
 
-  // Sync selectedElement with latest template.elements
+  // Guarantee selectedElement is always in sync with template.elements
   useEffect(() => {
     if (!selectedElement) return;
+    // Only update if the element is missing or has changed reference
     const latest = template.elements.find(el => el.id === selectedElement.id);
     if (!latest) {
-      setSelectedElement(null);
+      if (template.elements.length > 0) {
+        setSelectedElement(template.elements[0]);
+      } else {
+        setSelectedElement(null);
+      }
     } else if (latest !== selectedElement) {
       setSelectedElement(latest);
     }
   }, [template.elements]);
+
+  // Add a simple preview for elements-based templates
+  const renderElementsPreview = () => {
+    if (!template.elements || template.elements.length === 0) {
+      return (
+        <div className="empty-badge-placeholder">
+          <span>Badge is blank.<br/>Add elements from the left panel.</span>
+        </div>
+      );
+    }
+    // Use badge size and unit for scaling
+    const DPIN = 100;
+    let badgeWidthPx, badgeHeightPx;
+    if (template.unit === 'in') {
+      badgeWidthPx = (template.size.width || 0) * DPIN;
+      badgeHeightPx = (template.size.height || 0) * DPIN;
+    } else if (template.unit === 'cm') {
+      badgeWidthPx = (template.size.width || 0) * (DPIN / 2.54);
+      badgeHeightPx = (template.size.height || 0) * (DPIN / 2.54);
+    } else if (template.unit === 'mm') {
+      badgeWidthPx = (template.size.width || 0) * (DPIN / 25.4);
+      badgeHeightPx = (template.size.height || 0) * (DPIN / 25.4);
+    } else {
+      badgeWidthPx = (template.size.width || 0);
+      badgeHeightPx = (template.size.height || 0);
+    }
+    const scalePx = scale;
+    const style = {
+      width: `${badgeWidthPx * scalePx}px`,
+      height: `${badgeHeightPx * scalePx}px`,
+      background: template.background || '#fff',
+      position: 'relative',
+      overflow: 'hidden',
+      border: '1px dashed #ccc',
+      margin: '0 auto',
+    };
+    return (
+      <div style={style} className="badge-template-elements-preview">
+        {template.elements.map(el => {
+          const elStyle = {
+            position: 'absolute',
+            left: (el.position?.x || 0) * scalePx,
+            top: (el.position?.y || 0) * scalePx,
+            width: (el.size?.width || 100) * scalePx,
+            height: (el.size?.height || 30) * scalePx,
+            fontSize: (el.style?.fontSize || 16) * scalePx,
+            color: el.style?.color || '#000',
+            background: el.style?.backgroundColor || 'transparent',
+            borderRadius: el.style?.borderRadius || 0,
+            border: '1px solid #eee',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            zIndex: el.zIndex || 1,
+          };
+          // Remove key from mouseDownProps
+          const mouseDownProps = {
+            onMouseDown: (e) => handleElementMouseDown(el, e),
+            style: elStyle,
+            className: selectedElement && selectedElement.id === el.id ? 'badge-element selected' : 'badge-element',
+          };
+          if (el.type === 'text') {
+            return <div key={el.id} {...mouseDownProps}>{el.content || 'Text'}</div>;
+          }
+          if (el.type === 'category') {
+            return <div key={el.id} {...mouseDownProps}>{sampleRegistration.category?.name || 'Category'}</div>;
+          }
+          if (el.type === 'qrCode') {
+            return <div key={el.id} {...mouseDownProps}><span>QR</span></div>; // TODO: Render QRCode
+          }
+          if (el.type === 'image') {
+            return <img key={el.id} {...mouseDownProps} src={el.content} alt="img" style={{...elStyle, objectFit: 'contain'}} />;
+          }
+          if (el.type === 'shape') {
+            return <div key={el.id} {...mouseDownProps} />;
+          }
+          return null;
+        })}
+      </div>
+    );
+  };
+
+  const handleElementMouseDown = (el, e) => {
+    e.stopPropagation();
+    setSelectedElement(el);
+    setActiveAccordionKeys([el.type + '-style']);
+    dragInfoRef.current = {
+      id: el.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: el.position?.x || 0,
+      origY: el.position?.y || 0
+    };
+    document.addEventListener('mousemove', handleElementMouseMove);
+    document.addEventListener('mouseup', handleElementMouseUp);
+  };
+
+  const handleElementMouseMove = (e) => {
+    if (!dragInfoRef.current) return;
+    const { id, startX, startY, origX, origY } = dragInfoRef.current;
+    const dx = (e.clientX - startX) / scale;
+    const dy = (e.clientY - startY) / scale;
+    setTemplate(prevTemplate => {
+      const updatedElements = prevTemplate.elements.map(el =>
+        el.id === id ? { ...el, position: { x: Math.max(0, origX + dx), y: Math.max(0, origY + dy) } } : el
+      );
+      return { ...prevTemplate, elements: updatedElements };
+    });
+  };
+
+  const handleElementMouseUp = () => {
+    dragInfoRef.current = null;
+    document.removeEventListener('mousemove', handleElementMouseMove);
+    document.removeEventListener('mouseup', handleElementMouseUp);
+  };
+
+  // Add this function inside the component
+  const handleSelectTemplateFromLibrary = (newTemplate) => {
+    setTemplate(newTemplate);
+    if (newTemplate.elements && newTemplate.elements.length > 0) {
+      setSelectedElement(newTemplate.elements[0]);
+    } else {
+      setSelectedElement(null);
+    }
+    setShowTemplateLibrary(false);
+    stableAddToHistory(newTemplate);
+  };
 
   if (loading) return <Container className="py-5 text-center"><Spinner animation="border" /> Loading Designer...</Container>;
 
@@ -536,17 +678,20 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
       <header className="bg-white shadow-sm p-3 d-flex justify-content-between align-items-center">
         <Button variant="outline-secondary" size="sm" onClick={() => navigate(`/events/${eventId}/settings/badges`)}>
           <FaArrowLeft className="me-2" /> Back to Settings
-            </Button>
+        </Button>
         <h4 className="m-0">Badge Designer {template.name ? `- ${template.name}` : ''}</h4>
         <div className="d-flex align-items-center">
           <Button variant="outline-secondary" size="sm" className="me-2" onClick={handleUndo} disabled={historyIndex <= 0}>
             <FaUndo className="me-1" /> Undo
-              </Button>
+          </Button>
           <Button variant="outline-secondary" size="sm" className="me-2" onClick={handleRedo} disabled={historyIndex >= history.length - 1}>
             <FaRedo className="me-1" /> Redo
           </Button>
           <Button variant="primary" size="sm" onClick={handleSaveTemplate} disabled={saving}>
-                <FaSave className="me-2" /> {saving ? 'Saving...' : 'Save Template'}
+            <FaSave className="me-2" /> {saving ? 'Saving...' : 'Save Template'}
+          </Button>
+          <Button variant="outline-info" size="sm" className="me-2" onClick={() => setShowTemplateLibrary(true)}>
+            <FaLayerGroup className="me-1" /> Template Library
           </Button>
         </div>
       </header>
@@ -671,27 +816,7 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
                 if (e.target === e.currentTarget) setSelectedElement(null);
               }}
             >
-              {template.elements && template.elements.length === 0 && (
-                <div className="empty-badge-placeholder">
-                  <FaRuler size={36} className="mb-2" />
-                  <p>Badge is blank.</p>
-                  <p className="small">Add elements from the left panel.</p>
-                </div>
-              )}
-                <BadgeTemplate
-                registrationData={sampleRegistration}
-                badgeSettings={{ ...template, elements: [...(template.elements || [])].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1)) }}
-                  previewMode={true}
-                scale={scale}
-                className="badge-visual-preview shadow-lg"
-                selectedElementId={selectedElement?.id}
-                onElementSelect={(element) => {
-                  setSelectedElement(element);
-                  console.log("Selected element on canvas:", element);
-                }}
-                isInteractive={true}
-                onElementMouseDown={handleElementMouseDownOnCanvas}
-              />
+              {renderElementsPreview()}
             </Card.Body>
           </Card>
         </main>
@@ -704,6 +829,8 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
             onUpdateElement={handleUpdateElement} 
             onDeleteElement={handleDeleteElement}
             eventId={eventId}
+            activeAccordionKeys={activeAccordionKeys}
+            setActiveAccordionKeys={setActiveAccordionKeys}
           />
         
           <Card className="designer-panel-card mb-3">
@@ -754,6 +881,22 @@ const BadgeDesigner = ({ eventId: eventIdProp }) => {
           </Card>
         </aside>
       </div>
+
+      {/* Just before the main return, add this modal/panel for the template library: */}
+      {showTemplateLibrary && (
+        <div className="template-library-modal-overlay">
+          <div className="template-library-modal">
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h5 className="m-0">Select a Badge Template</h5>
+              <Button size="sm" variant="outline-secondary" onClick={() => setShowTemplateLibrary(false)}>Close</Button>
+            </div>
+            <BadgeTemplateList 
+              eventId={eventId}
+              onSelectTemplate={handleSelectTemplateFromLibrary}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

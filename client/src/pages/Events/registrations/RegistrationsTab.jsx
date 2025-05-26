@@ -116,7 +116,7 @@ const RegistrationsTab = ({ eventId }) => {
   const [isSendingCertificate, setIsSendingCertificate] = useState(false);
   const [isVoiding, setIsVoiding] = useState(false);
   
-  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
 
   // --- Diagnostic State --- 
@@ -132,6 +132,8 @@ const RegistrationsTab = ({ eventId }) => {
 
   const [isExporting, setIsExporting] = useState(false); // State for export loading
 
+  const [allRegistrations, setAllRegistrations] = useState([]);
+
   const fetchRegistrations = useCallback(async (page = 1, limit = 10, currentSearch = searchTerm, currentCategory = categoryFilter, currentStatus = statusFilter) => {
     setLoading(true);
     setError(null);
@@ -140,9 +142,9 @@ const RegistrationsTab = ({ eventId }) => {
       const filters = {
         page: page,
         limit: limit,
-        ...(currentSearch && { search: currentSearch }), 
-        ...(currentCategory && { category: currentCategory }), 
-        ...(currentStatus && { status: currentStatus }), 
+        ...(currentSearch && { search: currentSearch }),
+        ...(currentCategory && currentCategory !== '' && { category: currentCategory }),
+        ...(currentStatus && { status: currentStatus }),
       };
       const response = await registrationService.getRegistrations(eventId, filters);
       console.log('API Response (Axios):', response);
@@ -152,8 +154,17 @@ const RegistrationsTab = ({ eventId }) => {
       console.log('Checking backendData structure:', backendData); 
 
       if (backendData && backendData.success) { 
-        const fetchedData = Array.isArray(backendData.data) ? backendData.data : [];
-        setRegistrations(fetchedData);
+        let fetchedData = Array.isArray(backendData.data) ? backendData.data : [];
+        setAllRegistrations(fetchedData);
+        // Frontend fallback filter for category (for display only)
+        let filtered = fetchedData;
+        if (categoryFilter && categoryFilter !== '') {
+          filtered = fetchedData.filter(reg =>
+            (reg.category && reg.category._id === categoryFilter) ||
+            reg.category === categoryFilter
+          );
+        }
+        setRegistrations(filtered);
 
         const apiPagination = backendData.pagination || {}; 
         
@@ -340,28 +351,32 @@ const RegistrationsTab = ({ eventId }) => {
   };
 
   const fetchBadgeSettings = async (eventId) => {
+    // Try to fetch the default designer template for this event
+    try {
+      const templatesResponse = await import('../../../services/badgeTemplateService').then(m => m.default.getTemplates(eventId));
+      if (templatesResponse.success && Array.isArray(templatesResponse.data)) {
+        const defaultTemplate = templatesResponse.data.find(t => t.isDefault);
+        if (defaultTemplate) {
+          console.log('[fetchBadgeSettings] Using default designer template:', defaultTemplate);
+          return defaultTemplate; // Use designer template with elements array
+        }
+      }
+    } catch (err) {
+      console.error('[fetchBadgeSettings] Error fetching designer templates:', err);
+    }
+    // Fallback: use event badgeSettings (legacy)
     try {
       const response = await eventService.getBadgeSettings(eventId);
-      console.log('[fetchBadgeSettings] Raw response from service:', response);
-
       const settingsWrapper = response?.data;
       const actualSettings = settingsWrapper?.data;
-
-      // Check if the extracted data looks like valid settings 
       if (actualSettings && typeof actualSettings === 'object' && actualSettings.size) {
-        console.log('[fetchBadgeSettings] Found valid settings data:', actualSettings);
+        console.log('[fetchBadgeSettings] Fallback to event badgeSettings:', actualSettings);
         return actualSettings;
-      } else {
-        // Log the actual data received if it wasn't valid settings
-        console.warn('[fetchBadgeSettings] Invalid or missing actual settings data. Expected settings object with size property, got:', actualSettings);
-        return null;
       }
-
     } catch (error) {
-      // Log the error from the catch block as well
-      console.error("Error fetching badge settings in fetchBadgeSettings catch block:", error);
-      return null;
+      console.error('[fetchBadgeSettings] Error fetching event badgeSettings:', error);
     }
+    return null;
   };
 
   const handlePrintBadgeClick = async (registration) => {
@@ -380,6 +395,7 @@ const RegistrationsTab = ({ eventId }) => {
           return; // Stop if settings failed to load
         }
         console.log('[Print Badge] Fetched badge settings successfully:', currentBadgeSettings);
+        setBadgeSettings(currentBadgeSettings);
       } catch (error) {
         message.error(`Error fetching badge settings: ${error.message}`);
         console.error('[Print Badge] Error in fetchBadgeSettings:', error);
@@ -404,31 +420,54 @@ const RegistrationsTab = ({ eventId }) => {
   };
 
   const handlePrintBadge = async () => {
-    if (!selectedRegistration || !badgeSettings) return; // Added check for badgeSettings
-    
+    if (!selectedRegistration || !badgeSettings) return;
     setIsPrinting(true);
-    
     try {
-      const badgeElement = document.getElementById('badge-preview-container');
-      if (!badgeElement) {
-        throw new Error('Badge preview element not found');
+      // Calculate badge pixel size
+      const DPIN = 100;
+      const size = badgeSettings.size || { width: 3.375, height: 5.375 };
+      const unit = badgeSettings.unit || 'in';
+      let badgeWidthPx, badgeHeightPx;
+      if (unit === 'in') {
+        badgeWidthPx = (size.width || 0) * DPIN;
+        badgeHeightPx = (size.height || 0) * DPIN;
+      } else if (unit === 'cm') {
+        badgeWidthPx = (size.width || 0) * (DPIN / 2.54);
+        badgeHeightPx = (size.height || 0) * (DPIN / 2.54);
+      } else if (unit === 'mm') {
+        badgeWidthPx = (size.width || 0) * (DPIN / 25.4);
+        badgeHeightPx = (size.height || 0) * (DPIN / 25.4);
+      } else {
+        badgeWidthPx = (size.width || 0);
+        badgeHeightPx = (size.height || 0);
       }
-      
-      const canvas = await html2canvas(badgeElement, {
-        scale: 2,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-      });
-      
+      // Create a hidden container for print (not the modal preview node)
+      const hiddenDiv = document.createElement('div');
+      hiddenDiv.style.position = 'fixed';
+      hiddenDiv.style.left = '-9999px';
+      hiddenDiv.style.top = '0';
+      hiddenDiv.style.width = `${badgeWidthPx}px`;
+      hiddenDiv.style.height = `${badgeHeightPx}px`;
+      document.body.appendChild(hiddenDiv);
+      // Render only the badge (no modal/buttons)
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(hiddenDiv);
+      root.render(
+        <BadgeTemplate
+          registrationData={normalizeRegistrationData(selectedRegistration)}
+          template={badgeSettings}
+          previewMode={false}
+          scale={1}
+        />
+      );
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const canvas = await html2canvas(hiddenDiv, { scale: 1, useCORS: true, logging: false, allowTaint: true, width: badgeWidthPx, height: badgeHeightPx });
       const dataUrl = canvas.toDataURL('image/png');
-      
+      root.unmount();
+      document.body.removeChild(hiddenDiv);
+      // Print window
       const printWindow = window.open('', '_blank');
-      if (!printWindow) { // Check if popup was blocked
-         throw new Error("Could not open print window. Please check your popup blocker settings.");
-      }
-      
-      // --- Modified HTML for auto-print and auto-close ---
+      if (!printWindow) { throw new Error("Could not open print window. Please check your popup blocker settings."); }
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -436,50 +475,25 @@ const RegistrationsTab = ({ eventId }) => {
             <title>Print Badge - ${selectedRegistration.personalInfo?.firstName || ''} ${selectedRegistration.personalInfo?.lastName || ''}</title>
             <style>
               @media print {
-                @page {
-                  size: ${badgeSettings?.size?.width || 3.375}${badgeSettings?.unit || 'in'} ${badgeSettings?.size?.height || 5.375}${badgeSettings?.unit || 'in'};
-                  margin: 0;
-                }
+                @page { size: ${size.width}${unit} ${size.height}${unit}; margin: 0; }
                 body { margin: 0; }
-                .badge-img { page-break-inside: avoid; width: 100%; height: 100%; display: block; }
-                .no-print { display: none; }
+                .badge-img { page-break-inside: avoid; width: ${size.width}${unit}; height: ${size.height}${unit}; display: block; }
               }
-              body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f0f0f0; }
-              .badge-container { 
-                 width: ${badgeSettings?.size?.width || 3.375}${badgeSettings?.unit || 'in'};
-                 height: ${badgeSettings?.size?.height || 5.375}${badgeSettings?.unit || 'in'};
-                 box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-                 background-color: white; 
-               }
-              .badge-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+              body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #fff; }
+              .badge-img { width: ${size.width}${unit}; height: ${size.height}${unit}; object-fit: contain; display: block; box-shadow: none; border: none; }
             </style>
           </head>
-          <body onload="window.print(); window.onafterprint = function(){ window.close(); };">
-            <div class="badge-container">
-              <img src="${dataUrl}" class="badge-img" alt="Badge" />
-            </div>
-            <div class="no-print" style="position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.5); color: white; padding: 5px 10px; border-radius: 3px; font-size: 12px;">
-              Printing... This window should close automatically.
-            </div>
+          <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+            <img src="${dataUrl}" class="badge-img" alt="Badge" />
           </body>
         </html>
       `);
-      // --- End Modified HTML --- 
-      
       printWindow.document.close();
-      
-      // Add activity log or update badgePrinted status if needed here
-      // e.g., registrationService.updateRegistration(eventId, selectedRegistration._id, { badgePrinted: true });
-      
-      console.log('Badge prepared for printing and should auto-close.');
     } catch (error) {
       console.error('Error printing badge:', error);
-      // Use Ant Design message for user feedback
-      message.error(`Failed to print badge: ${error.message}`); 
+      message.error(`Failed to print badge: ${error.message}`);
     } finally {
       setIsPrinting(false);
-      // Optionally close the modal after initiating print
-      // setIsPrintModalVisible(false); 
     }
   };
 
@@ -690,7 +704,7 @@ const RegistrationsTab = ({ eventId }) => {
   };
 
   const handleCategoryChange = (value) => {
-    setCategoryFilter(value);
+    setCategoryFilter(value || '');
   };
   
   const handleStatusChange = (value) => {
@@ -958,6 +972,61 @@ const RegistrationsTab = ({ eventId }) => {
     },
   ], [handlePreviewRegistration, handlePrintBadgeClick, handleEditRegistration, confirmDeleteRegistration]);
 
+  // Helper to normalize registration data for badge rendering
+  function normalizeRegistrationData(reg) {
+    if (!reg) return {};
+    const personal = reg.personalInfo || {};
+    return {
+      ...reg,
+      firstName: personal.firstName,
+      lastName: personal.lastName,
+      name: personal.name || `${personal.firstName || ''} ${personal.lastName || ''}`,
+      organization: personal.organization,
+      country: personal.country,
+      designation: personal.designation,
+      email: personal.email,
+      phone: personal.phone,
+      // Add more fields as needed
+    };
+  }
+
+  // After fetchRegistrations, if categories is empty, fallback to extracting from registrations
+  useEffect(() => {
+    if (categories.length === 0 && registrations.length > 0) {
+      const uniqueCategories = [];
+      const seen = new Set();
+      for (const reg of registrations) {
+        const cat = reg.category;
+        if (cat && cat._id && !seen.has(cat._id)) {
+          uniqueCategories.push(cat);
+          seen.add(cat._id);
+        }
+      }
+      setCategories(uniqueCategories);
+    }
+  }, [registrations]);
+
+  // Derive allCategories: combine categories from API and unique categories from registrations
+  const allCategories = useMemo(() => {
+    const apiCats = Array.isArray(categories) ? categories : [];
+    const seen = new Set(apiCats.map(cat => cat._id));
+    const cats = [...apiCats];
+    for (const reg of allRegistrations) {
+      const cat = reg.category;
+      // If category is an object and not already in the list
+      if (cat && typeof cat === 'object' && cat._id && !seen.has(cat._id)) {
+        cats.push(cat);
+        seen.add(cat._id);
+      }
+      // If category is a string (ID) and not already in the list
+      if (cat && typeof cat === 'string' && !seen.has(cat)) {
+        cats.push({ _id: cat, name: cat }); // Fallback: show ID as name
+        seen.add(cat);
+      }
+    }
+    return cats;
+  }, [categories, allRegistrations]);
+
   if (activeAction === 'new') {
     handleAddRegistration();
     return null;
@@ -1028,10 +1097,10 @@ const RegistrationsTab = ({ eventId }) => {
                 placeholder="Filter by Category"
                 allowClear
                 style={{ width: 200 }}
-                value={categoryFilter}
+                value={categoryFilter || ''}
                 onChange={handleCategoryChange}
             >
-                {categories.map(cat => (
+                {allCategories.map(cat => (
                     <Option key={cat._id} value={cat._id}>{cat.name}</Option>
                 ))}
             </AntSelect>
@@ -1248,8 +1317,8 @@ const RegistrationsTab = ({ eventId }) => {
                 return (
                   <div className="mb-4 p-4 border rounded flex justify-center bg-white">
                     <BadgeTemplate 
-                      registrationData={selectedRegistrant} 
-                      badgeSettings={badgeSettings}
+                      registrationData={normalizeRegistrationData(selectedRegistrant)}
+                      template={badgeSettings}
                       previewMode={true}
                     />
                   </div>
@@ -1383,8 +1452,8 @@ const RegistrationsTab = ({ eventId }) => {
         >
           <div id="badge-preview-container" className="mb-4 p-4 border rounded flex justify-center">
             <BadgeTemplate 
-              registrationData={selectedRegistration} 
-              badgeSettings={badgeSettings} 
+              registrationData={normalizeRegistrationData(selectedRegistration)}
+              template={badgeSettings}
             />
           </div>
           <div className="flex justify-end space-x-2">

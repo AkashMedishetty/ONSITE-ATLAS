@@ -5,7 +5,8 @@ const {
   createBadgeTemplate,
   updateBadgeTemplate,
   deleteBadgeTemplate,
-  duplicateBadgeTemplate
+  duplicateBadgeTemplate,
+  setDefaultTemplate
 } = require('../controllers/badgeTemplate.controller');
 
 const { protect } = require('../middleware/auth.middleware');
@@ -44,6 +45,9 @@ router.route('/:id')
 
 router.route('/:id/duplicate')
   .post(duplicateBadgeTemplate);
+
+// Add route for setting default badge template
+router.post('/:eventId/:templateId/set-default', setDefaultTemplate);
 
 console.log('Badge template routes have been defined in the router');
 

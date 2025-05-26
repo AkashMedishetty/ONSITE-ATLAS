@@ -249,7 +249,7 @@
     background: #fff !important;
     box-shadow: none !important;
     border: none !important;
-    color-adjust: exact;
+    
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }

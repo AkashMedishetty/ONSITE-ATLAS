@@ -75,6 +75,15 @@ const BadgeTemplate = ({
     return badgeSettings.fields[fieldName]?.enabled !== false;
   };
 
+  // PATCH: If badgeSettings.elements exists and is empty, show a blank message and STOP rendering anything else
+  if (badgeSettings && Array.isArray(badgeSettings.elements) && badgeSettings.elements.length === 0) {
+    return (
+      <div className="empty-badge-placeholder" style={{width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: '1.1em', textAlign: 'center'}}>
+        <span>Badge is blank.<br/>Add elements from the left panel.</span>
+      </div>
+    );
+  }
+
   // Print badge functionality
   const printBadge = async () => {
     if (!badgeRef.current) return;

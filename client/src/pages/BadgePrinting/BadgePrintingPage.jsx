@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { BadgeTemplate, QRCodeGenerator } from '../../components/common';
+import QRCodeGenerator from '../../components/common/QRCodeGenerator';
+import DesignerBadgeTemplate from '../../components/badges/BadgeTemplate';
+import html2canvas from 'html2canvas';
 import eventService from '../../services/eventService';
 import registrationService from '../../services/registrationService';
+import badgeTemplateService from '../../services/badgeTemplateService';
+import jsPDF from 'jspdf';
 
 const BadgePrintingPage = ({ eventId }) => {
   const [event, setEvent] = useState(null);
@@ -10,10 +14,12 @@ const BadgePrintingPage = ({ eventId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedRegistrations, setSelectedRegistrations] = useState({});
   const [templatePreview, setTemplatePreview] = useState('standard');
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [batchPrintMode, setBatchPrintMode] = useState(false);
+  const [designerTemplate, setDesignerTemplate] = useState(null);
   
   // Add pagination state, similar to RegistrationsTab
   const [pagination, setPagination] = useState({
@@ -23,53 +29,87 @@ const BadgePrintingPage = ({ eventId }) => {
     totalPages: 1,
   });
 
-  // --- Adopt fetchRegistrations from RegistrationsTab.jsx --- 
-  const fetchRegistrations = useCallback(async (page = 1, limit = 100, currentSearch = searchTerm, isSearchUpdate = false) => {
-    // Only show full loader on initial load, not during search updates
-    if (!isSearchUpdate) {
-      setLoading(true);
-    }
-    // We might want a subtle search-specific loading indicator later
-    // else { setIsSearching(true); } 
-    
+  // Filter state
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [registrationTypeFilter, setRegistrationTypeFilter] = useState('');
+  const [checkInStatusFilter, setCheckInStatusFilter] = useState('');
+  const [badgePrintedFilter, setBadgePrintedFilter] = useState('');
+
+  // Helper to get unique values for dropdowns
+  const getUniqueValues = (arr, key) => Array.from(new Set(arr.map(item => item[key]).filter(Boolean)));
+
+  // Add allCategories state
+  const [allCategories, setAllCategories] = useState([]);
+
+  // Pagination state
+  const pageSizes = [25, 50, 100, 250, 500];
+  const [isBatchPrinting, setIsBatchPrinting] = useState(false);
+  const MAX_BATCH_PRINT = 100;
+
+  // Add categories state
+  const [categories, setCategories] = useState([]);
+
+  // Add batchPrintProgress state
+  const [batchPrintProgress, setBatchPrintProgress] = useState(0);
+
+  // --- Adopt fetchRegistrations from RegistrationsTab --- 
+  const fetchRegistrations = useCallback(async (page = 1, limit = 100, currentSearch = '') => {
+    setLoading(true);
     setError(null);
-    console.log(`[BadgePrintingPage] Fetching: Page ${page}, Limit ${limit}, Search: '${currentSearch}', isSearchUpdate: ${isSearchUpdate}`);
     try {
       const filters = {
         page: page,
         limit: limit,
         ...(currentSearch && { search: currentSearch }),
-        // We don't have category/status filters on this page, so omit them
+        ...(categoryFilter && { category: categoryFilter }),
+        ...(registrationTypeFilter && { registrationType: registrationTypeFilter }),
+        ...(checkInStatusFilter && { status: checkInStatusFilter }),
+        ...(badgePrintedFilter && { badgePrinted: badgePrintedFilter }),
       };
       const response = await registrationService.getRegistrations(eventId, filters);
       const backendData = response?.data;
-
       if (backendData && backendData.success) {
         const fetchedData = Array.isArray(backendData.data) ? backendData.data : [];
-        setRegistrations(fetchedData); // Directly use backendData.data
-
+        setRegistrations(fetchedData);
+        // Extract all unique categories from the full registration list
+        const uniqueCategories = [];
+        const seen = new Set();
+        for (const reg of fetchedData) {
+          const cat = reg.category;
+          if (cat && cat._id && !seen.has(cat._id)) {
+            uniqueCategories.push(cat);
+            seen.add(cat._id);
+          }
+        }
+        setAllCategories(uniqueCategories);
+        // Warn if duplicate _id values are found
+        const idCounts = {};
+        for (const reg of fetchedData) {
+          idCounts[reg._id] = (idCounts[reg._id] || 0) + 1;
+        }
+        const dups = Object.entries(idCounts).filter(([id, count]) => count > 1);
+        if (dups.length > 0) {
+          console.warn('[BadgePrintingPage] Duplicate registration _id values detected:', dups);
+        }
         const apiPagination = backendData.pagination || {};
-        const newPaginationState = {
+        setPagination({
           currentPage: Number(apiPagination.page) || 1,
           pageSize: Number(apiPagination.limit) || limit,
           totalCount: Number(apiPagination.total) || 0,
           totalPages: Number(apiPagination.totalPages) || 1
-        };
-        setPagination(newPaginationState);
+        });
       } else {
         throw new Error(backendData?.message || response?.statusText || 'Failed to fetch registrations');
       }
     } catch (err) {
-      console.error('[BadgePrintingPage] Error fetching registrations:', err);
       setError(`Failed to fetch registrations: ${err.message || err.toString()}`);
       setRegistrations([]);
+      setAllCategories([]);
       setPagination(prev => ({ ...prev, totalCount: 0, totalPages: 1 }));
     } finally {
-      // Always turn off loading states
       setLoading(false);
-      // if (isSearchUpdate) { setIsSearching(false); }
     }
-  }, [eventId]); // Remove searchTerm from dependency array here, handle in separate useEffect
+  }, [eventId, categoryFilter, registrationTypeFilter, checkInStatusFilter, badgePrintedFilter]);
   // --- End adopted fetchRegistrations ---
 
   // --- Define handler for when a badge is printed --- 
@@ -127,40 +167,88 @@ const BadgePrintingPage = ({ eventId }) => {
         setEvent(eventResponse.data?.data || eventResponse.data);
       } catch (err) {
         console.error('[BadgePrintingPage] Error fetching event data:', err);
-        // Don't set the main error state here, maybe just log or have separate event error state
       }
     };
 
-    setLoading(true); // Set loading before fetches start
+    const fetchCategories = async () => {
+      try {
+        const catResponse = await eventService.getEventCategories(eventId);
+        if (catResponse.success && Array.isArray(catResponse.data) && catResponse.data.length > 0) {
+          setCategories(catResponse.data);
+        } else {
+          // fallback: extract from registrations after fetch
+          setCategories([]);
+        }
+      } catch (err) {
+        setCategories([]);
+      }
+    };
+
+    const fetchDesignerTemplate = async () => {
+      try {
+        const response = await badgeTemplateService.getTemplates(eventId);
+        if (response.success && Array.isArray(response.data)) {
+          const defaultTemplate = response.data.find(t => t.isDefault);
+          if (defaultTemplate) {
+            setDesignerTemplate(defaultTemplate);
+            setTemplatePreview(defaultTemplate);
+            console.log('[BadgePrintingPage] Using default designer template:', defaultTemplate);
+          } else {
+            setDesignerTemplate(null);
+            setTemplatePreview('standard');
+            console.warn('[BadgePrintingPage] No default designer template found, using standard.');
+          }
+        } else {
+          setDesignerTemplate(null);
+          setTemplatePreview('standard');
+          console.warn('[BadgePrintingPage] Failed to fetch designer templates, using standard.');
+        }
+      } catch (err) {
+        setDesignerTemplate(null);
+        setTemplatePreview('standard');
+        console.error('[BadgePrintingPage] Error fetching designer templates:', err);
+      }
+    };
+
+    setLoading(true);
     fetchEvent();
-    fetchRegistrations(1, pagination.pageSize, searchTerm); // Initial fetch with default page size/search
+    fetchCategories();
+    fetchDesignerTemplate();
+    fetchRegistrations(1, pagination.pageSize, debouncedSearchTerm);
+  }, [eventId]);
 
-  }, [eventId]); // Only refetch event and initial regs when eventId changes
-
-  // Refetch registrations when search term changes (go back to page 1)
+  // After fetchRegistrations, if categories is empty, fallback to extracting from registrations
   useEffect(() => {
-    // Don't run on initial mount or if eventId is missing
-    // Check if loading is false before triggering search fetch to avoid conflicts with initial load
-    if (!eventId || loading) return; 
-    
-    console.log('[BadgePrintingPage] Search term changed, fetching page 1');
-    
-    const timer = setTimeout(() => { 
-      // Call fetchRegistrations with isSearchUpdate = true
-      fetchRegistrations(1, pagination.pageSize, searchTerm, true); 
-    }, 300); // Keep debounce
-    
-    return () => clearTimeout(timer);
+    if (categories.length === 0 && registrations.length > 0) {
+      const uniqueCategories = [];
+      const seen = new Set();
+      for (const reg of registrations) {
+        const cat = reg.category;
+        if (cat && cat._id && !seen.has(cat._id)) {
+          uniqueCategories.push(cat);
+          seen.add(cat._id);
+        }
+      }
+      setCategories(uniqueCategories);
+    }
+  }, [registrations]);
 
-  // Depend only on searchTerm for triggering the search fetch
-  // eventId is checked inside, pagination.pageSize is passed directly
-  // fetchRegistrations itself is stable due to useCallback (unless eventId changes)
-  }, [searchTerm, eventId, pagination.pageSize, fetchRegistrations]); 
+  // Debounce searchTerm -> debouncedSearchTerm
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms debounce
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
 
-  // Filter registrations based on search term - THIS IS NOW HANDLED BY BACKEND
-  // We can keep a frontend filter for instant feedback if desired, but the source is `registrations` state
-  // For simplicity, let's use the state directly, assuming backend search is sufficient
-  const filteredRegistrations = registrations; // Use the fetched registrations directly
+  // Refetch registrations when debounced search term or filters change
+  useEffect(() => {
+    if (!eventId || loading) return;
+    fetchRegistrations(1, pagination.pageSize, debouncedSearchTerm);
+  }, [debouncedSearchTerm, eventId, pagination.pageSize, fetchRegistrations, categoryFilter, registrationTypeFilter, checkInStatusFilter, badgePrintedFilter]);
+
+  // Filter registrations based on search term and filters
+  const filteredRegistrations = registrations;
   
   // Toggle registration selection
   const toggleRegistrationSelection = (id) => {
@@ -187,192 +275,167 @@ const BadgePrintingPage = ({ eventId }) => {
   // Count selected registrations
   const selectedCount = Object.values(selectedRegistrations).filter(Boolean).length;
   
-  // Print multiple badges
-  const printMultipleBadges = () => {
+  // Helper to normalize registration data for badge rendering (copied from RegistrationsTab.jsx)
+  function normalizeRegistrationData(reg) {
+    if (!reg) return {};
+    const personal = reg.personalInfo || {};
+    return {
+      ...reg,
+      firstName: personal.firstName,
+      lastName: personal.lastName,
+      name: personal.name || `${personal.firstName || ''} ${personal.lastName || ''}`,
+      organization: personal.organization,
+      country: personal.country,
+      designation: personal.designation,
+      email: personal.email,
+      phone: personal.phone,
+      // Add more fields as needed
+    };
+  }
+  
+  // Print multiple badges using designer template
+  const printMultipleBadges = async () => {
+    const selectedRegs = filteredRegistrations.filter(reg => selectedRegistrations[reg._id]);
+    if (selectedRegs.length === 0) return;
+    if (selectedRegs.length > MAX_BATCH_PRINT) {
+      alert(`You can only print up to ${MAX_BATCH_PRINT} badges at a time. Please select fewer registrations.`);
+      return;
+    }
+    setIsBatchPrinting(true);
+    setBatchPrintProgress(0);
+    // Use the same DPI and logic as single badge print
+    const DPIN = 100;
+    const size = designerTemplate?.size || { width: 3.375, height: 5.375 };
+    const unit = designerTemplate?.unit || 'in';
+    let badgeWidthPx, badgeHeightPx;
+    if (unit === 'in') {
+      badgeWidthPx = (size.width || 0) * DPIN;
+      badgeHeightPx = (size.height || 0) * DPIN;
+    } else if (unit === 'cm') {
+      badgeWidthPx = (size.width || 0) * (DPIN / 2.54);
+      badgeHeightPx = (size.height || 0) * (DPIN / 2.54);
+    } else if (unit === 'mm') {
+      badgeWidthPx = (size.width || 0) * (DPIN / 25.4);
+      badgeHeightPx = (size.height || 0) * (DPIN / 25.4);
+    } else {
+      badgeWidthPx = (size.width || 0);
+      badgeHeightPx = (size.height || 0);
+    }
+    const widthPt = (badgeWidthPx / DPIN) * 72;
+    const heightPt = (badgeHeightPx / DPIN) * 72;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: [widthPt, heightPt] });
+    // Create a hidden container
+    const hiddenDiv = document.createElement('div');
+    hiddenDiv.style.position = 'fixed';
+    hiddenDiv.style.left = '-9999px';
+    hiddenDiv.style.top = '0';
+    hiddenDiv.style.width = `${badgeWidthPx}px`;
+    hiddenDiv.style.height = `${badgeHeightPx}px`;
+    document.body.appendChild(hiddenDiv);
+    for (let i = 0; i < selectedRegs.length; i++) {
+      setBatchPrintProgress(i + 1);
+      const reg = selectedRegs[i];
+      const badgeNode = document.createElement('div');
+      badgeNode.style.width = `${badgeWidthPx}px`;
+      badgeNode.style.height = `${badgeHeightPx}px`;
+      hiddenDiv.appendChild(badgeNode);
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(badgeNode);
+      root.render(
+        <DesignerBadgeTemplate
+          template={designerTemplate}
+          registrationData={normalizeRegistrationData(reg)}
+          previewMode={false}
+          scale={1}
+        />
+      );
+      await new Promise(resolve => setTimeout(resolve, 150)); // Give time for render
+      const canvas = await html2canvas(badgeNode, { scale: 1, useCORS: true, logging: false, allowTaint: true, width: badgeWidthPx, height: badgeHeightPx });
+      const imgData = canvas.toDataURL('image/png');
+      if (i > 0) pdf.addPage([widthPt, heightPt], 'portrait');
+      pdf.addImage(imgData, 'PNG', 0, 0, widthPt, heightPt);
+      root.unmount();
+      hiddenDiv.removeChild(badgeNode);
+    }
+    document.body.removeChild(hiddenDiv);
+    setIsBatchPrinting(false);
+    setBatchPrintProgress(0);
+    pdf.save('badges.pdf');
+  };
+  
+  // Print single badge (previewed)
+  const handlePrintSingleBadge = async () => {
+    if (!designerTemplate || !selectedRegistration) return;
+    // Calculate badge pixel size
+    const DPIN = 100;
+    const size = designerTemplate.size || { width: 3.375, height: 5.375 };
+    const unit = designerTemplate.unit || 'in';
+    let badgeWidthPx, badgeHeightPx;
+    if (unit === 'in') {
+      badgeWidthPx = (size.width || 0) * DPIN;
+      badgeHeightPx = (size.height || 0) * DPIN;
+    } else if (unit === 'cm') {
+      badgeWidthPx = (size.width || 0) * (DPIN / 2.54);
+      badgeHeightPx = (size.height || 0) * (DPIN / 2.54);
+    } else if (unit === 'mm') {
+      badgeWidthPx = (size.width || 0) * (DPIN / 25.4);
+      badgeHeightPx = (size.height || 0) * (DPIN / 25.4);
+    } else {
+      badgeWidthPx = (size.width || 0);
+      badgeHeightPx = (size.height || 0);
+    }
+    // Create a hidden container
+    const hiddenDiv = document.createElement('div');
+    hiddenDiv.style.position = 'fixed';
+    hiddenDiv.style.left = '-9999px';
+    hiddenDiv.style.top = '0';
+    hiddenDiv.style.width = `${badgeWidthPx}px`;
+    hiddenDiv.style.height = `${badgeHeightPx}px`;
+    document.body.appendChild(hiddenDiv);
+    // Render the badge in the hidden container
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(hiddenDiv);
+    root.render(
+      <DesignerBadgeTemplate
+        template={designerTemplate}
+        registrationData={normalizeRegistrationData(selectedRegistration)}
+        previewMode={false}
+        scale={1}
+      />
+    );
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // Capture as image
+    const canvas = await html2canvas(hiddenDiv, { scale: 1, useCORS: true, logging: false, allowTaint: true, width: badgeWidthPx, height: badgeHeightPx });
+    const dataUrl = canvas.toDataURL('image/png');
+    root.unmount();
+    document.body.removeChild(hiddenDiv);
+    // Print window
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    
-    const selectedRegs = registrations.filter(reg => selectedRegistrations[reg._id]);
-    
     printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Badges</title>
-          <style>
-            @page {
-              size: A4;
-              margin: 10mm;
-            }
-            body {
-              margin: 0;
-              padding: 0;
-              font-family: Arial, sans-serif;
-            }
-            .badge-container {
-              display: flex;
-              flex-wrap: wrap;
-              justify-content: center;
-              gap: 10mm;
-            }
-            .badge-wrapper {
-              width: 88.9mm;
-              height: 54mm;
-              border: 1px solid #ccc;
-              border-radius: 4px;
-              overflow: hidden;
-              break-inside: avoid;
-              margin-bottom: 10mm;
-            }
-            .badge {
-              width: 100%;
-              height: 100%;
-              background-color: white;
-              padding: 4mm;
-              box-sizing: border-box;
-              display: flex;
-              flex-direction: column;
-            }
-            .badge-header {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 3mm;
-            }
-            .badge-content {
-              display: flex;
-              flex-grow: 1;
-            }
-            .badge-info {
-              flex-grow: 1;
-            }
-            .badge-name {
-              font-size: 16pt;
-              font-weight: bold;
-              margin-bottom: 2mm;
-            }
-            .badge-org {
-              font-size: 10pt;
-              color: #666;
-              margin-bottom: 2mm;
-            }
-            .badge-category {
-              display: inline-block;
-              padding: 1mm 3mm;
-              border-radius: 10mm;
-              font-size: 8pt;
-              background-color: #f0f0f0;
-            }
-            .badge-qr {
-              width: 20mm;
-              height: 20mm;
-            }
-            .badge-footer {
-              font-size: 8pt;
-              color: #666;
-              border-top: 1px solid #eee;
-              padding-top: 2mm;
-              display: flex;
-              justify-content: space-between;
-            }
-            .no-print {
-              position: fixed;
-              top: 20px;
-              right: 20px;
-              display: flex;
-              gap: 10px;
-            }
-            @media print {
-              .no-print {
-                display: none;
-              }
-            }
-          </style>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-          <script>
-            function generateQRCode(data, size) {
-              // Generate QR code using qrcode-generator library
-              const qr = qrcode(0, 'L');
-              qr.addData(data);
-              qr.make();
-              return qr.createSvgTag({ cellSize: size, margin: 0 });
-            }
-            
-            function renderQRCodes() {
-              document.querySelectorAll('.qr-placeholder').forEach(placeholder => {
-                const data = placeholder.getAttribute('data-qr');
-                const size = 3; // Cell size in pixels
-                placeholder.innerHTML = generateQRCode(data, size);
-              });
-            }
-            
-            // Render QR codes once the document is loaded
-            window.onload = renderQRCodes;
-          </script>
-        </head>
-        <body>
-          <div class="badge-container">
-            ${selectedRegs.map(reg => {
-              const name = reg.personalInfo ? 
-                `${reg.personalInfo.firstName} ${reg.personalInfo.lastName}` : 
-                reg.name;
-              const regId = reg.registrationId || reg.regId;
-              const organization = reg.personalInfo?.organization || reg.organization;
-              const categoryName = reg.category?.name || reg.categoryName;
-              const categoryColor = reg.category?.color || reg.categoryColor;
-              
-              const qrData = JSON.stringify({
-                id: reg._id,
-                regId: regId,
-                name: name,
-                category: categoryName,
-                eventId: event._id
-              });
-              
-              return `
-                <div class="badge-wrapper">
-                  <div class="badge">
-                    <div class="badge-header">
-                      <div>
-                        <div style="font-weight: bold; font-size: 10pt;">${event.name}</div>
-                        <div style="font-size: 8pt; color: #666;">
-                          ${new Date(event.startDate).toLocaleDateString()} - ${new Date(event.endDate).toLocaleDateString()}
-                        </div>
-                      </div>
-                      ${event.logo ? `<img src="${event.logo}" alt="Event Logo" style="height: 8mm;">` : ''}
-                    </div>
-                    <div class="badge-content">
-                      <div class="badge-info">
-                        <div class="badge-name">${name}</div>
-                        <div class="badge-org">${organization}</div>
-                        <div class="badge-category" style="background-color: ${categoryColor}; color: white;">${categoryName}</div>
-                      </div>
-                      <div class="badge-qr">
-                        <div class="qr-placeholder" data-qr='${qrData}'></div>
-                      </div>
-                    </div>
-                    <div class="badge-footer">
-                      <div>${regId}</div>
-                      <div>Printed: ${new Date().toLocaleDateString()}</div>
-                    </div>
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-          <div class="no-print">
-            <button onclick="window.print();" style="padding: 8px 16px; background-color: #4a5568; color: white; border: none; border-radius: 4px; cursor: pointer;">
-              Print
-            </button>
-            <button onclick="window.close();" style="padding: 8px 16px; background-color: #e2e8f0; border: none; border-radius: 4px; cursor: pointer;">
-              Close
-            </button>
-          </div>
-        </body>
-      </html>
+      <html><head><title>Print Badge</title>
+      <style>
+        @page { size: ${size.width}${unit} ${size.height}${unit}; margin: 0; }
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #fff; }
+        .badge-img { width: ${size.width}${unit}; height: ${size.height}${unit}; object-fit: contain; display: block; box-shadow: none; border: none; }
+      </style>
+      </head><body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+        <img src='${dataUrl}' class='badge-img' alt='Badge' />
+      </body></html>
     `);
-    
     printWindow.document.close();
   };
   
+  // Pagination effect: fetch correct page/size
+  useEffect(() => {
+    fetchRegistrations(pagination.currentPage, pagination.pageSize, searchTerm);
+  }, [pagination.currentPage, pagination.pageSize]);
+
+  // Add this effect to reset pagination to page 1 when any filter changes
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
+  }, [categoryFilter, registrationTypeFilter, checkInStatusFilter, badgePrintedFilter]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -408,6 +471,7 @@ const BadgePrintingPage = ({ eventId }) => {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Registrations List */}
         <div className="lg:col-span-3 bg-white rounded-lg shadow-soft p-6">
+          {/* Search Bar (always visible) */}
           <div className="mb-4">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -416,12 +480,64 @@ const BadgePrintingPage = ({ eventId }) => {
               <input
                 type="text"
                 className="input pl-10 w-full"
-                placeholder="Search registrations..."
+                placeholder="Search any field (name, email, reg ID, etc.)..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
+          
+          {/* Filters Row (only in batch print mode) */}
+          {batchPrintMode && (
+            <div className="flex flex-wrap gap-3 mb-4">
+              {/* Category Filter */}
+              <select
+                className="input"
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+              >
+                <option value="">All Categories</option>
+                {(categories.length > 0 ? categories : allCategories).map(cat =>
+                  cat && cat.name ? (
+                    <option key={cat._id || cat.name} value={cat._id}>{cat.name}</option>
+                  ) : null
+                )}
+              </select>
+              {/* Registration Type Filter */}
+              <select
+                className="input"
+                value={registrationTypeFilter}
+                onChange={e => setRegistrationTypeFilter(e.target.value)}
+              >
+                <option value="">All Types</option>
+                {getUniqueValues(registrations, 'registrationType').map(type =>
+                  type ? (
+                    <option key={type} value={type}>{type}</option>
+                  ) : null
+                )}
+              </select>
+              {/* Check-in Status Filter */}
+              <select
+                className="input"
+                value={checkInStatusFilter}
+                onChange={e => setCheckInStatusFilter(e.target.value)}
+              >
+                <option value="">All Check-in Status</option>
+                <option value="checkedIn">Checked In</option>
+                <option value="notCheckedIn">Not Checked In</option>
+              </select>
+              {/* Badge Printed Filter */}
+              <select
+                className="input"
+                value={badgePrintedFilter}
+                onChange={e => setBadgePrintedFilter(e.target.value)}
+              >
+                <option value="">All Print Status</option>
+                <option value="printed">Printed</option>
+                <option value="notPrinted">Not Printed</option>
+              </select>
+            </div>
+          )}
           
           {batchPrintMode && (
             <div className="flex justify-between items-center mb-4 p-3 bg-gray-50 rounded-md">
@@ -462,9 +578,9 @@ const BadgePrintingPage = ({ eventId }) => {
                 No registrations found
               </div>
             ) : (
-              filteredRegistrations.map((registration) => (
+              filteredRegistrations.map((registration, idx) => (
                 <motion.div
-                  key={registration._id}
+                  key={registration._id + '-' + idx}
                   className={`p-3 rounded-md border cursor-pointer ${
                     (!batchPrintMode && selectedRegistration?._id === registration._id) || 
                     (batchPrintMode && selectedRegistrations[registration._id])
@@ -544,14 +660,23 @@ const BadgePrintingPage = ({ eventId }) => {
           {!batchPrintMode && selectedRegistration ? (
             <div className="bg-white rounded-lg shadow-soft p-6">
               <h2 className="text-xl font-semibold mb-6 text-center">Badge Preview</h2>
-              <BadgeTemplate 
-                registrationData={selectedRegistration}
+              {console.log('[BadgePrintingPage] Rendering preview with template:', designerTemplate)}
+              <DesignerBadgeTemplate
+                registrationData={normalizeRegistrationData(selectedRegistration)}
                 eventData={event}
-                template={templatePreview}
+                template={designerTemplate}
                 showQR={true}
-                showTools={true}
+                showTools={false}
                 onBadgePrinted={handleBadgePrinted}
               />
+              <div className="flex justify-center mt-4">
+                <button
+                  onClick={handlePrintSingleBadge}
+                  className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
+                >
+                  Print
+                </button>
+              </div>
             </div>
           ) : batchPrintMode ? (
             <div className="bg-white rounded-lg shadow-soft p-6">
@@ -568,9 +693,9 @@ const BadgePrintingPage = ({ eventId }) => {
                     <div className="flex flex-wrap gap-2 mb-4">
                       {registrations
                         .filter(reg => selectedRegistrations[reg._id])
-                        .map(reg => (
+                        .map((reg, idx) => (
                           <div 
-                            key={reg._id}
+                            key={reg._id + '-' + idx}
                             className="px-3 py-1.5 bg-primary-50 text-primary-800 rounded-full text-sm flex items-center"
                           >
                             <span>{reg.name}</span>
@@ -620,6 +745,49 @@ const BadgePrintingPage = ({ eventId }) => {
           )}
         </div>
       </div>
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between mt-4">
+        <div>
+          <span>Page </span>
+          <select value={pagination.currentPage} onChange={e => setPagination(p => ({ ...p, currentPage: Number(e.target.value) }))}>
+            {Array.from({ length: pagination.totalPages }, (_, i) => (
+              <option key={i + 1} value={i + 1}>{i + 1}</option>
+            ))}
+          </select>
+          <span> of {pagination.totalPages}</span>
+        </div>
+        <div>
+          <span>Show </span>
+          <select value={pagination.pageSize} onChange={e => setPagination(p => ({ ...p, pageSize: Number(e.target.value), currentPage: 1 }))}>
+            {pageSizes.map(size => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+          <span> per page</span>
+        </div>
+        <div>
+          <button disabled={pagination.currentPage === 1} onClick={() => setPagination(p => ({ ...p, currentPage: p.currentPage - 1 }))}>Prev</button>
+          <button disabled={pagination.currentPage === pagination.totalPages} onClick={() => setPagination(p => ({ ...p, currentPage: p.currentPage + 1 }))}>Next</button>
+        </div>
+      </div>
+      {isBatchPrinting && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded shadow-lg flex flex-col items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mb-4"></div>
+            <div className="text-lg font-semibold mb-2">Generating badges for print...</div>
+            <div className="w-full bg-gray-200 rounded-full h-4 mb-2">
+              <div
+                className="bg-primary-500 h-4 rounded-full transition-all duration-200"
+                style={{ width: `${batchPrintProgress / Math.max(1, Object.values(selectedRegistrations).filter(Boolean).length) * 100}%` }}
+              ></div>
+            </div>
+            <div className="text-gray-700 mb-2">
+              {`Badge ${batchPrintProgress} of ${Object.values(selectedRegistrations).filter(Boolean).length}`}
+            </div>
+            <div className="text-gray-500">Please wait, this may take a few seconds.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

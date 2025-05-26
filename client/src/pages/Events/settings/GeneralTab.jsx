@@ -37,37 +37,56 @@ const GeneralTab = ({ event, setEvent, id, setFormChanged }) => {
   }, [event]);
 
   // Handle input changes - Update local state and notify parent via props
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    
-    // Update local state for the form fields
-    setGeneralSettings(prev => ({
-      ...prev,
-      [name]: value
-    }));
-
-    // Update the parent event state directly via setEvent prop
-    if (name === 'registrationPrefix') {
-      setEvent(prevEvent => ({
-        ...prevEvent,
-        registrationSettings: {
-          ...(prevEvent?.registrationSettings || {}),
-          idPrefix: value
-        }
+  const handleInputChange = (eOrName, valueArg) => {
+    // If called from a standard input event
+    if (eOrName && eOrName.target) {
+      const { name, value } = eOrName.target;
+      setGeneralSettings(prev => ({
+        ...prev,
+        [name]: value
       }));
-    } else {
+      if (name === 'registrationPrefix') {
+        setEvent(prevEvent => ({
+          ...prevEvent,
+          registrationSettings: {
+            ...(prevEvent?.registrationSettings || {}),
+            idPrefix: value
+          }
+        }));
+      } else {
         setEvent(prevEvent => ({
           ...prevEvent,
           [name]: value
         }));
-    }
-    
-    // Notify parent that form has changed to enable the save button
-    if (typeof setFormChanged === 'function') {
-      console.log("[GeneralTab] Setting formChanged to true");
-      setFormChanged(true);
-    } else {
-      console.warn("[GeneralTab] setFormChanged is not a function:", setFormChanged);
+      }
+      if (typeof setFormChanged === 'function') {
+        setFormChanged(true);
+      }
+    } else if (typeof eOrName === 'string') {
+      // Called as (name, value) from custom Select
+      const name = eOrName;
+      const value = valueArg;
+      setGeneralSettings(prev => ({
+        ...prev,
+        [name]: value
+      }));
+      if (name === 'registrationPrefix') {
+        setEvent(prevEvent => ({
+          ...prevEvent,
+          registrationSettings: {
+            ...(prevEvent?.registrationSettings || {}),
+            idPrefix: value
+          }
+        }));
+      } else {
+        setEvent(prevEvent => ({
+          ...prevEvent,
+          [name]: value
+        }));
+      }
+      if (typeof setFormChanged === 'function') {
+        setFormChanged(true);
+      }
     }
   };
 
@@ -130,7 +149,7 @@ const GeneralTab = ({ event, setEvent, id, setFormChanged }) => {
             label="Status"
             name="status"
             value={generalSettings.status}
-            onChange={handleInputChange}
+            onChange={value => handleInputChange('status', value)}
             options={statusOptions}
           />
         </div>

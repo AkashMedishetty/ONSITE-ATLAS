@@ -39,13 +39,21 @@ const BadgeTemplateList = ({
     try {
       const response = await badgeTemplateService.getTemplates(eventId);
       if (response.success) {
-        setTemplates(response.data.data);
+        // Defensive: ensure templates is always an array
+        let arr = [];
+        if (Array.isArray(response.data)) {
+          arr = response.data;
+        } else if (response.data && Array.isArray(response.data.data)) {
+          arr = response.data.data;
+        }
+        setTemplates(arr);
       } else {
         toast.error('Failed to load badge templates');
       }
     } catch (error) {
       console.error('Error loading templates:', error);
       toast.error('An error occurred while loading templates');
+      setTemplates([]); // Defensive fallback
     } finally {
       setLoading(false);
     }
@@ -120,8 +128,9 @@ const BadgeTemplateList = ({
           description: templateForm.description,
           isGlobal: templateForm.isGlobal,
           event: eventId, 
+          elements: [] // <-- Start with no elements!
         };
-        
+        console.log('[BadgeTemplateList] Creating new template with payload:', templateData);
         response = await badgeTemplateService.createTemplate(templateData);
       }
       
@@ -198,7 +207,7 @@ const BadgeTemplateList = ({
       
       {loading ? (
         <div className="text-center py-4">Loading templates...</div>
-      ) : templates.length === 0 ? (
+      ) : !Array.isArray(templates) || templates.length === 0 ? (
         <div className="text-center py-4">
           <p className="text-muted">No templates available</p>
           {showCreateButton && (
@@ -213,7 +222,7 @@ const BadgeTemplateList = ({
         </div>
       ) : (
         <div className="row g-3">
-          {templates.map(template => (
+          {(templates || []).map(template => (
             <div key={template._id} className="col-md-6 col-lg-4">
               <Card 
                 className={`h-100 ${selectedTemplateId === template._id ? 'border-primary' : ''}`}

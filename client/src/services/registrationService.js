@@ -48,6 +48,9 @@ const registrationService = {
       if (filters.page) queryParams.append('page', filters.page);
       if (filters.limit) queryParams.append('limit', filters.limit);
       if (filters.sort) queryParams.append('sort', filters.sort);
+      // Add missing filters for badge printing page
+      if (filters.badgePrinted !== undefined && filters.badgePrinted !== '') queryParams.append('badgePrinted', filters.badgePrinted);
+      if (filters.registrationType) queryParams.append('registrationType', filters.registrationType);
       
       const queryString = queryParams.toString();
       const url = `/events/${eventId}/registrations${queryString ? `?${queryString}` : ''}`;

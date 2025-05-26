@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Form, Row, Col, Card, Accordion, Button } from 'react-bootstrap';
 import { FaTrash } from 'react-icons/fa';
 
-const ElementPropertiesEditor = ({ selectedElement, onUpdateElement, onDeleteElement, eventId }) => {
-  const [activeAccordionKeys, setActiveAccordionKeys] = useState([]);
+const ElementPropertiesEditor = ({ selectedElement, onUpdateElement, onDeleteElement, eventId, activeAccordionKeys, setActiveAccordionKeys }) => {
   const prevSelectedElementIdRef = useRef(null);
   const lastPositionRef = useRef(null);
   const ignoreNextToggleRef = useRef(false);
@@ -13,13 +12,13 @@ const ElementPropertiesEditor = ({ selectedElement, onUpdateElement, onDeleteEle
     const currentSelectedId = selectedElement ? selectedElement.id : null;
     if (currentSelectedId !== prevSelectedElementIdRef.current) {
       if (selectedElement && typeof selectedElement === 'object' && selectedElement.type) {
-        setActiveAccordionKeys([`${selectedElement.type}-style`]);
+        setActiveAccordionKeys([selectedElement.type + '-style']);
       } else {
         setActiveAccordionKeys([]); 
       }
     }
     prevSelectedElementIdRef.current = currentSelectedId;
-  }, [selectedElement]);
+  }, [selectedElement, setActiveAccordionKeys]);
 
   // Track position changes to detect drags
   useEffect(() => {
@@ -62,201 +61,7 @@ const ElementPropertiesEditor = ({ selectedElement, onUpdateElement, onDeleteEle
     onUpdateElement(selectedElement.id, updatePayload);
   }, [selectedElement, onUpdateElement]);
   
-  const textPropertiesContent = useMemo(() => {
-    if (!selectedElement || typeof selectedElement !== 'object' || selectedElement.type !== 'text') return null;
-    console.log('[ElementPropertiesEditor] useMemo for textPropertiesContent. Selected Element:', selectedElement);
-    const fontFamilies = [
-      'Arial', 'Verdana', 'Helvetica', 'Tahoma', 'Trebuchet MS', 'Times New Roman', 
-      'Georgia', 'Garamond', 'Courier New', 'Brush Script MT'
-    ];
-    const fontWeights = [
-      { label: 'Normal', value: 'normal' },
-      { label: 'Bold', value: 'bold' },
-      { label: 'Lighter', value: 'lighter' },
-      { label: 'Bolder', value: 'bolder' },
-      { label: '300', value: '300' }, { label: '400', value: '400' }, { label: '500', value: '500' },
-      { label: '600', value: '600' }, { label: '700', value: '700' }
-    ];
-
-    const fieldTypeOptions = [
-      { label: 'Custom Text', value: 'custom' },
-      { label: 'Full Name', value: 'name' },
-      { label: 'First Name', value: 'firstName' },
-      { label: 'Last Name', value: 'lastName' },
-      { label: 'Registration ID', value: 'registrationId' },
-      { label: 'Category', value: 'categoryName' },
-      { label: 'Organization', value: 'organization' },
-      { label: 'Country', value: 'country' },
-      { label: 'Email', value: 'email' },
-    ];
-
-    return (
-      <Accordion.Item eventKey="text-style" key="text-properties-item">
-        <Accordion.Header onClick={(e) => e.stopPropagation()}>Text Properties</Accordion.Header>
-        <Accordion.Body>
-          <p>Test Content inside Text Properties</p>
-          {/* Original complex form content commented out for now
-          <Form.Group className="mb-3">
-            <Form.Label size="sm">Text Source</Form.Label>
-            <Form.Select 
-              size="sm" 
-              value={selectedElement.fieldType || 'custom'} 
-              onChange={(e) => {
-                const newFieldType = e.target.value;
-                // When changing to a dynamic field, clear custom content.
-                // When changing to custom, preserve current content or set to default.
-                const newContent = newFieldType === 'custom' ? (selectedElement.content || 'Custom Text') : '';
-                onUpdateElement(selectedElement.id, { fieldType: newFieldType, content: newContent });
-              }}
-            >
-              {fieldTypeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </Form.Select>
-          </Form.Group>
-
-          {selectedElement.fieldType === 'custom' && (
-            <Form.Group className="mb-3">
-              <Form.Label size="sm">Custom Text Content</Form.Label>
-              <Form.Control 
-                type="text" 
-                size="sm" 
-                value={selectedElement.content || ''} 
-                onChange={(e) => handleInputChange('content', e.target.value)} 
-              />
-            </Form.Group>
-          )}
-
-          <Row>
-            <Col md={6}>
-              <Form.Group className="mb-2">
-                <Form.Label size="sm">Font Size (px)</Form.Label>
-                <Form.Control 
-                  type="number" 
-                  size="sm" 
-                  value={selectedElement.style?.fontSize || 16} 
-                  onChange={(e) => handleInputChange('style.fontSize', parseInt(e.target.value, 10))} 
-                />
-              </Form.Group>
-            </Col>
-            <Col md={6}>
-              <Form.Group className="mb-2">
-                <Form.Label size="sm">Text Color</Form.Label>
-                <Form.Control 
-                  type="color" 
-                  size="sm" 
-                  value={selectedElement.style?.color || '#000000'} 
-                  onChange={(e) => handleInputChange('style.color', e.target.value)} 
-                />
-              </Form.Group>
-            </Col>
-          </Row>
-
-          <Form.Group className="mb-3">
-            <Form.Label size="sm">Font Family</Form.Label>
-            <Form.Select 
-              size="sm" 
-              value={selectedElement.style?.fontFamily || 'Arial'} 
-              onChange={(e) => handleInputChange('style.fontFamily', e.target.value)}
-            >
-              {fontFamilies.map(font => <option key={font} value={font}>{font}</option>)}
-            </Form.Select>
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Label size="sm">Font Weight</Form.Label>
-            <Form.Select 
-              size="sm" 
-              value={selectedElement.style?.fontWeight || 'normal'} 
-              onChange={(e) => handleInputChange('style.fontWeight', e.target.value)}
-            >
-              {fontWeights.map(weight => <option key={weight.value} value={weight.value}>{weight.label}</option>)}
-            </Form.Select>
-          </Form.Group>
-          
-          <Form.Group className="mb-2">
-            <Form.Label size="sm">Background Color</Form.Label>
-            <Form.Control 
-              type="color" 
-              size="sm" 
-              value={(selectedElement.style?.backgroundColor && selectedElement.style.backgroundColor !== 'transparent' && selectedElement.style.backgroundColor.startsWith('#')) ? selectedElement.style.backgroundColor : '#FFFFFF'} 
-              onChange={(e) => handleInputChange('style.backgroundColor', e.target.value)} 
-            />
-          </Form.Group>
-          */}
-        </Accordion.Body>
-      </Accordion.Item>
-    );
-  }, [selectedElement, handleInputChange]);
-
-  const qrCodePropertiesContent = useMemo(() => {
-    if (!selectedElement || typeof selectedElement !== 'object' || selectedElement.type !== 'qrCode') return null;
-    return (
-      <Accordion.Item eventKey="qrcode-style" key="qrcode-properties-item">
-        <Accordion.Header onClick={(e) => e.stopPropagation()}>QR Code Settings</Accordion.Header>
-        <Accordion.Body>
-          <Form.Group className="mb-2">
-            <Form.Label size="sm">Width (px)</Form.Label>
-            <Form.Control 
-              type="number" 
-              size="sm" 
-              value={selectedElement.size?.width || 80} 
-              onChange={(e) => handleInputChange('size.width', parseInt(e.target.value, 10))} 
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label size="sm">Height (px)</Form.Label>
-            <Form.Control 
-              type="number" 
-              size="sm" 
-              value={selectedElement.size?.height || 80} 
-              onChange={(e) => handleInputChange('size.height', parseInt(e.target.value, 10))} 
-            />
-          </Form.Group>
-          <p><em>More QR Code options coming soon...</em></p>
-        </Accordion.Body>
-      </Accordion.Item>
-    );
-  }, [selectedElement, handleInputChange]);
-  
-  const imagePropertiesContent = useMemo(() => {
-    if (!selectedElement || typeof selectedElement !== 'object' || selectedElement.type !== 'image') return null;
-    return (
-      <Accordion.Item eventKey="image-style" key="image-properties-item">
-        <Accordion.Header onClick={(e) => e.stopPropagation()}>Image Settings</Accordion.Header>
-        <Accordion.Body>
-           <Form.Group className="mb-2">
-            <Form.Label size="sm">Image URL</Form.Label>
-            <Form.Control 
-              type="text" 
-              size="sm" 
-              placeholder="https://example.com/image.png"
-              value={selectedElement.content || ''} 
-              onChange={(e) => handleInputChange('content', e.target.value)} 
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label size="sm">Width (px)</Form.Label>
-            <Form.Control 
-              type="number" 
-              size="sm" 
-              value={selectedElement.size?.width || 100} 
-              onChange={(e) => handleInputChange('size.width', parseInt(e.target.value, 10))} 
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label size="sm">Height (px)</Form.Label>
-            <Form.Control 
-              type="number" 
-              size="sm" 
-              value={selectedElement.size?.height || 100} 
-              onChange={(e) => handleInputChange('size.height', parseInt(e.target.value, 10))} 
-            />
-          </Form.Group>
-          {/* More image style properties (opacity, border-radius) */}
-          <p><em>More image options coming soon...</em></p>
-        </Accordion.Body>
-      </Accordion.Item>
-    );
-  }, [selectedElement, handleInputChange]);
+  console.log('selectedElement', selectedElement);
 
   if (!selectedElement || typeof selectedElement !== 'object') {
     return (
@@ -271,41 +76,235 @@ const ElementPropertiesEditor = ({ selectedElement, onUpdateElement, onDeleteEle
 
   return (
     <Card className="designer-panel-card">
-      <Card.Header>Properties: {selectedElement.type} (ID: ...{selectedElement.id.slice(-6)})</Card.Header>
+      <Card.Header>Properties: {selectedElement ? selectedElement.type : ''} {selectedElement ? `(ID: ...${selectedElement.id.slice(-6)})` : ''}</Card.Header>
       <Card.Body>
-        <Accordion 
-          activeKey={activeAccordionKeys} 
-          onSelect={(newActiveKeys) => {
-            console.log('[Accordion onSelect] Received newActiveKeys:', newActiveKeys);
-
-            // Ignore this toggle if it's happening right after a drag
-            if (ignoreNextToggleRef.current) {
-              console.log('[Accordion onSelect] Ignoring toggle due to recent drag');
-              return;
-            }
-
-            const keyToToggle = Array.isArray(newActiveKeys) ? newActiveKeys[0] : newActiveKeys;
-            
-            setActiveAccordionKeys(currentKeys => {
-              console.log('[Accordion onSelect] Current keys:', currentKeys, 'Key to toggle:', keyToToggle);
-              if (currentKeys.includes(keyToToggle)) {
-                const nextKeys = currentKeys.filter(k => k !== keyToToggle);
-                console.log('[Accordion onSelect] Closing. Next keys:', nextKeys);
-                return nextKeys;
-              } else {
-                const nextKeys = [keyToToggle];
-                console.log('[Accordion onSelect] Opening. Next keys:', nextKeys);
-                return nextKeys;
-              }
-            });
-          }}
-          flush
-        >
-          {textPropertiesContent}
-          {qrCodePropertiesContent}
-          {imagePropertiesContent}
-          {/* Add other types here */}
-        </Accordion>
+        {selectedElement && selectedElement.type === 'text' && (
+          <>
+            <Form.Group className="mb-3">
+              <Form.Label size="sm">Text Source</Form.Label>
+              <Form.Select 
+                size="sm" 
+                value={selectedElement.fieldType || 'custom'} 
+                onChange={(e) => {
+                  const newFieldType = e.target.value;
+                  const newContent = newFieldType === 'custom' ? (selectedElement.content || 'Custom Text') : '';
+                  onUpdateElement(selectedElement.id, { fieldType: newFieldType, content: newContent });
+                }}
+              >
+                <option value="custom">Custom Text</option>
+                <option value="name">Full Name</option>
+                <option value="firstName">First Name</option>
+                <option value="lastName">Last Name</option>
+                <option value="registrationId">Registration ID</option>
+                <option value="category">Category</option>
+                <option value="organization">Organization</option>
+                <option value="country">Country</option>
+                <option value="email">Email</option>
+              </Form.Select>
+            </Form.Group>
+            {selectedElement.fieldType === 'custom' && (
+              <Form.Group className="mb-3">
+                <Form.Label size="sm">Custom Text Content</Form.Label>
+                <Form.Control 
+                  type="text" 
+                  size="sm" 
+                  value={selectedElement.content || ''} 
+                  onChange={(e) => onUpdateElement(selectedElement.id, { content: e.target.value })} 
+                />
+              </Form.Group>
+            )}
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label size="sm">Font Size (px)</Form.Label>
+                  <Form.Control 
+                    type="number" 
+                    size="sm" 
+                    value={selectedElement.style?.fontSize || 16} 
+                    onChange={(e) => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, fontSize: parseInt(e.target.value, 10) } })} 
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-2">
+                  <Form.Label size="sm">Text Color</Form.Label>
+                  <Form.Control 
+                    type="color" 
+                    size="sm" 
+                    value={selectedElement.style?.color || '#000000'} 
+                    onChange={(e) => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, color: e.target.value } })} 
+                  />
+                </Form.Group>
+              </Col>
+            </Row>
+            <Form.Group className="mb-3">
+              <Form.Label size="sm">Font Family</Form.Label>
+              <Form.Select 
+                size="sm" 
+                value={selectedElement.style?.fontFamily || 'Arial'} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, fontFamily: e.target.value } })}
+              >
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Helvetica">Helvetica</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Trebuchet MS">Trebuchet MS</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Garamond">Garamond</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Brush Script MT">Brush Script MT</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label size="sm">Font Weight</Form.Label>
+              <Form.Select 
+                size="sm" 
+                value={selectedElement.style?.fontWeight || 'normal'} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, fontWeight: e.target.value } })}
+              >
+                <option value="normal">Normal</option>
+                <option value="bold">Bold</option>
+                <option value="lighter">Lighter</option>
+                <option value="bolder">Bolder</option>
+                <option value="300">300</option>
+                <option value="400">400</option>
+                <option value="500">500</option>
+                <option value="600">600</option>
+                <option value="700">700</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Background Color</Form.Label>
+              <Form.Control 
+                type="color" 
+                size="sm" 
+                value={(selectedElement.style?.backgroundColor && selectedElement.style.backgroundColor !== 'transparent' && selectedElement.style.backgroundColor.startsWith('#')) ? selectedElement.style.backgroundColor : '#FFFFFF'} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, backgroundColor: e.target.value } })} 
+              />
+            </Form.Group>
+          </>
+        )}
+        {selectedElement && selectedElement.type === 'qrCode' && (
+          <>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Width (px)</Form.Label>
+              <Form.Control 
+                type="number" 
+                size="sm" 
+                value={selectedElement.size?.width || 80} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, width: parseInt(e.target.value, 10) } })} 
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Height (px)</Form.Label>
+              <Form.Control 
+                type="number" 
+                size="sm" 
+                value={selectedElement.size?.height || 80} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, height: parseInt(e.target.value, 10) } })} 
+              />
+            </Form.Group>
+            {/* Add more QR code options as needed */}
+          </>
+        )}
+        {selectedElement && selectedElement.type === 'image' && (
+          <>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Image URL</Form.Label>
+              <Form.Control 
+                type="text" 
+                size="sm" 
+                placeholder="https://example.com/image.png"
+                value={selectedElement.content || ''} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { content: e.target.value })} 
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Width (px)</Form.Label>
+              <Form.Control 
+                type="number" 
+                size="sm" 
+                value={selectedElement.size?.width || 100} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, width: parseInt(e.target.value, 10) } })} 
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Height (px)</Form.Label>
+              <Form.Control 
+                type="number" 
+                size="sm" 
+                value={selectedElement.size?.height || 100} 
+                onChange={(e) => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, height: parseInt(e.target.value, 10) } })} 
+              />
+            </Form.Group>
+            {/* Add more image options as needed */}
+          </>
+        )}
+        {selectedElement && selectedElement.type === 'shape' && (
+          <>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Shape Type</Form.Label>
+              <Form.Select size="sm" value={selectedElement.content || 'rectangle'} onChange={e => onUpdateElement(selectedElement.id, { content: e.target.value })}>
+                <option value="rectangle">Rectangle</option>
+                <option value="circle">Circle</option>
+                <option value="line">Line</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Width (px)</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.size?.width || 100} onChange={e => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, width: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Height (px)</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.size?.height || 50} onChange={e => onUpdateElement(selectedElement.id, { size: { ...selectedElement.size, height: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Background Color</Form.Label>
+              <Form.Control type="color" size="sm" value={selectedElement.style?.backgroundColor || '#E5E7EB'} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, backgroundColor: e.target.value } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Border Color</Form.Label>
+              <Form.Control type="color" size="sm" value={selectedElement.style?.borderColor || '#9CA3AF'} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, borderColor: e.target.value } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Border Width</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.style?.borderWidth || 1} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, borderWidth: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Border Radius</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.style?.borderRadius || 0} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, borderRadius: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Opacity</Form.Label>
+              <Form.Range min="0" max="100" value={Math.round((selectedElement.style?.opacity ?? 1) * 100)} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, opacity: parseInt(e.target.value, 10) / 100 } })} />
+            </Form.Group>
+          </>
+        )}
+        {selectedElement && selectedElement.type === 'category' && (
+          <>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Font Size</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.style?.fontSize || 14} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, fontSize: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Text Color</Form.Label>
+              <Form.Control type="color" size="sm" value={selectedElement.style?.color || '#FFFFFF'} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, color: e.target.value } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Background Color</Form.Label>
+              <Form.Control type="color" size="sm" value={selectedElement.style?.backgroundColor || '#3B82F6'} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, backgroundColor: e.target.value } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Border Radius</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.style?.borderRadius || 16} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, borderRadius: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label size="sm">Padding</Form.Label>
+              <Form.Control type="number" size="sm" value={selectedElement.style?.padding || 5} onChange={e => onUpdateElement(selectedElement.id, { style: { ...selectedElement.style, padding: parseInt(e.target.value, 10) } })} />
+            </Form.Group>
+          </>
+        )}
       </Card.Body>
       <Card.Footer className="text-end">
         <Button 
