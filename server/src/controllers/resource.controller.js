@@ -262,9 +262,6 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
     await resourceSettingsDoc.save();
     console.log(`[updateResourceSettings] Document details AFTER save for type ${dbType} (refetched might be needed to confirm DB state, but this is post-save call).`);
 
-    // MIRROR: Update event document to keep in sync
-    await mirrorResourceSettingsToEvent(eventId, dbType, resourceSettingsDoc.settings, resourceSettingsDoc.isEnabled);
-
     // --- NEW: Ensure all categories have entitlements for all meals (food type only)
     if (dbType === 'food' && resourceSettingsDoc.settings.meals) {
       await ensureMealEntitlementsForAllCategories(eventId, resourceSettingsDoc.settings.meals);
@@ -2036,22 +2033,6 @@ async function getDataSourceValue(dataSource, registration, event, abstractData,
   } catch (err) {
     logger.warn(`[getDataSourceValue] Failed to resolve dataSource '${dataSource}': ${err.message}`);
     return '';
-  }
-}
-
-// Utility: Mirror ResourceSettings to Event document
-async function mirrorResourceSettingsToEvent(eventId, type, settings, isEnabled) {
-  // Map dbType to event doc field
-  let update = {};
-  if (type === 'food') {
-    update['foodSettings'] = { ...settings, enabled: isEnabled };
-  } else if (type === 'kitBag') {
-    update['kitSettings'] = { ...settings, enabled: isEnabled };
-  } else if (type === 'certificate') {
-    update['certificateSettings'] = { ...settings, enabled: isEnabled };
-  }
-  if (Object.keys(update).length > 0) {
-    await Event.findByIdAndUpdate(eventId, { $set: update });
   }
 }
 

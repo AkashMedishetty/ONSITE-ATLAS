@@ -36,4 +36,12 @@
 ### Documentation
 - Create/update documentation tracking these dashboard features, hurdles, and TODOs.
 
-- [x] 2024-06-08: Created new registration resource modal endpoint and controller (`registrationResourceModal.controller.js`, `registrationResourceModal.routes.js`) to provide enriched resource usage for a registration, without affecting existing logic. 
+- [x] 2024-06-08: Created new registration resource modal endpoint and controller (`registrationResourceModal.controller.js`, `registrationResourceModal.routes.js`) to provide enriched resource usage for a registration, without affecting existing logic.
+- [x] 2024-06-09: Add attachment display/download in email history UI. Admins can now view and download attachments sent with each email batch from the history tab.
+- [x] 2024-06-09: File type and size validation for email attachments. Only PDF, PNG, JPG, JPEG, DOCX, XLSX up to 5MB are allowed; users see clear errors if validation fails.
+
+## [2024-06-09] Completed
+- Attachment support for email sending (backend & frontend): Admins can now attach files to emails sent to event participants. Attachments are handled via multer and nodemailer, and are tracked in email history.
+
+## [TODO]
+- Update documentation and troubleshooting guides as needed. 

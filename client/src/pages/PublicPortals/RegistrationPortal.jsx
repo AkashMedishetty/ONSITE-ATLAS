@@ -68,7 +68,7 @@ const RegistrationPortal = () => {
         }
         
         // Fetch categories for the event
-        const categoriesResponse = await eventService.getEventCategories(eventId);
+        const categoriesResponse = await eventService.getEventCategoriesPublic(eventId);
         if (!categoriesResponse.success) {
           throw new Error(categoriesResponse.message || 'Failed to fetch categories');
         }
@@ -118,6 +118,21 @@ const RegistrationPortal = () => {
           }));
         }
         
+        // Extend formData with custom fields on event load
+        if (eventResponse.data && eventResponse.data.registrationSettings && Array.isArray(eventResponse.data.registrationSettings.customFields)) {
+          const customFieldDefaults = {};
+          eventResponse.data.registrationSettings.customFields.forEach(field => {
+            if (field && field.name) {
+              customFieldDefaults[field.name] = '';
+            }
+          });
+          setFormData(prev => ({ ...customFieldDefaults, ...prev }));
+        }
+        
+        // LOGGING: Output registrationSettings and formConfig for debugging
+        console.log('[RegistrationPortal] registrationSettings:', eventResponse.data.registrationSettings);
+        console.log('[RegistrationPortal] formConfig:', formConfigResponse?.data);
+        
         setLoading(false);
       } catch (error) {
         console.error('Error fetching event data:', error);
@@ -131,6 +146,12 @@ const RegistrationPortal = () => {
     
     fetchEventData();
   }, [eventId]);
+  
+  // Helper to get custom field config by name
+  const getCustomFieldConfig = (name) => {
+    if (!event || !event.registrationSettings || !Array.isArray(event.registrationSettings.customFields)) return null;
+    return event.registrationSettings.customFields.find(f => f.name === name);
+  };
   
   const handleChange = (e) => {
     // Handle both direct events (from inputs) and values (from select components)
@@ -208,7 +229,7 @@ const RegistrationPortal = () => {
       console.log("Submitting registration data:", registrationData);
       
       // Submit registration
-      const response = await registrationService.createRegistration(registrationData);
+      const response = await registrationService.createRegistrationPublic(eventId, registrationData);
       
       if (!response || !response.success) {
         throw new Error(response?.message || 'Registration failed');
@@ -321,170 +342,127 @@ const RegistrationPortal = () => {
     return labelMap[field] || field;
   };
   
+  // Enhanced renderField to support custom fields
   const renderField = (field) => {
     if (!formConfig.visibleFields.includes(field)) return null;
-    
     const isRequired = formConfig.requiredFields.includes(field);
     const error = status?.errors?.[field];
-    
-    switch (field) {
-      case 'categoryId':
-        return (
-          <div className="mb-4" key={field}>
-            <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
-              {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
-            </label>
-            <Select
-              id={field}
-              name={field}
-              value={formData[field]}
-              onChange={(value) => handleChange({ name: field, value })}
-              options={[
-                { value: '', label: 'Select Category' },
-                ...categories.map(category => ({
-                  value: category._id,
-                  label: category.name
-                }))
-              ]}
-              error={error}
-              required={isRequired}
-            />
-            {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
-          </div>
-        );
-        
-      case 'country':
-        return (
-          <div className="mb-4" key={field}>
-            <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
-              {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
-            </label>
-            <Select
-              id={field}
-              name={field}
-              value={formData[field]}
-              onChange={(value) => handleChange({ name: field, value })}
-              options={[
-                { value: '', label: 'Select Country' },
-                { value: 'US', label: 'United States' },
-                { value: 'UK', label: 'United Kingdom' },
-                { value: 'CA', label: 'Canada' },
-                { value: 'AU', label: 'Australia' },
-                { value: 'IN', label: 'India' },
-                { value: 'Other', label: 'Other' }
-              ]}
-              error={error}
-              required={isRequired}
-            />
-            {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
-          </div>
-        );
-        
-      case 'dietaryRestrictions':
-      case 'specialRequirements':
-        return (
-          <div className="mb-4" key={field}>
-            <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
-              {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
-            </label>
-            <Input
-              id={field}
-              name={field}
-              value={formData[field]}
-              onChange={handleChange}
-              placeholder={`Enter ${getFieldLabel(field).toLowerCase()}`}
-              error={error}
-              required={isRequired}
-              as="textarea"
-              rows={3}
-            />
-            {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
-          </div>
-        );
-        
-      case 'agreeToTerms':
-        return (
-          <div className="mb-4" key={field}>
-            <div className="flex items-start">
-              <div className="flex items-center h-5">
+    // Check if this is a custom field
+    const customField = getCustomFieldConfig(field);
+    if (customField) {
+      // Render based on type
+      switch (customField.type) {
+        case 'text':
+        case 'number':
+        case 'date':
+          return (
+            <div className="mb-4" key={field}>
+              <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
+                {customField.label || field} {isRequired && <span className="text-red-500">*</span>}
+              </label>
+              <Input
+                id={field}
+                name={field}
+                value={formData[field] || ''}
+                onChange={handleChange}
+                placeholder={customField.placeholder || ''}
+                error={error}
+                required={isRequired}
+                type={customField.type === 'number' ? 'number' : customField.type === 'date' ? 'date' : 'text'}
+              />
+              {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
+            </div>
+          );
+        case 'select':
+          return (
+            <div className="mb-4" key={field}>
+              <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
+                {customField.label || field} {isRequired && <span className="text-red-500">*</span>}
+              </label>
+              <Select
+                id={field}
+                name={field}
+                value={formData[field] || ''}
+                onChange={(value) => handleChange({ name: field, value })}
+                options={Array.isArray(customField.options) ? customField.options.map(opt => ({ value: opt, label: opt })) : []}
+                error={error}
+                required={isRequired}
+              />
+              {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
+            </div>
+          );
+        case 'checkbox':
+          return (
+            <div className="mb-4" key={field}>
+              <div className="flex items-center">
                 <Checkbox
                   id={field}
                   name={field}
-                  checked={formData[field]}
-                  onChange={(e) => handleChange({
-                    target: {
-                      name: field,
-                      type: 'checkbox',
-                      checked: e.target ? e.target.checked : e
-                    }
-                  })}
+                  checked={!!formData[field]}
+                  onChange={(e) => handleChange({ target: { name: field, type: 'checkbox', checked: e.target ? e.target.checked : e } })}
                   error={error}
                   required={isRequired}
                 />
-              </div>
-              <div className="ml-3 text-sm">
-                <label htmlFor={field} className="font-medium text-gray-700">
-                  {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
+                <label htmlFor={field} className="ml-2 text-sm font-medium text-gray-700">
+                  {customField.label || field} {isRequired && <span className="text-red-500">*</span>}
                 </label>
-                <p className="text-gray-500">
-                  By checking this box, I agree to the event's terms and conditions, and privacy policy.
-                </p>
               </div>
+              {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
             </div>
-            {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
-          </div>
-        );
-        
-      default:
-        return (
-          <div className="mb-4" key={field}>
-            <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
-              {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
-            </label>
-            <Input
-              id={field}
-              name={field}
-              value={formData[field]}
-              onChange={handleChange}
-              placeholder={`Enter ${getFieldLabel(field).toLowerCase()}`}
-              error={error}
-              required={isRequired}
-              type={field === 'email' ? 'email' : field === 'phone' || field === 'emergencyPhone' ? 'tel' : 'text'}
-            />
-            {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
-          </div>
-        );
+          );
+        default:
+          return null;
+      }
     }
-  };
-  
-  const renderFormSections = () => {
-    // Group fields by section
-    const sections = {
-      'Personal Information': ['firstName', 'lastName', 'email', 'phone'],
-      'Professional Information': ['organization', 'title', 'categoryId'],
-      'Address Information': ['address', 'city', 'state', 'country', 'postalCode'],
-      'Additional Information': ['dietaryRestrictions', 'emergencyContact', 'emergencyPhone', 'specialRequirements'],
-      'Terms and Conditions': ['agreeToTerms']
-    };
-    
-    return Object.entries(sections).map(([sectionTitle, sectionFields]) => {
-      // Filter visible fields for this section
-      const visibleSectionFields = sectionFields.filter(field => 
-        formConfig.visibleFields.includes(field)
-      );
-      
-      // Skip section if no visible fields
-      if (visibleSectionFields.length === 0) return null;
-      
+    // Special handling for categoryId field
+    if (field === 'categoryId') {
       return (
-        <div key={sectionTitle} className="mb-8">
-          <h3 className="text-lg font-medium mb-4 pb-2 border-b">{sectionTitle}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {visibleSectionFields.map(field => renderField(field))}
-          </div>
+        <div className="mb-4" key={field}>
+          <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
+            {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
+          </label>
+          <Select
+            id={field}
+            name={field}
+            value={formData[field]}
+            onChange={(value) => handleChange({ name: field, value })}
+            options={categories.map(cat => ({ value: cat._id, label: cat.name }))}
+            error={error}
+            required={isRequired}
+          />
+          {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
         </div>
       );
-    });
+    }
+    // ...existing standard field rendering logic...
+    return (
+      <div className="mb-4" key={field}>
+        <label htmlFor={field} className="block text-sm font-medium text-gray-700 mb-1">
+          {getFieldLabel(field)} {isRequired && <span className="text-red-500">*</span>}
+        </label>
+        <Input
+          id={field}
+          name={field}
+          value={formData[field]}
+          onChange={handleChange}
+          placeholder={`Enter ${getFieldLabel(field).toLowerCase()}`}
+          error={error}
+          required={isRequired}
+          type={field === 'email' ? 'email' : field === 'phone' || field === 'emergencyPhone' ? 'tel' : 'text'}
+        />
+        {error && <div className="mt-1 text-xs text-red-500">{error}</div>}
+      </div>
+    );
+  };
+  
+  // Render all fields in fieldOrder
+  const renderAllFields = () => {
+    if (!formConfig.fieldOrder || formConfig.fieldOrder.length === 0) return null;
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {formConfig.fieldOrder.map(field => renderField(field))}
+      </div>
+    );
   };
   
   if (loading) {
@@ -602,7 +580,7 @@ const RegistrationPortal = () => {
           )}
           
           <form onSubmit={handleSubmit}>
-            {renderFormSections()}
+            {renderAllFields()}
             
             <div className="mt-8 flex justify-end">
               <Button 

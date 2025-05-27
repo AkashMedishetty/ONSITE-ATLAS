@@ -13,6 +13,11 @@ const { sendSuccess } = require('../utils/responseFormatter');
 const emailService = require('../services/emailService');
 
 /**
+ * Now supports attachments:
+ * - Accepts attachments via req.files (multer)
+ * - Sends attachments with emails using nodemailer
+ * - Saves attachment info in email history
+ *
  * @desc    Send email to filtered recipients
  * @route   POST /api/events/:eventId/emails/send
  * @access  Private
@@ -20,6 +25,7 @@ const emailService = require('../services/emailService');
 exports.sendEmail = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
   const { email, filters } = req.body;
+  const attachments = req.files || [];
   
   // Validate request
   if (!email || !email.subject || !email.body) {
@@ -113,7 +119,8 @@ exports.sendEmail = asyncHandler(async (req, res) => {
     subject: email.subject,
     date: new Date(),
     recipients: recipients.length,
-    status: 'pending'
+    status: 'pending',
+    attachments: attachments.map(f => ({ filename: f.originalname, path: f.path }))
   };
 
   if (!event.emailHistory) {
@@ -163,7 +170,8 @@ exports.sendEmail = asyncHandler(async (req, res) => {
         subject: email.subject
           .replace(/{{eventName}}/g, event.name)
           .replace(/{{firstName}}/g, personalInfo.firstName || 'Attendee'),
-        html: emailBody
+        html: emailBody,
+        attachments: attachments.map(f => ({ filename: f.originalname, path: f.path }))
       };
       
       // Add reply-to if configured
@@ -332,47 +340,72 @@ exports.getTemplates = asyncHandler(async (req, res) => {
  */
 exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { testEmail } = req.body;
-  
-  if (!testEmail) {
+  const user = req.user;
+  console.log('[testSmtpConfiguration] Called with eventId:', eventId, 'by user:', user ? user.email : 'unknown');
+
+  if (!req.body.testEmail) {
+    console.error('[testSmtpConfiguration] No testEmail provided in request body:', req.body);
     return res.status(400).json({
       success: false,
       message: 'Test email address is required'
     });
   }
-  
+
   const event = await Event.findById(eventId);
   if (!event) {
-    return res.status(404).json({
-      success: false,
-      message: 'Event not found'
-    });
+    console.error('[testSmtpConfiguration] Event not found for eventId:', eventId);
+    return res.status(404).json({ success: false, message: 'Event not found' });
   }
-  
-  // Check if email settings are configured
-  if (!event.emailSettings || !event.emailSettings.smtpHost) {
+
+  // Check for all required SMTP fields
+  const es = event.emailSettings || {};
+  const missingFields = [];
+  if (!es.enabled) missingFields.push('enabled');
+  if (!es.smtpHost) missingFields.push('smtpHost');
+  if (!es.smtpPort) missingFields.push('smtpPort');
+  if (!es.smtpUser) missingFields.push('smtpUser');
+  if (!es.smtpPassword) missingFields.push('smtpPassword');
+  if (!es.senderName) missingFields.push('senderName');
+  if (!es.senderEmail) missingFields.push('senderEmail');
+
+  if (missingFields.length > 0) {
+    console.error('[testSmtpConfiguration] Missing SMTP fields:', missingFields);
     return res.status(400).json({
       success: false,
-      message: 'SMTP settings are not configured'
+      message: 'SMTP settings are not fully configured. Missing: ' + missingFields.join(', ')
     });
   }
-  
+
+  // Log SMTP config (mask password)
+  console.log('[testSmtpConfiguration] SMTP config:', {
+    smtpHost: es.smtpHost,
+    smtpPort: es.smtpPort,
+    smtpUser: es.smtpUser,
+    smtpSecure: es.smtpSecure,
+    senderName: es.senderName,
+    senderEmail: es.senderEmail,
+    replyToEmail: es.replyToEmail,
+    enabled: es.enabled
+  });
+
   try {
-    // Configure nodemailer with SMTP settings
+    const nodemailer = require('nodemailer');
     const transporter = nodemailer.createTransport({
-      host: event.emailSettings.smtpHost,
-      port: event.emailSettings.smtpPort || 587,
-      secure: event.emailSettings.smtpSecure || false,
+      host: es.smtpHost,
+      port: es.smtpPort,
+      secure: es.smtpSecure,
       auth: {
-        user: event.emailSettings.smtpUser,
-        pass: event.emailSettings.smtpPassword
+        user: es.smtpUser,
+        pass: es.smtpPassword
       }
     });
-    
-    // Send test email
+
+    // Log test email details
+    console.log('[testSmtpConfiguration] Sending test email to:', req.body.testEmail);
+
     const info = await transporter.sendMail({
-      from: `"${event.emailSettings.senderName}" <${event.emailSettings.senderEmail}>`,
-      to: testEmail,
+      from: `"${es.senderName}" <${es.senderEmail}>`,
+      to: req.body.testEmail,
       subject: `Test Email from ${event.name}`,
       html: `
         <h1>SMTP Configuration Test</h1>
@@ -380,15 +413,17 @@ exports.testSmtpConfiguration = asyncHandler(async (req, res) => {
         <p>If you received this email, your email settings are configured correctly!</p>
       `
     });
-    
+
+    console.log('[testSmtpConfiguration] Test email sent. MessageId:', info.messageId);
     return res.status(200).json({
       success: true,
-      message: `Test email sent successfully to ${testEmail}`,
+      message: `Test email sent successfully to ${req.body.testEmail}`,
       data: {
         messageId: info.messageId
       }
     });
   } catch (error) {
+    console.error('[testSmtpConfiguration] Error sending test email:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to send test email',
@@ -554,4 +589,98 @@ async function generateQRCode(registrationId, eventId) {
     console.error('Error generating QR code:', err);
     throw err;
   }
-} 
+}
+
+/**
+ * Supported template placeholders:
+ *   {{firstName}}, {{lastName}}, {{registrationId}}, {{eventName}}, {{eventDate}}, {{eventVenue}}, [QR_CODE]
+ *
+ * @desc    Update email templates for an event
+ * @route   PUT /api/events/:eventId/emails/templates
+ * @access  Private
+ */
+exports.updateTemplates = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const { templates } = req.body;
+
+  if (!templates || typeof templates !== 'object') {
+    return res.status(400).json({
+      success: false,
+      message: 'Templates object is required'
+    });
+  }
+
+  // Define required placeholders for each template type
+  const requiredPlaceholders = {
+    registration: ['{{firstName}}', '{{eventName}}', '{{registrationId}}', '[QR_CODE]'],
+    reminder: ['{{firstName}}', '{{eventName}}', '{{eventDate}}', '{{eventVenue}}'],
+    certificate: ['{{firstName}}', '{{eventName}}'],
+    workshop: ['{{firstName}}', '{{eventName}}', '{{workshopTitle}}', '{{workshopDate}}', '{{workshopTime}}', '{{workshopLocation}}'],
+    scientificBrochure: ['{{firstName}}', '{{eventName}}'],
+    custom: ['{{firstName}}', '{{eventName}}']
+  };
+
+  // Validate each template
+  for (const [templateName, fields] of Object.entries(templates)) {
+    const required = requiredPlaceholders[templateName] || [];
+    const body = fields.body || '';
+    for (const placeholder of required) {
+      if (!body.includes(placeholder)) {
+        return res.status(400).json({
+          success: false,
+          message: `Template '${templateName}' is missing required placeholder: ${placeholder}`
+        });
+      }
+    }
+  }
+
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return res.status(404).json({
+      success: false,
+      message: 'Event not found'
+    });
+  }
+
+  event.emailSettings = event.emailSettings || {};
+  event.emailSettings.templates = templates;
+  await event.save();
+
+  return res.status(200).json({
+    success: true,
+    message: 'Email templates updated successfully',
+    data: event.emailSettings.templates
+  });
+});
+
+/**
+ * @desc    Update SMTP settings for an event
+ * @route   PUT /api/events/:eventId/emails/smtp-settings
+ * @access  Private
+ */
+exports.updateSmtpSettings = asyncHandler(async (req, res) => {
+  const { eventId } = req.params;
+  const smtpFields = [
+    'enabled', 'senderName', 'senderEmail', 'replyToEmail',
+    'smtpHost', 'smtpPort', 'smtpUser', 'smtpPassword', 'smtpSecure'
+  ];
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return res.status(404).json({
+      success: false,
+      message: 'Event not found'
+    });
+  }
+  event.emailSettings = event.emailSettings || {};
+  smtpFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      event.emailSettings[field] = req.body[field];
+    }
+  });
+  await event.save();
+  return res.status(200).json({
+    success: true,
+    message: 'SMTP settings updated successfully',
+    data: event.emailSettings
+  });
+}); 

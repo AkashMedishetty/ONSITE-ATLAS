@@ -20,8 +20,9 @@ const {
   updatePortalSettings
 } = require('../controllers/event.controller');
 const { getEventResourceStatistics, exportResourceUsage } = require('../controllers/resource.controller');
-const { createCategory, getCategories } = require('../controllers/category.controller');
+const { getCategories, getCategoriesPublic, createCategory } = require('../controllers/category.controller');
 const { validate, schemas } = require('../middleware/validator');
+const { createRegistration, createRegistrationPublic } = require('../controllers/registration.controller');
 
 // --- Import Registration Router --- 
 const registrationRouter = require('./registrations.routes');
@@ -116,5 +117,17 @@ router.route('/:id/email-settings')
 router.route('/:id/portal-settings')
   .get(getPortalSettings)
   .put(updatePortalSettings);
+
+// Add public categories route
+router.route('/:id/public-categories')
+  .get(getCategoriesPublic);
+
+// Add public registration route
+router.route('/:eventId/public-registrations')
+  .post(createRegistrationPublic);
+
+const emailRouter = require('./email.routes');
+// Mount the email router for event-specific email routes
+router.use('/:eventId/emails', emailRouter);
 
 module.exports = router;

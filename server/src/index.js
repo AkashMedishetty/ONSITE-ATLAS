@@ -38,9 +38,6 @@ app.use(fileUpload({
   abortOnLimit: true
 }));
 
-// Serve uploaded files statically
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
 // Welcome route
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to Onsite Atlas API' });

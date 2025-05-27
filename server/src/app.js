@@ -94,7 +94,7 @@ if (config.env !== 'test') {
 }
 
 // Static files
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads'))); // Added for troubleshooting
 
 // API routes
 app.use('/api', routes);

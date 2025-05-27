@@ -1138,6 +1138,92 @@ const getRegistrationDetailsByScan = asyncHandler(async (req, res, next) => {
   return sendSuccess(res, 200, 'Registration details retrieved successfully.', registration);
 });
 
+/**
+ * @desc    Create a new registration (public, no auth)
+ * @route   POST /api/events/:eventId/public-registrations
+ * @access  Public
+ */
+const createRegistrationPublic = async (req, res, next) => {
+  // Get eventId from params if route is nested, otherwise from body
+  const eventId = req.params.eventId || req.body.eventId; 
+  const { categoryId, personalInfo } = req.body;
+
+  // Validate required fields
+  if (!eventId || !categoryId || !personalInfo) {
+    return sendSuccess(res, 400, 'Missing required fields: eventId, categoryId, personalInfo');
+  }
+
+  // Check if event exists and is open for registration
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return sendSuccess(res, 404, 'Event not found');
+  }
+  if (!event.registrationSettings?.isOpen) {
+    return sendSuccess(res, 403, 'Registration for this event is currently closed');
+  }
+
+  // Check if category exists
+  const category = await Category.findById(categoryId);
+  if (!category) {
+    return sendSuccess(res, 404, 'Category not found');
+  }
+
+  // --- Use Counter Pattern for ID Generation --- 
+  const registrationPrefix = event.registrationSettings?.idPrefix || 'REG';
+  const startNumber = event.registrationSettings?.startNumber || 1;
+  const sequenceName = `${eventId}_registration_id`; // Unique sequence name per event
+
+  let registrationId;
+  try {
+    const nextNumber = await getNextSequenceValue(sequenceName, startNumber);
+    const formattedNumber = nextNumber.toString().padStart(4, '0'); // Pad to 4 digits
+    registrationId = `${registrationPrefix}-${formattedNumber}`;
+
+    // Optional: Double-check uniqueness just in case (though counter should handle it)
+    const existing = await Registration.findOne({ event: eventId, registrationId: registrationId });
+    if (existing) {
+      // This case should be extremely rare with the atomic counter
+      console.error(`Generated duplicate ID ${registrationId} for event ${eventId} despite using counter. Retrying might be needed or check counter logic.`);
+      return sendSuccess(res, 500, 'Failed to generate unique registration ID. Please try again.');
+    }
+  } catch (error) {
+    console.error("Error generating registration ID using counter:", error);
+    return sendSuccess(res, 500, 'Failed to generate registration ID');
+  }
+  // --- End ID Generation ---
+
+  // Create new registration
+  const registration = await Registration.create({
+    registrationId,
+    event: eventId,
+    category: categoryId,
+    personalInfo,
+    status: 'active',
+    ...(req.body.customFields && { customFields: req.body.customFields }),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+
+  // Return created registration with populated references
+  const populatedRegistration = await Registration.findById(registration._id)
+    .populate('event', 'name startDate endDate logo')
+    .populate('category', 'name color permissions');
+
+  // Send registration confirmation email if enabled
+  if (event.emailSettings?.enabled && 
+      event.emailSettings?.automaticEmails?.registrationConfirmation) {
+    try {
+      const emailService = require('../services/emailService');
+      await emailService.sendRegistrationConfirmationEmail(registration._id);
+    } catch (error) {
+      console.error('Failed to send registration confirmation email:', error);
+      // Don't fail the request if email sending fails
+    }
+  }
+
+  return sendSuccess(res, 201, 'Registration created successfully', populatedRegistration);
+};
+
 module.exports = {
   getRegistrations,
   getRegistrationsCount,
@@ -1150,5 +1236,6 @@ module.exports = {
   exportRegistrationsController,
   getRegistrationStatistics,
   getImportJobStatus,
-  getRegistrationDetailsByScan
+  getRegistrationDetailsByScan,
+  createRegistrationPublic
 }; 

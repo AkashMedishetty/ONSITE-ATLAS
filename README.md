@@ -23,6 +23,7 @@ We've implemented a standardized API response format across the application to e
 - Abstract submission and management
 - Comprehensive reporting and analytics
 - Responsive dashboard interface
+- **Email Attachments:** Admins can now attach multiple files (PDF, images, etc.) when sending emails to event participants. Attachments are tracked in email history for audit, and can be viewed/downloaded from the history tab. (Validation for file types and size limits coming soon.)
 
 ## Tech Stack
 

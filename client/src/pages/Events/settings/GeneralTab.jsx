@@ -27,7 +27,7 @@ const GeneralTab = ({ event, setEvent, id, setFormChanged }) => {
         description: event.description || '',
         startDate: event.startDate ? new Date(event.startDate).toISOString().split('T')[0] : '',
         endDate: event.endDate ? new Date(event.endDate).toISOString().split('T')[0] : '',
-        location: event.location || '',
+        location: event.location || event.venue?.name || '',
         timezone: event.timezone || 'UTC',
         status: event.status || 'draft',
         registrationPrefix: event.registrationSettings?.idPrefix || 'REG',
@@ -53,6 +53,15 @@ const GeneralTab = ({ event, setEvent, id, setFormChanged }) => {
             idPrefix: value
           }
         }));
+      } else if (name === 'location') {
+        setEvent(prevEvent => ({
+          ...prevEvent,
+          location: value,
+          venue: {
+            ...(prevEvent?.venue || {}),
+            name: value
+          }
+        }));
       } else {
         setEvent(prevEvent => ({
           ...prevEvent,
@@ -76,6 +85,15 @@ const GeneralTab = ({ event, setEvent, id, setFormChanged }) => {
           registrationSettings: {
             ...(prevEvent?.registrationSettings || {}),
             idPrefix: value
+          }
+        }));
+      } else if (name === 'location') {
+        setEvent(prevEvent => ({
+          ...prevEvent,
+          location: value,
+          venue: {
+            ...(prevEvent?.venue || {}),
+            name: value
           }
         }));
       } else {

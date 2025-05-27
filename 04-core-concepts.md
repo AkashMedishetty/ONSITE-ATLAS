@@ -1,0 +1,2 @@
+### Email Attachments
+Admins can now attach multiple files (PDF, images, etc.) when sending emails to event participants. Attachments are uploaded via the email compose UI, sent securely to the backend, and included in outgoing emails. All attachments are tracked in the email history for audit and compliance, and can be viewed/downloaded from the history tab. (Validation for file types and size limits coming soon.) 

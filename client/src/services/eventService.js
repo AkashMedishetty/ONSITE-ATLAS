@@ -96,6 +96,20 @@ const formatEventData = (event) => {
   };
 };
 
+// Helper to clean custom fields for backend schema compliance
+function cleanCustomFields(fields) {
+  if (!Array.isArray(fields)) return [];
+  return fields.map(f => ({
+    name: f.name,
+    label: f.label,
+    placeholder: f.placeholder,
+    description: f.description,
+    type: f.type,
+    options: f.options || [],
+    isRequired: f.required !== undefined ? f.required : (f.isRequired || false)
+  }));
+}
+
 // Create a new event
 const createEvent = async (eventData) => {
   try {
@@ -249,6 +263,11 @@ const updateEvent = async (id, eventData) => {
     // Extract resource settings if present to update them separately
     const resourceSettings = eventData.resourceSettings;
     let updatedEventData = { ...eventData };
+    
+    // Clean registrationSettings.customFields for backend compliance
+    if (updatedEventData.registrationSettings && Array.isArray(updatedEventData.registrationSettings.customFields)) {
+      updatedEventData.registrationSettings.customFields = cleanCustomFields(updatedEventData.registrationSettings.customFields);
+    }
     
     // Remove resource settings from the main event update to avoid duplication
     if (resourceSettings) {
@@ -833,6 +852,30 @@ const getEventReviewers = async (eventId) => {
   }
 };
 
+const getEventCategoriesPublic = async (eventId) => {
+  if (!eventId) {
+    console.warn('getEventCategoriesPublic called without eventId');
+    return {
+      success: false,
+      message: 'Event ID is required',
+      data: []
+    };
+  }
+  try {
+    console.log(`Fetching PUBLIC categories for event ID: ${eventId}`);
+    const response = await axios.get(`${baseURL}/events/${eventId}/public-categories`);
+    console.log('Public categories response:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching public categories for event ${eventId}:`, error);
+    return {
+      success: false,
+      message: error.response?.data?.message || `Failed to fetch public categories for event ${eventId}`,
+      data: []
+    };
+  }
+};
+
 const eventService = {
   createEvent,
   fetchEvents,
@@ -850,7 +893,8 @@ const eventService = {
   getResourceTypeStatistics,
   getResourceConfig,
   getEventUsers,
-  getEventReviewers
+  getEventReviewers,
+  getEventCategoriesPublic
 };
 
 export default eventService; 

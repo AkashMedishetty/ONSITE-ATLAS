@@ -85,22 +85,31 @@ const EventForm = () => {
     }
   }, [isEditMode, id]);
   
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    
-    if (name.includes('.')) {
-      const [parent, child] = name.split('.');
+  const handleChange = (eOrValue, meta) => {
+    if (eOrValue && eOrValue.target) {
+      // Standard input event
+      const { name, value, type, checked } = eOrValue.target;
+      if (name.includes('.')) {
+        const [parent, child] = name.split('.');
+        setFormData({
+          ...formData,
+          [parent]: {
+            ...formData[parent],
+            [child]: type === 'checkbox' ? checked : value
+          }
+        });
+      } else {
+        setFormData({
+          ...formData,
+          [name]: type === 'checkbox' ? checked : value
+        });
+      }
+    } else if (meta && meta.name) {
+      // Custom Select: value, meta
+      const { name } = meta;
       setFormData({
         ...formData,
-        [parent]: {
-          ...formData[parent],
-          [child]: type === 'checkbox' ? checked : value
-        }
-      });
-    } else {
-      setFormData({
-        ...formData,
-        [name]: type === 'checkbox' ? checked : value
+        [name]: eOrValue
       });
     }
   };

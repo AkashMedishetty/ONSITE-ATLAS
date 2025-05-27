@@ -168,7 +168,7 @@ const EventList = () => {
               { value: 'archived', label: 'Archived' }
             ]}
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
+            onChange={(value) => setFilterStatus(value)}
             className="w-40"
           />
           <Button

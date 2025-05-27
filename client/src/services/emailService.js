@@ -3,6 +3,7 @@ import api from './api';
 const emailService = {
   /**
    * Send an email to event participants filtered by criteria
+   * Now supports attachments: if attachments are present, uses FormData and multipart/form-data
    * @param {string} eventId - The ID of the event
    * @param {Object} emailData - Email data object
    * @param {string} emailData.subject - Email subject
@@ -15,11 +16,28 @@ const emailService = {
    * @returns {Promise} Promise with API response
    */
   sendEmail: async (eventId, emailData, filters = {}) => {
-    const response = await api.post(`/events/${eventId}/emails/send`, {
-      email: emailData,
-      filters
-    });
-    return response.data;
+    // If attachments are present, use FormData
+    if (emailData.attachments && emailData.attachments.length > 0) {
+      const formData = new FormData();
+      formData.append('email', JSON.stringify({ subject: emailData.subject, body: emailData.body }));
+      formData.append('filters', JSON.stringify(filters));
+      emailData.attachments.forEach(file => {
+        formData.append('attachments', file);
+      });
+      const response = await api.post(`/events/${eventId}/emails/send`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    } else {
+      // No attachments, send as JSON
+      const response = await api.post(`/events/${eventId}/emails/send`, {
+        email: emailData,
+        filters
+      });
+      return response.data;
+    }
   },
 
   /**
@@ -114,6 +132,28 @@ const emailService = {
    */
   validateCertificate: async (certificateId) => {
     const response = await api.get(`/certificates/validate/${certificateId}`);
+    return response.data;
+  },
+
+  /**
+   * Update email templates for an event
+   * @param {string} eventId - The ID of the event
+   * @param {object} templates - Templates object to update
+   * @returns {Promise} Promise with API response
+   */
+  updateTemplates: async (eventId, templates) => {
+    const response = await api.put(`/events/${eventId}/emails/templates`, { templates });
+    return response.data;
+  },
+
+  /**
+   * Update SMTP settings for an event
+   * @param {string} eventId - The ID of the event
+   * @param {object} smtpSettings - SMTP settings object to update
+   * @returns {Promise} Promise with API response
+   */
+  updateSmtpSettings: async (eventId, smtpSettings) => {
+    const response = await api.put(`/events/${eventId}/emails/smtp-settings`, smtpSettings);
     return response.data;
   }
 };

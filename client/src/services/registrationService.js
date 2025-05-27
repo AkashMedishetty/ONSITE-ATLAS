@@ -842,6 +842,17 @@ const registrationService = {
   checkInRegistration: async (eventId, registrationId) => {
     // ... (existing check-in function)
   },
+
+  // Create a registration (public, no auth)
+  createRegistrationPublic: async (eventId, registrationData) => {
+    try {
+      const response = await axios.post(`${API_URL}/events/${eventId}/public-registrations`, registrationData);
+      return response.data;
+    } catch (error) {
+      console.error('API Error (public registration):', error.response?.data || error.message);
+      return error.response?.data || { success: false, message: error.message };
+    }
+  },
 };
 
 export default registrationService; 

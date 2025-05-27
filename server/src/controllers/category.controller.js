@@ -34,6 +34,26 @@ const getCategories = async (req, res, next) => {
 };
 
 /**
+ * Get all categories for an event (public)
+ * @route GET /api/events/:eventId/public-categories
+ * @access Public
+ */
+const getCategoriesPublic = async (req, res, next) => {
+  try {
+    const { id: eventId } = req.params;
+    // Check if event exists
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return next(createApiError(404, 'Event not found'));
+    }
+    const categories = await Category.find({ event: eventId });
+    return sendSuccess(res, 200, 'Categories retrieved successfully', categories);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get category by ID
  * @route GET /api/categories/:id
  * @access Private
@@ -386,6 +406,7 @@ const updateCategoryPermissions = async (req, res, next) => {
 
 module.exports = {
   getCategories,
+  getCategoriesPublic,
   getCategoryById,
   createCategory,
   updateCategory,

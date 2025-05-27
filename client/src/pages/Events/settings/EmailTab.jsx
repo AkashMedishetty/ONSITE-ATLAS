@@ -1,11 +1,124 @@
-import React, { useEffect, useState } from 'react';
-import { Card, Tabs, Button, Alert, Spinner } from '../../../components/common';
+// To use Mantine RTE, install:
+// npm install @mantine/core @mantine/rte @mantine/hooks
 
-const EmailTab = ({ event, setEvent, setFormChanged }) => {
-  const [activeTab, setActiveTab] = useState('general');
+// To use Tiptap (React 19+ compatible WYSIWYG), install:
+// npm install @tiptap/react @tiptap/starter-kit @tiptap/extension-link @tiptap/extension-image @tiptap/extension-underline @tiptap/extension-text-align
+
+import React, { useEffect, useState, useRef } from 'react';
+import { Card, Tabs, Button, Alert, Spinner } from '../../../components/common';
+import emailService from '../../../services/emailService';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { RichTextEditor } from '@mantine/rte';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import Underline from '@tiptap/extension-underline';
+import TextAlign from '@tiptap/extension-text-align';
+
+const TEMPLATE_TYPES = [
+  {
+    key: 'registration',
+    label: 'Registration Confirmation',
+    required: ['{{firstName}}', '{{eventName}}', '{{registrationId}}', '[QR_CODE]'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' },
+      { key: '{{registrationId}}', desc: 'Registration ID' },
+      { key: '{{eventDate}}', desc: 'Event date' },
+      { key: '{{eventVenue}}', desc: 'Event venue' },
+      { key: '[QR_CODE]', desc: 'Registration QR code' }
+    ]
+  },
+  {
+    key: 'reminder',
+    label: 'Event Reminder',
+    required: ['{{firstName}}', '{{eventName}}', '{{eventDate}}', '{{eventVenue}}'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' },
+      { key: '{{eventDate}}', desc: 'Event date' },
+      { key: '{{eventVenue}}', desc: 'Event venue' }
+    ]
+  },
+  {
+    key: 'certificate',
+    label: 'Certificate Delivery',
+    required: ['{{firstName}}', '{{eventName}}'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' }
+    ]
+  },
+  {
+    key: 'workshop',
+    label: 'Workshop Information',
+    required: ['{{firstName}}', '{{eventName}}', '{{workshopTitle}}', '{{workshopDate}}', '{{workshopTime}}', '{{workshopLocation}}'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' },
+      { key: '{{workshopTitle}}', desc: 'Workshop title' },
+      { key: '{{workshopDate}}', desc: 'Workshop date' },
+      { key: '{{workshopTime}}', desc: 'Workshop time' },
+      { key: '{{workshopLocation}}', desc: 'Workshop location' }
+    ]
+  },
+  {
+    key: 'scientificBrochure',
+    label: 'Scientific Brochure',
+    required: ['{{firstName}}', '{{eventName}}'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' }
+    ]
+  },
+  {
+    key: 'custom',
+    label: 'Custom Email',
+    required: ['{{firstName}}', '{{eventName}}'],
+    placeholders: [
+      { key: '{{firstName}}', desc: 'Attendee first name' },
+      { key: '{{eventName}}', desc: 'Event name' }
+    ]
+  }
+];
+
+function insertAtCursor(inputRef, value) {
+  const input = inputRef.current;
+  if (!input) return;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const text = input.value;
+  input.value = text.slice(0, start) + value + text.slice(end);
+  input.selectionStart = input.selectionEnd = start + value.length;
+  input.focus();
+  // Trigger change event
+  const event = new Event('input', { bubbles: true });
+  input.dispatchEvent(event);
+}
+
+const EmailTab = ({ event, eventId, setEvent, setFormChanged }) => {
+  const [activeTab, setActiveTab] = useState(0);
   const [testEmailStatus, setTestEmailStatus] = useState(null);
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [testingEmail, setTestingEmail] = useState(false);
+
+  // --- Email Templates State (moved from renderTemplatesTab) ---
+  const [selectedTemplate, setSelectedTemplate] = useState('registration');
+  const [localTemplates, setLocalTemplates] = useState(() => JSON.parse(JSON.stringify((event?.emailSettings?.templates) || {})));
+  const [saving, setSaving] = useState(false);
+  const [templateError, setTemplateError] = useState(null);
+  const subjectRef = useRef();
+  const bodyRef = useRef();
+
+  // Update local state if event changes
+  useEffect(() => {
+    setLocalTemplates(JSON.parse(JSON.stringify((event?.emailSettings?.templates) || {})));
+  }, [event?.emailSettings?.templates]);
+
+  // Log eventId and event on every render for debugging
+  console.log('[EmailTab] Render: eventId =', eventId, 'event =', event);
 
   // Initialize email settings if they don't exist
   useEffect(() => {
@@ -193,6 +306,14 @@ The Organizing Team`
   };
 
   const handleTestEmail = async () => {
+    console.log('handleTestEmail: eventId:', eventId, 'event:', event);
+    if (!eventId) {
+      setTestEmailStatus({
+        type: 'error',
+        message: 'Event ID is missing. Please reload the page or contact support.'
+      });
+      return;
+    }
     if (!testEmailAddress || !testEmailAddress.includes('@')) {
       setTestEmailStatus({
         type: 'error',
@@ -200,23 +321,25 @@ The Organizing Team`
       });
       return;
     }
-
     setTestingEmail(true);
     setTestEmailStatus(null);
-
     try {
-      // Simulate API call for test email
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Success simulation
-      setTestEmailStatus({
-        type: 'success',
-        message: `Test email sent to ${testEmailAddress}`
-      });
+      const res = await emailService.testSmtpConfiguration(eventId, testEmailAddress);
+      if (res.success) {
+        setTestEmailStatus({
+          type: 'success',
+          message: res.message || `Test email sent to ${testEmailAddress}`
+        });
+      } else {
+        setTestEmailStatus({
+          type: 'error',
+          message: res.message || 'Failed to send test email'
+        });
+      }
     } catch (error) {
       setTestEmailStatus({
         type: 'error',
-        message: error.message || 'Failed to send test email'
+        message: error?.response?.data?.message || error.message || 'Failed to send test email'
       });
     } finally {
       setTestingEmail(false);
@@ -485,7 +608,7 @@ The Organizing Team`
               variant="primary"
               className="rounded-l-none"
               onClick={handleTestEmail}
-              disabled={testingEmail}
+              disabled={testingEmail || !eventId}
             >
               {testingEmail ? <Spinner size="sm" className="mr-2" /> : null}
               Send Test
@@ -502,193 +625,287 @@ The Organizing Team`
   );
 
   const renderTemplatesTab = () => (
-    <div className="space-y-6">
-      <Card>
-        <h3 className="text-lg font-medium mb-4">Email Templates</h3>
-        <p className="text-gray-500 mb-4">Customize the email templates used for different notifications</p>
-        
-        <div className="mb-4">
-          <select
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            defaultValue="registration"
-            onChange={(e) => setActiveTab(`template-${e.target.value}`)}
+    <div className="space-y-8">
+      <div className="flex flex-wrap gap-2 mb-4">
+        {TEMPLATE_TYPES.map(t => (
+          <button
+            key={t.key}
+            className={`px-4 py-2 rounded-md font-medium border transition-all duration-150 ${selectedTemplate === t.key ? 'bg-primary-600 text-white border-primary-600 shadow' : 'bg-white text-gray-700 border-gray-300 hover:bg-primary-50'}`}
+            onClick={() => setSelectedTemplate(t.key)}
+            type="button"
           >
-            <option value="registration">Registration Confirmation</option>
-            <option value="reminder">Event Reminder</option>
-            <option value="certificate">Certificate Delivery</option>
-            <option value="workshop">Workshop Information</option>
-            <option value="scientificBrochure">Scientific Brochure</option>
-            <option value="custom">Custom Email</option>
-          </select>
-        </div>
-
-        <div className="mt-6">
-          {activeTab === 'template-registration' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Registration Confirmation</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.registration?.subject || ''}
-                  onChange={(e) => handleTemplateChange('registration', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <Card className="p-6">
+        <div className="flex flex-col md:flex-row gap-8">
+          <div className="flex-1 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <div className="flex gap-2 mb-1">
+                {templateMeta.placeholders.map(ph => (
+                  <button
+                    key={ph.key + '-subject'}
+                    className="px-2 py-1 text-xs bg-primary-50 text-primary-700 rounded hover:bg-primary-100 border border-primary-200"
+                    type="button"
+                    onClick={() => handleInsert('subject', ph.key)}
+                  >
+                    {ph.key}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.registration?.body || ''}
-                  onChange={(e) => handleTemplateChange('registration', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code>, <code>{'{{'}registrationId{'}}'}</code>, <code>{'{{'}eventDate{'}}'}</code>, <code>{'{{'}eventVenue{'}}'}</code> as placeholders.
-                  Use <code>[QR_CODE]</code> to place the registration QR code.
-                </p>
+              <input
+                ref={subjectRef}
+                type="text"
+                value={template.subject || ''}
+                onChange={e => handleFieldChange('subject', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono"
+                placeholder="Enter email subject"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
+              <TiptapToolbar editor={tiptapEditor} onInsertPlaceholder={handleTiptapInsertPlaceholder} />
+              <div className="border rounded-md bg-white min-h-[200px] p-2">
+                <EditorContent editor={tiptapEditor} />
               </div>
             </div>
-          )}
-
-          {activeTab === 'template-reminder' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Event Reminder</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.reminder?.subject || ''}
-                  onChange={(e) => handleTemplateChange('reminder', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.reminder?.body || ''}
-                  onChange={(e) => handleTemplateChange('reminder', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code>, <code>{'{{'}eventDate{'}}'}</code>, <code>{'{{'}eventVenue{'}}'}</code> as placeholders.
-                </p>
+            {templateError && <Alert variant="error" className="mt-2">{templateError}</Alert>}
+            <div className="flex gap-2 mt-4">
+              <Button variant="primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Spinner size="sm" className="mr-2" /> : null} Save Template
+              </Button>
+              <Button variant="outline" onClick={handleReset} disabled={saving}>Reset</Button>
+            </div>
+          </div>
+          <div className="flex-1">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 shadow-sm">
+              <h4 className="font-semibold text-gray-700 mb-2">Live Preview</h4>
+              <div className="text-sm text-gray-800 whitespace-pre-line min-h-[120px]">
+                <strong>Subject:</strong> {renderPreview(template.subject)}
+                <br />
+                <strong>Body:</strong>
+                <div className="mt-1">{renderPreview(template.body)}</div>
               </div>
             </div>
-          )}
-
-          {activeTab === 'template-certificate' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Certificate Delivery</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.certificate?.subject || ''}
-                  onChange={(e) => handleTemplateChange('certificate', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.certificate?.body || ''}
-                  onChange={(e) => handleTemplateChange('certificate', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code> as placeholders. Certificate will be attached automatically.
-                </p>
-              </div>
+            <div className="mt-6">
+              <h5 className="font-semibold text-gray-600 mb-1">Required Placeholders</h5>
+              <ul className="list-disc list-inside text-xs text-gray-500">
+                {templateMeta.required.map(ph => (
+                  <li key={ph}>{ph}</li>
+                ))}
+              </ul>
+              <h5 className="font-semibold text-gray-600 mt-4 mb-1">Available Placeholders</h5>
+              <ul className="list-disc list-inside text-xs text-gray-500">
+                {templateMeta.placeholders.map(ph => (
+                  <li key={ph.key}><span className="font-mono text-primary-700">{ph.key}</span> - {ph.desc}</li>
+                ))}
+              </ul>
             </div>
-          )}
-
-          {activeTab === 'template-workshop' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Workshop Information</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.workshop?.subject || ''}
-                  onChange={(e) => handleTemplateChange('workshop', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.workshop?.body || ''}
-                  onChange={(e) => handleTemplateChange('workshop', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code>, <code>{'{{'}workshopTitle{'}}'}</code>, <code>{'{{'}workshopDate{'}}'}</code>, <code>{'{{'}workshopTime{'}}'}</code>, <code>{'{{'}workshopLocation{'}}'}</code> as placeholders.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'template-scientificBrochure' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Scientific Brochure</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.scientificBrochure?.subject || ''}
-                  onChange={(e) => handleTemplateChange('scientificBrochure', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.scientificBrochure?.body || ''}
-                  onChange={(e) => handleTemplateChange('scientificBrochure', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code> as placeholders. The brochure will be attached automatically.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'template-custom' && (
-            <div className="space-y-4">
-              <h4 className="font-medium">Custom Email</h4>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                <input
-                  type="text"
-                  value={emailSettings.templates?.custom?.subject || ''}
-                  onChange={(e) => handleTemplateChange('custom', 'subject', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-                <textarea
-                  rows={10}
-                  value={emailSettings.templates?.custom?.body || ''}
-                  onChange={(e) => handleTemplateChange('custom', 'body', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code> as placeholders. You can add attachments when sending.
-                </p>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </Card>
     </div>
   );
+
+  // Template meta and handlers
+  const templateMeta = TEMPLATE_TYPES.find(t => t.key === selectedTemplate);
+  const template = localTemplates[selectedTemplate] || { subject: '', body: '' };
+
+  const handleInsert = (field, value) => {
+    if (field === 'subject') {
+      insertAtCursor(subjectRef, value);
+    } else {
+      insertAtCursor(bodyRef, value);
+    }
+  };
+
+  const handleFieldChange = (field, value) => {
+    setLocalTemplates(prev => ({
+      ...prev,
+      [selectedTemplate]: {
+        ...prev[selectedTemplate],
+        [field]: value
+      }
+    }));
+  };
+
+  const validateTemplate = () => {
+    const { subject, body } = localTemplates[selectedTemplate] || {};
+    const missing = templateMeta.required.filter(ph => !((subject || '') + (body || '')).includes(ph));
+    return missing;
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setTemplateError(null);
+    const missing = validateTemplate();
+    if (missing.length > 0) {
+      setTemplateError('Missing required placeholders: ' + missing.join(', '));
+      setSaving(false);
+      return;
+    }
+    try {
+      await emailService.updateTemplates(eventId, localTemplates);
+      toast.success('Template saved!');
+      setEvent({ ...event, emailSettings: { ...event.emailSettings, templates: localTemplates } });
+    } catch (err) {
+      setTemplateError(err?.response?.data?.message || err.message || 'Failed to save template');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setLocalTemplates(JSON.parse(JSON.stringify((event?.emailSettings?.templates) || {})));
+    setTemplateError(null);
+  };
+
+  // Live preview with sample data
+  const sampleData = {
+    firstName: 'Jane',
+    eventName: 'Sample Event',
+    registrationId: 'REG123',
+    eventDate: 'June 1, 2025',
+    eventVenue: 'Grand Hall',
+    workshopTitle: 'AI Workshop',
+    workshopDate: 'June 2, 2025',
+    workshopTime: '10:00 AM',
+    workshopLocation: 'Room 101'
+  };
+  function renderPreview(str) {
+    if (!str) return '';
+    let out = str;
+    Object.entries(sampleData).forEach(([k, v]) => {
+      out = out.replaceAll(`{{${k}}}`, v);
+    });
+    out = out.replaceAll('[QR_CODE]', '[QR_CODE]');
+    return out;
+  }
+
+  // Custom image upload handler for Mantine RTE
+  async function handleMantineImageUpload(file, eventId) {
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch(`/api/events/${eventId}/emails/upload-image`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.url) {
+        return data.url;
+      } else {
+        toast.error('Image upload failed');
+        return null;
+      }
+    } catch (err) {
+      toast.error('Image upload error');
+      return null;
+    }
+  }
+
+  // Image upload handler for Tiptap
+  const handleTiptapImageUpload = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.click();
+    input.onchange = async () => {
+      const file = input.files[0];
+      console.log('[Tiptap Image Upload] Selected file:', file); // Debug log
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('image', file);
+      try {
+        const res = await fetch(`/api/events/${eventId}/emails/upload-image`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (data.url) {
+          tiptapEditor.chain().focus().setImage({ src: data.url }).run();
+        } else {
+          toast.error('Image upload failed');
+        }
+      } catch (err) {
+        toast.error('Image upload error');
+      }
+    };
+  };
+
+  // Tiptap toolbar component
+  function TiptapToolbar({ editor, onInsertPlaceholder }) {
+    if (!editor) return null;
+    return (
+      <div className="flex flex-wrap gap-2 mb-2 border-b pb-2">
+        <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'font-bold text-primary-700' : ''}>B</button>
+        <button onClick={() => editor.chain().focus().toggleItalic().run()} className={editor.isActive('italic') ? 'italic text-primary-700' : ''}>I</button>
+        <button onClick={() => editor.chain().focus().toggleUnderline().run()} className={editor.isActive('underline') ? 'underline text-primary-700' : ''}>U</button>
+        <button onClick={() => editor.chain().focus().toggleStrike().run()} className={editor.isActive('strike') ? 'line-through text-primary-700' : ''}>S</button>
+        <button onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className={editor.isActive('heading', { level: 1 }) ? 'font-bold text-lg text-primary-700' : ''}>H1</button>
+        <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'font-bold text-primary-700' : ''}>H2</button>
+        <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive('bulletList') ? 'text-primary-700' : ''}>• List</button>
+        <button onClick={() => editor.chain().focus().toggleOrderedList().run()} className={editor.isActive('orderedList') ? 'text-primary-700' : ''}>1. List</button>
+        <button onClick={() => editor.chain().focus().setTextAlign('left').run()} className={editor.isActive({ textAlign: 'left' }) ? 'text-primary-700' : ''}>Left</button>
+        <button onClick={() => editor.chain().focus().setTextAlign('center').run()} className={editor.isActive({ textAlign: 'center' }) ? 'text-primary-700' : ''}>Center</button>
+        <button onClick={() => editor.chain().focus().setTextAlign('right').run()} className={editor.isActive({ textAlign: 'right' }) ? 'text-primary-700' : ''}>Right</button>
+        <button onClick={() => editor.chain().focus().setTextAlign('justify').run()} className={editor.isActive({ textAlign: 'justify' }) ? 'text-primary-700' : ''}>Justify</button>
+        {/* Image by URL */}
+        <button onClick={() => {
+          const url = prompt('Enter image URL');
+          if (url) editor.chain().focus().setImage({ src: url }).run();
+        }}>Image by URL</button>
+        {/* Image upload */}
+        <button type="button" onClick={handleTiptapImageUpload}>Upload Image</button>
+        <button onClick={() => {
+          const url = prompt('Enter link URL');
+          if (url) editor.chain().focus().setLink({ href: url }).run();
+        }}>Link</button>
+        <button onClick={() => editor.chain().focus().unsetLink().run()}>Unlink</button>
+        {/* Placeholder buttons */}
+        {onInsertPlaceholder && (
+          <span className="ml-4 flex gap-1">
+            {TEMPLATE_TYPES.find(t => t.key === selectedTemplate)?.placeholders.map(ph => (
+              <button
+                key={ph.key + '-body'}
+                className="px-2 py-1 text-xs bg-primary-50 text-primary-700 rounded hover:bg-primary-100 border border-primary-200"
+                type="button"
+                onClick={() => onInsertPlaceholder(ph.key)}
+              >
+                {ph.key}
+              </button>
+            ))}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // Tiptap editor instance for the template body
+  const tiptapEditor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      Link,
+      Image,
+      TextAlign.configure({ types: ['heading', 'paragraph'] })
+    ],
+    content: template.body || '',
+    onUpdate: ({ editor }) => {
+      handleFieldChange('body', editor.getHTML());
+    },
+  });
+
+  // Insert placeholder at cursor in Tiptap
+  const handleTiptapInsertPlaceholder = (placeholder) => {
+    if (tiptapEditor) {
+      tiptapEditor.chain().focus().insertContent(placeholder).run();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -707,9 +924,9 @@ The Organizing Team`
       />
 
       <div className="mt-6">
-        {activeTab === 'general' && renderGeneralTab()}
-        {activeTab === 'smtp' && renderSMTPTab()}
-        {activeTab === 'templates' && renderTemplatesTab()}
+        {activeTab === 0 && renderGeneralTab()}
+        {activeTab === 1 && renderSMTPTab()}
+        {activeTab === 2 && renderTemplatesTab()}
       </div>
       
       {/* Debug info */}

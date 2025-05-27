@@ -30,6 +30,9 @@ const EmailsTab = () => {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
+  const [errorModalErrors, setErrorModalErrors] = useState([]);
 
   // Load event data and categories
   const fetchData = async () => {
@@ -236,7 +239,9 @@ const EmailsTab = () => {
     event.emailSettings && 
     event.emailSettings.enabled && 
     event.emailSettings.smtpHost && 
-    event.emailSettings.smtpUser;
+    event.emailSettings.smtpUser && 
+    event.emailSettings.smtpPassword && 
+    event.emailSettings.senderEmail;
 
   const renderComposeTab = () => (
     <div className="space-y-6">
@@ -294,6 +299,52 @@ const EmailsTab = () => {
             Use <code>{'{{'}firstName{'}}'}</code>, <code>{'{{'}eventName{'}}'}</code>, <code>{'{{'}registrationId{'}}'}</code>, etc. as placeholders.
             Use <code>[QR_CODE]</code> to include the registration QR code.
           </p>
+        </div>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Attachments (Optional)</label>
+          <input
+            type="file"
+            multiple
+            onChange={e => {
+              const allowedTypes = [
+                'application/pdf',
+                'image/png',
+                'image/jpeg',
+                'image/jpg',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              ];
+              const maxSize = 5 * 1024 * 1024; // 5MB
+              const files = Array.from(e.target.files);
+              const validFiles = [];
+              let errorMsg = '';
+              for (const file of files) {
+                if (!allowedTypes.includes(file.type)) {
+                  errorMsg = `File type not allowed: ${file.name}`;
+                  continue;
+                }
+                if (file.size > maxSize) {
+                  errorMsg = `File too large (max 5MB): ${file.name}`;
+                  continue;
+                }
+                validFiles.push(file);
+              }
+              setEmailData(prev => ({ ...prev, attachments: validFiles }));
+              setAttachmentError(errorMsg);
+            }}
+            className="block w-full text-sm text-gray-700 border border-gray-300 rounded-md cursor-pointer focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+          />
+          {attachmentError && (
+            <div className="text-xs text-red-600 mt-1">{attachmentError}</div>
+          )}
+          {emailData.attachments && emailData.attachments.length > 0 && (
+            <ul className="mt-2 text-xs text-gray-600">
+              {emailData.attachments.map((file, idx) => (
+                <li key={idx}>{file.name}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-gray-500 mt-1">You can attach multiple files (PDF, images, etc. Max 5MB each).</p>
         </div>
       </Card>
 
@@ -403,6 +454,7 @@ const EmailsTab = () => {
             onClick={handleSendEmail}
             className="flex items-center gap-2"
             disabled={isSending || !isEmailConfigured}
+            title={!isEmailConfigured ? 'Configure SMTP settings in Email Settings before sending.' : ''}
           >
             {isSending ? <Spinner size="sm" className="mr-2" /> : <FiSend />}
             Send Email
@@ -434,32 +486,22 @@ const EmailsTab = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
                 <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Subject
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Recipients
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recipients</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Errors</th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attachments</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {emailHistory.map((email, index) => (
                   <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(email.date)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {email.subject}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {email.recipients}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatDate(email.date)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{email.subject}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{email.recipients}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         email.status === 'completed' ? 'bg-green-100 text-green-800' :
@@ -471,6 +513,37 @@ const EmailsTab = () => {
                         {email.status === 'failed' && <FiAlertCircle className="mr-1" />}
                         {email.status.charAt(0).toUpperCase() + email.status.slice(1)}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{email.sent ?? '—'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{email.failed ?? '—'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {email.failed > 0 && email.errors && email.errors.length > 0 ? (
+                        <Button size="xs" variant="outline" onClick={() => { setErrorModalErrors(email.errors); setErrorModalOpen(true); }}>
+                          View Errors
+                        </Button>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {email.attachments && email.attachments.length > 0 ? (
+                        <ul className="space-y-1">
+                          {email.attachments.map((att, i) => (
+                            <li key={i}>
+                              <a
+                                href={`/uploads/${att.path.split('/').pop()}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary-600 hover:underline"
+                              >
+                                {att.filename}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -572,6 +645,32 @@ const EmailsTab = () => {
           >
             {isSending ? <Spinner size="sm" className="mr-2" /> : null}
             Send Email
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        title="Email Delivery Errors"
+        size="md"
+      >
+        <div className="space-y-2">
+          {errorModalErrors.length === 0 ? (
+            <p>No errors found.</p>
+          ) : (
+            <ul className="text-sm text-red-700">
+              {errorModalErrors.map((err, idx) => (
+                <li key={idx} className="mb-2">
+                  <span className="font-semibold">{err.email}:</span> {err.error}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex justify-end mt-4">
+          <Button variant="secondary" onClick={() => setErrorModalOpen(false)}>
+            Close
           </Button>
         </div>
       </Modal>

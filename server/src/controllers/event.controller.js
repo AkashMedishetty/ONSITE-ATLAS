@@ -108,8 +108,6 @@ const createEvent = asyncHandler(async (req, res) => {
 
     // Create the event
     const event = await Event.create(eventData);
-    // MIRROR: Create ResourceSettings docs for each type
-    await mirrorEventSettingsToResourceSettings(event._id, event);
     return sendSuccess(res, 201, 'Event created successfully', event);
   } catch (error) {
     console.error(`Error in createEvent: ${error.message}`);
@@ -160,10 +158,6 @@ const updateEvent = asyncHandler(async (req, res) => {
       return sendSuccess(res, 404, 'Event not found');
     }
 
-    // MIRROR: If resource settings fields are updated, mirror to ResourceSettings
-    if ('foodSettings' in updateData || 'kitSettings' in updateData || 'certificateSettings' in updateData) {
-      await mirrorEventSettingsToResourceSettings(eventId, event);
-    }
     return sendSuccess(res, 200, 'Event updated successfully', event);
   } catch (error) {
     console.error(`Error in updateEvent: ${error.message}`);
@@ -634,28 +628,15 @@ const getEventResourceConfig = asyncHandler(async (req, res, next) => {
 
   // Fetch ResourceSettings for each type
   const types = [
-    { type: 'food', field: 'foodSettings', defaultSettings: { enabled: false, meals: [], days: [] } },
-    { type: 'kitBag', field: 'kitSettings', defaultSettings: { enabled: false, items: [] } },
-    { type: 'certificate', field: 'certificateSettings', defaultSettings: { enabled: false, types: [] } }
+    { type: 'food', field: 'food', defaultSettings: { enabled: false, meals: [], days: [] } },
+    { type: 'kitBag', field: 'kits', defaultSettings: { enabled: false, items: [] } },
+    { type: 'certificate', field: 'certificates', defaultSettings: { enabled: false, types: [] } }
   ];
-  const event = await Event.findById(eventId).select('name foodSettings kitSettings certificateSettings');
-  if (!event) {
-    return sendSuccess(res, 404, 'Event not found');
-  }
-  let updateNeeded = false;
-  const resourceConfig = { eventName: event.name };
+  const resourceConfig = {};
   for (const { type, field, defaultSettings } of types) {
     const resourceSetting = await ResourceSetting.findOne({ event: eventId, type });
     let settings = resourceSetting ? resourceSetting.settings : defaultSettings;
     resourceConfig[field] = settings;
-    // If event doc is out of sync, update it
-    if (JSON.stringify(event[field]) !== JSON.stringify(settings)) {
-      event[field] = settings;
-      updateNeeded = true;
-    }
-  }
-  if (updateNeeded) {
-    await event.save();
   }
   return sendSuccess(res, 200, 'Resource configuration retrieved successfully', resourceConfig);
 });
@@ -927,41 +908,13 @@ const getEventReviewers = asyncHandler(async (req, res, next) => {
 
   if (!reviewers || reviewers.length === 0) {
     console.log('No reviewers found for event:', eventId);
-    return next(createApiError('No reviewers found for this event', 404));
+    return next(createApiError(404, 'No reviewers found for this event'));
   }
 
   console.log('Returning reviewers:', reviewers.map(r => r.email));
   sendSuccess(res, 200, 'Reviewers retrieved successfully', reviewers);
   console.log('--- [getEventReviewers END] ---');
 });
-
-// Utility: Mirror Event document resource settings to ResourceSettings
-async function mirrorEventSettingsToResourceSettings(eventId, eventDoc) {
-  const resourceTypes = [
-    { type: 'food', field: 'foodSettings', defaultSettings: { enabled: true, meals: [], days: [] } },
-    { type: 'kitBag', field: 'kitSettings', defaultSettings: { enabled: true, items: [] } },
-    { type: 'certificate', field: 'certificateSettings', defaultSettings: { enabled: true, types: [] } }
-  ];
-  for (const { type, field, defaultSettings } of resourceTypes) {
-    const settings = eventDoc[field] || defaultSettings;
-    let resourceSettingsDoc = await ResourceSetting.findOne({ event: eventId, type });
-    if (!resourceSettingsDoc) {
-      resourceSettingsDoc = new ResourceSetting({
-        event: eventId,
-        type,
-        settings,
-        isEnabled: settings.enabled !== false,
-        createdBy: eventDoc.createdBy || null,
-        updatedBy: eventDoc.updatedBy || null
-      });
-    } else {
-      resourceSettingsDoc.settings = settings;
-      resourceSettingsDoc.isEnabled = settings.enabled !== false;
-      resourceSettingsDoc.updatedBy = eventDoc.updatedBy || null;
-    }
-    await resourceSettingsDoc.save();
-  }
-}
 
 module.exports = {
   getEvents,

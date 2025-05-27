@@ -114,21 +114,59 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
     }
   }, [event, setEvent]);
 
+  // Helper to update requiredFields, visibleFields, and fieldOrder based on toggles and custom fields
+  const updateFieldConfig = (settings) => {
+    // Standard fields in UI order
+    const standardFields = [
+      'firstName', 'lastName', 'email', 'phone', 'organization', 'title', 'categoryId',
+      'address', 'city', 'state', 'country', 'postalCode',
+      'dietaryRestrictions', 'emergencyContact', 'emergencyPhone', 'specialRequirements',
+      'agreeToTerms'
+    ];
+    // Always required: firstName, lastName, email, categoryId
+    const requiredFields = ['firstName', 'lastName', 'email', 'categoryId'];
+    const visibleFields = ['firstName', 'lastName', 'email', 'categoryId'];
+    const fieldOrder = ['firstName', 'lastName', 'email', 'categoryId'];
+    if (settings.collectPhoneNumber) { visibleFields.push('phone'); fieldOrder.push('phone'); }
+    if (settings.collectOrganization) { visibleFields.push('organization'); fieldOrder.push('organization'); }
+    if (settings.collectAddress) { visibleFields.push('address'); fieldOrder.push('address'); }
+    if (settings.collectDietaryRestrictions) { visibleFields.push('dietaryRestrictions'); fieldOrder.push('dietaryRestrictions'); }
+    // Add custom fields in their UI order
+    if (Array.isArray(settings.customFields)) {
+      settings.customFields.forEach(field => {
+        if (field && field.name) {
+          visibleFields.push(field.name);
+          fieldOrder.push(field.name);
+          if (field.required || field.isRequired) requiredFields.push(field.name);
+        }
+      });
+    }
+    return { requiredFields, visibleFields, fieldOrder };
+  };
+
   // Handle toggle changes
   const handleToggleChange = (field, value) => {
-    setRegistrationSettings({
+    const updatedSettings = {
       ...registrationSettings,
       [field]: value
+    };
+    const { requiredFields, visibleFields, fieldOrder } = updateFieldConfig(updatedSettings);
+    setRegistrationSettings({
+      ...updatedSettings,
+      requiredFields,
+      visibleFields,
+      fieldOrder
     });
-    
     const updatedEvent = {
       ...event,
       registrationSettings: {
         ...event.registrationSettings,
-        [field]: value
+        ...updatedSettings,
+        requiredFields,
+        visibleFields,
+        fieldOrder
       }
     };
-    
     setEvent(updatedEvent);
     setFormChanged(true);
   };
@@ -205,7 +243,16 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
   // Prepare to edit a field
   const editField = (index) => {
     setEditingField(index);
-    setNewField(registrationSettings.customFields[index]);
+    const field = registrationSettings.customFields[index] || {};
+    setNewField({
+      name: field.name || '',
+      label: typeof field.label === 'string' ? field.label : '',
+      type: field.type || 'text',
+      required: typeof field.isRequired === 'boolean' ? field.isRequired : (typeof field.required === 'boolean' ? field.required : false),
+      placeholder: typeof field.placeholder === 'string' ? field.placeholder : '',
+      options: Array.isArray(field.options) ? field.options : [],
+      description: typeof field.description === 'string' ? field.description : ''
+    });
     setShowFieldModal(true);
   };
 
@@ -217,9 +264,7 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
       id: fieldId,
       name: newField.name || `field_${fieldId}`,
     };
-    
     let updatedFields;
-    
     if (editingField !== null) {
       // Update existing field
       updatedFields = [...registrationSettings.customFields];
@@ -228,23 +273,30 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
       // Add new field
       updatedFields = [...registrationSettings.customFields, finalField];
     }
-    
-    setRegistrationSettings({
+    // Update config after custom field change
+    const updatedSettings = {
       ...registrationSettings,
       customFields: updatedFields
+    };
+    const { requiredFields, visibleFields, fieldOrder } = updateFieldConfig(updatedSettings);
+    setRegistrationSettings({
+      ...updatedSettings,
+      requiredFields,
+      visibleFields,
+      fieldOrder
     });
-    
     const updatedEvent = {
       ...event,
       registrationSettings: {
         ...event.registrationSettings,
-        customFields: updatedFields
+        ...updatedSettings,
+        requiredFields,
+        visibleFields,
+        fieldOrder
       }
     };
-    
     setEvent(updatedEvent);
     setFormChanged(true);
-    
     // Reset form
     setNewField({
       name: '',
@@ -255,7 +307,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
       options: [],
       description: ''
     });
-    
     setEditingField(null);
     setShowFieldModal(false);
   };
@@ -287,44 +338,56 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
   const removeField = (index) => {
     const updatedFields = [...registrationSettings.customFields];
     updatedFields.splice(index, 1);
-    
-    setRegistrationSettings({
+    // Update config after custom field removal
+    const updatedSettings = {
       ...registrationSettings,
       customFields: updatedFields
+    };
+    const { requiredFields, visibleFields, fieldOrder } = updateFieldConfig(updatedSettings);
+    setRegistrationSettings({
+      ...updatedSettings,
+      requiredFields,
+      visibleFields,
+      fieldOrder
     });
-    
     const updatedEvent = {
       ...event,
       registrationSettings: {
         ...event.registrationSettings,
-        customFields: updatedFields
+        ...updatedSettings,
+        requiredFields,
+        visibleFields,
+        fieldOrder
       }
     };
-    
     setEvent(updatedEvent);
     setFormChanged(true);
   };
 
   // Handle field input changes
-  const handleFieldChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setNewField({
-      ...newField,
-      [name]: type === 'checkbox' ? checked : value
-    });
+  const handleFieldChange = (eOrValue, meta) => {
+    if (eOrValue && eOrValue.target) {
+      const { name, value, type, checked } = eOrValue.target;
+      setNewField({
+        ...newField,
+        [name]: type === 'checkbox' ? checked : value
+      });
+    } else if (meta && meta.name) {
+      const { name } = meta;
+      setNewField({
+        ...newField,
+        [name]: eOrValue
+      });
+    }
   };
 
   // Field type options
   const fieldTypeOptions = [
     { value: 'text', label: 'Text' },
-    { value: 'email', label: 'Email' },
     { value: 'number', label: 'Number' },
-    { value: 'phone', label: 'Phone' },
     { value: 'date', label: 'Date' },
     { value: 'select', label: 'Dropdown' },
-    { value: 'checkbox', label: 'Checkbox' },
-    { value: 'radio', label: 'Radio' },
-    { value: 'textarea', label: 'Text Area' }
+    { value: 'checkbox', label: 'Checkbox' }
   ];
 
   // Get external registration link
@@ -364,14 +427,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                 label="Registration Open"
                 checked={registrationSettings.isOpen}
                 onChange={(checked) => handleToggleChange('isOpen', checked)}
-                description="When enabled, attendees can register for this event"
-              />
-              
-              <Switch
-                label="Require Approval"
-                checked={registrationSettings.requiresApproval}
-                onChange={(checked) => handleToggleChange('requiresApproval', checked)}
-                description="When enabled, registrations require admin approval"
               />
             </div>
           </Card>
@@ -543,7 +598,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                   label="Enable External Registration Page"
                   checked={registrationSettings.portal?.enabled}
                   onChange={(checked) => handlePortalChange('enabled', checked)}
-                  description="When enabled, attendees can register through a public link"
                 />
                 
                 {registrationSettings.portal?.enabled && (
@@ -607,7 +661,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                       label="Primary Color"
                       value={registrationSettings.portal?.primaryColor || '#4F46E5'}
                       onChange={(e) => handlePortalChange('primaryColor', e.target.value)}
-                      description="Used for buttons and highlights"
                     />
                     
                     <Input
@@ -615,7 +668,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                       label="Secondary Color"
                       value={registrationSettings.portal?.secondaryColor || '#10B981'}
                       onChange={(e) => handlePortalChange('secondaryColor', e.target.value)}
-                      description="Used for accents and secondary elements"
                     />
                   </div>
                   
@@ -630,7 +682,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                     value={registrationSettings.portal?.backgroundImage || ''}
                     onChange={(e) => handlePortalChange('backgroundImage', e.target.value)}
                     placeholder="https://example.com/background.jpg"
-                    description="Optional. Leave blank for default background."
                   />
                   
                   <Input
@@ -650,7 +701,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                     label="Enable Social Sharing"
                     checked={registrationSettings.portal?.showSocialShare}
                     onChange={(checked) => handlePortalChange('showSocialShare', checked)}
-                    description="Allow attendees to share on social media after registering"
                   />
                 </>
               )}
@@ -669,7 +719,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
               onChange={handleInputChange}
               placeholder="Enter any special instructions for attendees"
               rows={4}
-              description="These instructions will appear at the top of the registration form"
             />
             
             <Textarea
@@ -679,10 +728,9 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
               onChange={handleInputChange}
               placeholder="Enter the terms and conditions for registration"
               rows={8}
-              description="Attendees will be required to accept these terms before registering"
             />
           </div>
-    </Card>
+        </Card>
       )}
 
       {/* Field Modal */}
@@ -712,7 +760,6 @@ const RegistrationTab = ({ event, setEvent, setFormChanged, id }) => {
                   value={newField.name}
                   onChange={handleFieldChange}
                   placeholder="e.g., jobTitle"
-                  description="No spaces, used in code"
                 />
                 
                 <Select

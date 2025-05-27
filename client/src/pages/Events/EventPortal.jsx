@@ -772,7 +772,7 @@ function EventPortal() {
                     case 2: // Badges (was 3)
                       return <BadgesTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} id={id} />;
                     case 3: // Email (was 4)
-                      return <EmailTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
+                      return <EmailTab event={event} eventId={id} setEvent={updateEvent} setFormChanged={setFormChanged} />;
                     case 4: // Payment (was 5)
                       return <PaymentTab event={event} setEvent={updateEvent} setFormChanged={setFormChanged} />;
                     case 5: // Resources (was 6)
@@ -789,21 +789,6 @@ function EventPortal() {
               
               {/* Add this at the bottom - Restoring Save/Cancel buttons */}
               <div className="mt-8 pt-6 border-t border-gray-200">
-                {/* Test button to debug formChanged state */}
-                {isDevelopment && ( // Only show test button in development
-                  <div className="mb-4 flex justify-center">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        console.log("Setting formChanged to true for testing");
-                        setFormChanged(true);
-                      }}
-                    >
-                      Test Change (Dev Only)
-                    </Button>
-                  </div>
-                )}
-                
                 {/* Save/Cancel buttons */}
                 <div className="flex justify-end space-x-3">
                   <Button
@@ -1279,7 +1264,7 @@ function EventPortal() {
   
   // Simple EmailsTab wrapper component
   const EmailsTabWrapper = ({ event }) => {
-    return <EmailsTab />;
+    return <EmailsTab eventId={id} event={event} />;
   };
   
   // Render loading state

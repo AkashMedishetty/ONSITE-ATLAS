@@ -65,10 +65,35 @@ const eventSchema = new mongoose.Schema({
       type: Boolean,
       default: true
     },
+    collectPhoneNumber: {
+      type: Boolean,
+      default: true
+    },
+    collectOrganization: {
+      type: Boolean,
+      default: true
+    },
+    collectAddress: {
+      type: Boolean,
+      default: false
+    },
+    collectDietaryRestrictions: {
+      type: Boolean,
+      default: true
+    },
     customFields: [{
       name: {
         type: String,
         required: true
+      },
+      label: {
+        type: String
+      },
+      placeholder: {
+        type: String
+      },
+      description: {
+        type: String
       },
       type: {
         type: String,
@@ -80,7 +105,10 @@ const eventSchema = new mongoose.Schema({
         type: Boolean,
         default: false
       }
-    }]
+    }],
+    fieldOrder: [String],
+    visibleFields: [String],
+    requiredFields: [String]
   },
   categories: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -183,64 +211,6 @@ const eventSchema = new mongoose.Schema({
       default: 5
     }
   },
-  foodSettings: {
-    enabled: {
-      type: Boolean,
-      default: true
-    },
-    meals: [{
-      name: {
-        type: String,
-        default: 'Breakfast'
-      },
-      enabled: {
-        type: Boolean,
-        default: true
-      }
-    }],
-    days: [{
-      date: {
-        type: Date,
-        default: Date.now
-      },
-      enabled: {
-        type: Boolean,
-        default: true
-      }
-    }]
-  },
-  kitSettings: {
-    enabled: {
-      type: Boolean,
-      default: true
-    },
-    items: [{
-      name: {
-        type: String,
-        default: 'Welcome Kit'
-      },
-      enabled: {
-        type: Boolean,
-        default: true
-      }
-    }]
-  },
-  certificateSettings: {
-    enabled: {
-      type: Boolean,
-      default: true
-    },
-    types: [{
-      name: {
-        type: String,
-        default: 'Participation Certificate'
-      },
-      enabled: {
-        type: Boolean,
-        default: true
-      }
-    }]
-  },
   badgeSettings: {
     orientation: {
       type: String,
@@ -280,28 +250,28 @@ const eventSchema = new mongoose.Schema({
     },
     fields: {
       name: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'large', fontWeight: 'bold' }
       },
       organization: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'medium', fontWeight: 'normal' }
       },
       registrationId: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'medium', fontWeight: 'normal' }
       },
       category: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'small', fontWeight: 'normal' }
       },
       country: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'small', fontWeight: 'normal' }
       },
       qrCode: {
-        type: Boolean,
-        default: true
+        type: Object,
+        default: { enabled: true, fontSize: 'medium', fontWeight: 'normal' }
       }
     },
     fieldConfig: {

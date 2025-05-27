@@ -19,6 +19,9 @@ const {
 // Import the new user controller function
 const { getUsersForEvent } = require('../controllers/user.controller');
 
+// Import the email routes
+const emailRoutes = require('./email.routes');
+
 // Route for abstracts settings
 router.route('/:id/abstract-settings')
   .put(protect, async (req, res) => {
@@ -112,5 +115,8 @@ router.route('/:eventId/abstract-workflow/reviewers')
 // Route to get users for a specific event
 router.route('/:eventId/users')
   .get(protect, restrict('admin', 'manager', 'staff'), getUsersForEvent);
+
+// Mount the email routes
+router.use('/:eventId/emails', emailRoutes);
 
 module.exports = router; 
