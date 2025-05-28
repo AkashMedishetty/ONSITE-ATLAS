@@ -65,8 +65,8 @@ const BadgesTab = ({ event, setEvent, setFormChanged }) => {
           console.log('[BadgesTab] Templates fetched successfully:', response.data);
           setAvailableTemplates(response.data);
 
-          // Find default template
-          const defaultTemplate = response.data.find(t => t.isDefault);
+          // Find default template for this event only
+          const defaultTemplate = response.data.find(t => t.isDefault && t.event && (t.event === eventId || t.event === eventIdFromParams));
           if (defaultTemplate) {
             setSelectedTemplateValue(defaultTemplate._id);
           } else {

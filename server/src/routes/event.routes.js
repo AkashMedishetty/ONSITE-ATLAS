@@ -110,7 +110,7 @@ router.get('/:id/resource-config', protect, restrict('admin', 'staff'), getResou
 
 // Route to get reviewers for an event's abstract workflow
 router.route('/:eventId/abstract-workflow/reviewers')
-  .get(protect, restrict('admin', 'staff'), getEventReviewers);
+  .get(protect, restrict('admin', 'staff', 'event-manager'), getEventReviewers);
 
 // Route to get users for a specific event
 router.route('/:eventId/users')

@@ -9,8 +9,10 @@ import {
   Tabs
 } from '../../components/common';
 import authService from '../../services/authService';
+import userService from '../../services/userService';
+import { useParams } from 'react-router-dom';
 
-const UserManagement = () => {
+const UserManagement = (props) => {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -25,15 +27,17 @@ const UserManagement = () => {
   });
   const [status, setStatus] = useState(null);
   const [activeTab, setActiveTab] = useState('users');
+  const params = useParams();
+  const eventId = props.eventId || params.id;
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        // Fetch users from API
-        const usersResponse = await authService.getUsers();
-        if (usersResponse.success) {
+        // Fetch users from API (now requires eventId)
+        const usersResponse = await userService.getUsers(eventId);
+        if (usersResponse.data) {
           setUsers(usersResponse.data || []);
         } else {
           throw new Error(usersResponse.message || 'Failed to fetch users');
@@ -185,60 +189,67 @@ const UserManagement = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {users.map(user => (
-              <tr key={user.id}>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">
-                    {user.firstName} {user.lastName}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-500">{user.email}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-500">
-                    {roles.find(r => r.id === user.role)?.name || user.role}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                    user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {user.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    className="mr-2"
-                    onClick={() => setSelectedUser(user)}
-                  >
-                    View
-                  </Button>
-                  {user.status === 'active' ? (
+            {users.map(user => {
+              // Find the event-specific role for this user
+              let eventRole = null;
+              if (user.eventRoles && Array.isArray(user.eventRoles)) {
+                eventRole = user.eventRoles.find(er => er.eventId === eventId || (er.eventId && er.eventId.toString && er.eventId.toString() === eventId));
+              }
+              return (
+                <tr key={user._id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">
+                      {user.name || `${user.firstName || ''} ${user.lastName || ''}`}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">{user.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      {eventRole ? eventRole.role : (user.role || 'N/A')}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {user.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Never'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <Button
                       size="xs"
-                      variant="danger"
-                      onClick={() => handleUpdateUserStatus(user.id, 'inactive')}
+                      variant="outline"
+                      className="mr-2"
+                      onClick={() => setSelectedUser(user)}
                     >
-                      Deactivate
+                      View
                     </Button>
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="success"
-                      onClick={() => handleUpdateUserStatus(user.id, 'active')}
-                    >
-                      Activate
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    {user.status === 'active' ? (
+                      <Button
+                        size="xs"
+                        variant="danger"
+                        onClick={() => handleUpdateUserStatus(user._id, 'inactive')}
+                      >
+                        Deactivate
+                      </Button>
+                    ) : (
+                      <Button
+                        size="xs"
+                        variant="success"
+                        onClick={() => handleUpdateUserStatus(user._id, 'active')}
+                      >
+                        Activate
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

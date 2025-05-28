@@ -464,8 +464,10 @@ const normalizeStatisticsData = (data) => {
     if (data.resources.food && data.resources.food.total !== undefined) {
       normalized.resourcesDistributed.food = data.resources.food.total;
     }
-    if (data.resources.kitBags && data.resources.kitBags.total !== undefined) {
-      normalized.resourcesDistributed.kits = data.resources.kitBags.total;
+    // Accept both kitBags and kitBag for compatibility, but always use kitBag in normalized output
+    const kitBagData = data.resources.kitBag || data.resources.kitBags;
+    if (kitBagData && kitBagData.total !== undefined) {
+      normalized.resourcesDistributed.kitBag = kitBagData.total;
     }
     if (data.resources.certificates && data.resources.certificates.total !== undefined) {
       normalized.resourcesDistributed.certificates = data.resources.certificates.total;
@@ -494,7 +496,7 @@ const normalizeStatisticsData = (data) => {
       normalized.resourcesDistributed.food = data.resourcesCount.food;
     }
     if (data.resourcesCount.kits !== undefined) {
-      normalized.resourcesDistributed.kits = data.resourcesCount.kits;
+      normalized.resourcesDistributed.kitBag = data.resourcesCount.kits;
     }
     if (data.resourcesCount.certificates !== undefined) {
       normalized.resourcesDistributed.certificates = data.resourcesCount.certificates;
@@ -876,6 +878,21 @@ const getEventCategoriesPublic = async (eventId) => {
   }
 };
 
+// Fetch sponsors for an event
+const getEventSponsors = async (eventId) => {
+  if (!eventId) {
+    throw new Error('Event ID is required to fetch sponsors');
+  }
+  try {
+    const response = await axios.get(`${baseURL}/events/${eventId}/sponsors`);
+    // Assume backend returns { success, data: [sponsors] }
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching event sponsors:', error);
+    return { success: false, message: error.response?.data?.message || 'Failed to fetch sponsors', results: [] };
+  }
+};
+
 const eventService = {
   createEvent,
   fetchEvents,
@@ -894,7 +911,8 @@ const eventService = {
   getResourceConfig,
   getEventUsers,
   getEventReviewers,
-  getEventCategoriesPublic
+  getEventCategoriesPublic,
+  getEventSponsors
 };
 
 export default eventService; 

@@ -122,7 +122,7 @@ const ReportsTab = ({ eventId }) => {
     { id: 'overview', label: 'Overview' },
     { id: 'registrations', label: 'Registrations' },
     { id: 'food', label: 'Food' },
-    { id: 'kitbags', label: 'Kits' },
+    { id: 'kitBag', label: 'Kit Bags' },
     { id: 'certificates', label: 'Certs' },
     { id: 'abstracts', label: 'Abstracts' }
   ];
@@ -138,7 +138,7 @@ const ReportsTab = ({ eventId }) => {
   const [fetchErrors, setFetchErrors] = useState({});
   const [statistics, setStatistics] = useState({
     registrations: { total: 0, checkedIn: 0, byCategory: {}, byDay: [] },
-    resources: { food: { total: 0, byType: {}, byDay: [] }, kitBags: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
+    resources: { food: { total: 0, byType: {}, byDay: [] }, kitBag: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
     abstracts: { total: 0, byStatus: {}, byCategory: {} }
   });
   const [resourceStats, setResourceStats] = useState({ food: 0, kits: 0, certificates: 0, total: 0 });
@@ -312,7 +312,7 @@ const ReportsTab = ({ eventId }) => {
         
         const statsData = {
           registrations: { total: 0, checkedIn: 0, byCategory: {}, byDay: [] },
-          resources: { food: { total: 0, byType: {}, byDay: [] }, kitBags: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
+          resources: { food: { total: 0, byType: {}, byDay: [] }, kitBag: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
           abstracts: { total: 0, byStatus: {}, byCategory: {} }
         };
 
@@ -331,12 +331,12 @@ const ReportsTab = ({ eventId }) => {
           
           // --- MODIFIED MERGE LOGIC --- 
           statsData.resources.food.byType = fetchedResourceData?.byDetail?.food || {};
-          statsData.resources.kitBags.byType = fetchedResourceData?.byDetail?.kitBag || {};
+          statsData.resources.kitBag.byType = fetchedResourceData?.byDetail?.kitBag || {};
           statsData.resources.certificates.byType = fetchedResourceData?.byDetail?.certificate || {};
           // --- Store byDay data for resources (specifically useful for food timeline) --- 
           statsData.resources.food.byDay = fetchedResourceData?.byDay || []; 
           // We could potentially store byDay for kits/certs too if needed later:
-          // statsData.resources.kitBags.byDay = fetchedResourceData?.byDay?.filter(d => /* filter logic for kit scans if possible */) || []; 
+          // statsData.resources.kitBag.byDay = fetchedResourceData?.byDay?.filter(d => /* filter logic for kit scans if possible */) || []; 
           // statsData.resources.certificates.byDay = fetchedResourceData?.byDay?.filter(d => /* filter logic for cert scans if possible */) || [];
           
           // Update the separate simple stats state
@@ -437,7 +437,7 @@ const ReportsTab = ({ eventId }) => {
           response = await registrationService.exportRegistrations(eventId, params);
           break;
         case 'food':
-        case 'kitbags': 
+        case 'kitBag': 
         case 'certificates':
           // Use the new exportResourceUsage function
           response = await resourceService.exportResourceUsage(eventId, params.reportType, params);
@@ -677,7 +677,7 @@ const ReportsTab = ({ eventId }) => {
                 </div>
               )}
               {(statistics.resources?.food?.byType && Object.keys(statistics.resources.food.byType).length > 0 ||
-               statistics.resources?.kitBags?.byType && Object.keys(statistics.resources.kitBags.byType).length > 0 ||
+               statistics.resources?.kitBag?.byType && Object.keys(statistics.resources.kitBag.byType).length > 0 ||
                statistics.resources?.certificates?.byType && Object.keys(statistics.resources.certificates.byType).length > 0) && (
                  <div>
                   <h3 className="text-md font-semibold mb-3">Resources</h3>
@@ -688,10 +688,10 @@ const ReportsTab = ({ eventId }) => {
                          <Chart type="Bar" data={{ labels: Object.keys(statistics.resources.food.byType), datasets: [{ data: Object.values(statistics.resources.food.byType) }] }} />
                        </div>
                      )}
-                     {statistics.resources?.kitBags?.byType && Object.keys(statistics.resources.kitBags.byType).length > 0 && (
+                     {statistics.resources?.kitBag?.byType && Object.keys(statistics.resources.kitBag.byType).length > 0 && (
                        <div>
                          <h4 className="text-sm font-medium text-gray-700 mb-1">Kits</h4>
-                         <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBags.byType), datasets: [{ data: Object.values(statistics.resources.kitBags.byType) }] }} />
+                         <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
                        </div>
                      )}
                       {statistics.resources?.certificates?.byType && Object.keys(statistics.resources.certificates.byType).length > 0 && (
@@ -727,7 +727,7 @@ const ReportsTab = ({ eventId }) => {
               {(!statistics.registrations?.byCategory || Object.keys(statistics.registrations.byCategory).length === 0) &&
                !statistics.registrations?.byDay?.length &&
                (!statistics.resources?.food?.byType || Object.keys(statistics.resources.food.byType).length === 0) &&
-               (!statistics.resources?.kitBags?.byType || Object.keys(statistics.resources.kitBags.byType).length === 0) &&
+               (!statistics.resources?.kitBag?.byType || Object.keys(statistics.resources.kitBag.byType).length === 0) &&
                (!statistics.resources?.certificates?.byType || Object.keys(statistics.resources.certificates.byType).length === 0) &&
                (!statistics.abstracts?.byStatus || Object.keys(statistics.abstracts.byStatus).length === 0) &&
                (!statistics.abstracts?.byCategory || Object.keys(statistics.abstracts.byCategory).length === 0) && (
@@ -857,14 +857,14 @@ const ReportsTab = ({ eventId }) => {
            {/* --- End Food Tab Content --- */} 
 
            {/* --- Updated Kit Tab Content --- */} 
-           {activeTab === 'kitbags' && (
+           {activeTab === 'kitBag' && (
              <div className="space-y-8">
                 {/* Row 1: Breakdown & Hourly */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {statistics.resources?.kitBags?.byType && Object.keys(statistics.resources.kitBags.byType).length > 0 ? (
+                  {statistics.resources?.kitBag?.byType && Object.keys(statistics.resources.kitBag.byType).length > 0 ? (
                      <div>
                         <h3 className="text-md font-semibold mb-3">Kits Distributed (by Type)</h3>
-                        <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBags.byType), datasets: [{ data: Object.values(statistics.resources.kitBags.byType) }] }} />
+                        <Chart type="Doughnut" data={{ labels: Object.keys(statistics.resources.kitBag.byType), datasets: [{ data: Object.values(statistics.resources.kitBag.byType) }] }} />
                      </div>
                   ) : (
                     !loading && <p className="text-center text-gray-500 py-4">No kit distribution data available.</p>

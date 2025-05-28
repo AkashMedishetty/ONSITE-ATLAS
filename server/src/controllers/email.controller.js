@@ -23,18 +23,30 @@ const emailService = require('../services/emailService');
  * @access  Private
  */
 exports.sendEmail = asyncHandler(async (req, res) => {
+  console.log('[EMAIL SEND] Endpoint hit. req.body:', req.body, 'req.files:', req.files);
   const { eventId } = req.params;
-  const { email, filters } = req.body;
-  const attachments = req.files || [];
-  
-  // Validate request
-  if (!email || !email.subject || !email.body) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email subject and body are required'
+  // express-fileupload: req.files.attachments can be a single file or array
+  let attachments = [];
+  if (req.files && req.files.attachments) {
+    const files = Array.isArray(req.files.attachments) ? req.files.attachments : [req.files.attachments];
+    // Save files to disk and build attachments array for nodemailer
+    const uploadDir = require('path').join(__dirname, '../../public/uploads');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    attachments = files.map(file => {
+      const filePath = require('path').join(uploadDir, file.name);
+      fs.writeFileSync(filePath, file.data);
+      return {
+        filename: file.name,
+        path: filePath
+      };
     });
   }
-
+  // Parse email and filters from req.body (may be JSON strings)
+  let email = req.body.email;
+  let filters = req.body.filters;
+  if (typeof email === 'string') email = JSON.parse(email);
+  if (typeof filters === 'string') filters = JSON.parse(filters);
+  
   // Get event with email settings
   const event = await Event.findById(eventId);
   if (!event) {
@@ -120,7 +132,7 @@ exports.sendEmail = asyncHandler(async (req, res) => {
     date: new Date(),
     recipients: recipients.length,
     status: 'pending',
-    attachments: attachments.map(f => ({ filename: f.originalname, path: f.path }))
+    attachments: attachments.map(f => ({ filename: f.filename, path: f.path }))
   };
 
   if (!event.emailHistory) {
@@ -171,7 +183,7 @@ exports.sendEmail = asyncHandler(async (req, res) => {
           .replace(/{{eventName}}/g, event.name)
           .replace(/{{firstName}}/g, personalInfo.firstName || 'Attendee'),
         html: emailBody,
-        attachments: attachments.map(f => ({ filename: f.originalname, path: f.path }))
+        attachments: attachments
       };
       
       // Add reply-to if configured

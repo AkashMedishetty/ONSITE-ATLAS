@@ -53,7 +53,7 @@ const ReportsPage = () => {
         byType: {},
         byDay: []
       },
-      kitBags: {
+      kitBag: {
         total: 0,
         byType: {},
       },
@@ -115,7 +115,7 @@ const ReportsPage = () => {
         // Initialize statistics object (moved inside try block)
         const statsData = {
           registrations: { total: 0, checkedIn: 0, byCategory: {}, byDay: [] },
-          resources: { food: { total: 0, byType: {}, byDay: [] }, kitBags: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
+          resources: { food: { total: 0, byType: {}, byDay: [] }, kitBag: { total: 0, byType: {} }, certificates: { total: 0, byType: {} } },
           abstracts: { total: 0, byStatus: {}, byCategory: {} }
         };
 
@@ -205,7 +205,7 @@ const ReportsPage = () => {
           response = await registrationService.exportRegistrations(eventId, params);
           break;
         case 'food':
-        case 'kitbags':
+        case 'kitBag':
         case 'certificates':
           response = await resourceService.exportResourceReport(eventId, activeTab, params);
           break;
@@ -374,7 +374,7 @@ const ReportsPage = () => {
             { id: 'overview', label: 'Overview' },
             { id: 'registrations', label: 'Registrations' },
             { id: 'food', label: 'Food Tracking' },
-            { id: 'kitbags', label: 'Kit Bags' },
+            { id: 'kitBag', label: 'Kit Bags' },
             { id: 'certificates', label: 'Certificates' },
             { id: 'abstracts', label: 'Abstracts' }
           ]}
@@ -422,7 +422,7 @@ const ReportsPage = () => {
               
               {/* Show resource distributions if available */}
               {(Object.keys(statistics.resources.food.byType).length > 0 ||
-                Object.keys(statistics.resources.kitBags.byType).length > 0 ||
+                Object.keys(statistics.resources.kitBag.byType).length > 0 ||
                 Object.keys(statistics.resources.certificates.byType).length > 0) && (
                 <div>
                   <h3 className="text-lg font-medium mb-4">Resource Distribution</h3>
@@ -442,15 +442,15 @@ const ReportsPage = () => {
                       </div>
                     )}
                     
-                    {Object.keys(statistics.resources.kitBags.byType).length > 0 && (
+                    {Object.keys(statistics.resources.kitBag.byType).length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 mb-2">Kit Bags by Type</h4>
                         <Chart 
                           type="Doughnut"
                           data={{
-                            labels: Object.keys(statistics.resources.kitBags.byType),
+                            labels: Object.keys(statistics.resources.kitBag.byType),
                             datasets: [{
-                              data: Object.values(statistics.resources.kitBags.byType)
+                              data: Object.values(statistics.resources.kitBag.byType)
                             }]
                           }}
                         />
@@ -474,7 +474,7 @@ const ReportsPage = () => {
                     
                     {/* Fallback if no resource types data available */}
                     {Object.keys(statistics.resources.food.byType).length === 0 &&
-                     Object.keys(statistics.resources.kitBags.byType).length === 0 &&
+                     Object.keys(statistics.resources.kitBag.byType).length === 0 &&
                      Object.keys(statistics.resources.certificates.byType).length === 0 && (
                       <div className="col-span-3 py-8 text-center text-gray-500">
                         No resource distribution data available
@@ -534,7 +534,7 @@ const ReportsPage = () => {
               {/* Fallback if no data at all */}
               {Object.keys(statistics.registrations.byCategory).length === 0 &&
                Object.keys(statistics.resources.food.byType).length === 0 &&
-               Object.keys(statistics.resources.kitBags.byType).length === 0 &&
+               Object.keys(statistics.resources.kitBag.byType).length === 0 &&
                Object.keys(statistics.resources.certificates.byType).length === 0 &&
                Object.keys(statistics.abstracts.byStatus).length === 0 &&
                Object.keys(statistics.abstracts.byCategory).length === 0 && (
@@ -660,9 +660,9 @@ const ReportsPage = () => {
             </div>
           )}
           
-          {activeTab === 'kitbags' && (
+          {activeTab === 'kitBag' && (
             <div className="py-8 text-center text-gray-500">
-              {Object.keys(statistics.resources.kitBags.byType).length > 0 ? (
+              {Object.keys(statistics.resources.kitBag.byType).length > 0 ? (
                 <div className="space-y-6">
                   {/* Kit bag contents */}
                 </div>

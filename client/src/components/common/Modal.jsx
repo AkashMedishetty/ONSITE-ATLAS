@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import ReactDOM from 'react-dom';
 
 const Modal = ({
   isOpen = false,
@@ -37,6 +38,12 @@ const Modal = ({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [closeOnEsc, isOpen, onClose]);
+  
+  useEffect(() => {
+    if (isOpen) {
+      console.log('[Modal] Modal is open and rendered.');
+    }
+  }, [isOpen]);
   
   // Size classes
   const sizeClasses = {
@@ -91,7 +98,7 @@ const Modal = ({
     }
   };
   
-  return (
+  const modalContent = (
     <Transition show={isOpen} as={Fragment}>
       <Dialog
         as="div"
@@ -153,7 +160,7 @@ const Modal = ({
               {showCloseButton && closeButtonPosition === 'corner' && (
                 <button
                   className="absolute top-3 right-3 z-10 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onClick={onClose}
+                  onClick={() => { console.log('[Modal] Close button clicked (corner)'); onClose(); }}
                   aria-label="Close"
                 >
                   <XMarkIcon className="h-5 w-5" />
@@ -169,11 +176,10 @@ const Modal = ({
                   <Dialog.Title className="text-lg font-medium text-gray-900">
                     {title}
                   </Dialog.Title>
-                  
                   {showCloseButton && closeButtonPosition === 'header' && (
                     <button
                       className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      onClick={onClose}
+                      onClick={() => { console.log('[Modal] Close button clicked (header)'); onClose(); }}
                       aria-label="Close"
                     >
                       <XMarkIcon className="h-5 w-5" />
@@ -206,6 +212,9 @@ const Modal = ({
       </Dialog>
     </Transition>
   );
+
+  // Use React Portal to render modal at the end of the DOM
+  return ReactDOM.createPortal(modalContent, document.body);
 };
 
 Modal.propTypes = {

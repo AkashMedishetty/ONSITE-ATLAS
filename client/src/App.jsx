@@ -82,7 +82,7 @@ import SystemSettings from './pages/Settings/SystemSettings';
 import Billing from './pages/Billing/Billing';
 import Help from './pages/Help/Help';
 import ClientDashboard from './pages/ClientDashboard';
-import { SponsorsList, SponsorForm } from './pages/SponsorManagement';
+import { SponsorsList, SponsorForm, SponsorView } from './pages/SponsorManagement';
 
 // Event management pages
 import RegistrationsPage from './pages/Registrations/RegistrationsPage';
@@ -306,11 +306,7 @@ const App = () => {
                     <Route path=":categoryId" element={<CategoryDetail />} />
                     <Route path=":categoryId/edit" element={<CategoryForm />} />
                   </Route>
-                  <Route path="sponsors">
-                    <Route index element={<SponsorsList />} />
-                    <Route path="new" element={<SponsorForm />} />
-                    <Route path=":sponsorId/edit" element={<SponsorForm />} />
-                  </Route>
+                  <Route path="sponsors" element={<SponsorsList />} />
                   <Route path="resources">
                     {/* Specific route first */}
                     <Route path="scanner" element={<ScannerStationWrapper />} />

@@ -20,6 +20,9 @@ import eventService from "../../services/eventService";
 import resourceService, { normalizeResourceType } from "../../services/resourceService";
 import registrationService from "../../services/registrationService";
 import Modal from '../../components/common/Modal';
+import foodService from '../../services/foodService';
+import kitService from '../../services/kitService';
+import certificateService from '../../services/certificateService';
 
 // Helper function to get the API base URL (add this)
 const getApiBaseUrl = () => {
@@ -184,7 +187,7 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       return; 
     }
 
-    let currentResourceOptions = []; // To check after API call if options were set
+    let currentResourceOptions = [];
 
     try {
       if (!type) {
@@ -195,10 +198,10 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       let settingsResponse;
 
       if (type === "food") {
+        // Use resourceService for food
         settingsResponse = await resourceService.getFoodSettings(eventId);
         if (settingsResponse && settingsResponse.success) {
-          console.log("Food settings loaded successfully:", settingsResponse.data);
-          const days = settingsResponse.data.settings?.days || [];
+          const days = settingsResponse.data?.settings?.days || [];
           const allMeals = [];
           days.forEach((day, dayIndex) => {
             const dayDate = new Date(day.date);
@@ -209,60 +212,51 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
               allMeals.push({ _id: mealId, name: `${meal.name} (${formattedDate})`, dayIndex, originalMeal: meal });
             });
           });
-          console.log("Extracted meals:", allMeals);
           setResourceOptions(allMeals);
-          currentResourceOptions = allMeals; // Keep track
+          currentResourceOptions = allMeals;
           if (allMeals.length > 0) setSelectedResource(allMeals[0]._id);
           else setSelectedResource("");
         }
       } else if (type === "kits") {
+        // Use resourceService for kits
         settingsResponse = await resourceService.getKitSettings(eventId);
         if (settingsResponse && settingsResponse.success) {
-          console.log("[fetchResourceOptions - Kits] Kit settings loaded successfully:", settingsResponse.data);
-          const rawKitItems = settingsResponse.data.settings?.items || [];
+          const rawKitItems = settingsResponse.data?.settings?.items || [];
           const formattedKitItems = rawKitItems.map((item, index) => ({ _id: item._id || item.id || `kit_item_${index}`, name: item.name || `Unnamed Kit Item ${index + 1}` }));
-          console.log("[fetchResourceOptions - Kits] Formatted kit items:", formattedKitItems);
           setResourceOptions(formattedKitItems);
-          currentResourceOptions = formattedKitItems; // Keep track
+          currentResourceOptions = formattedKitItems;
           if (formattedKitItems.length > 0) setSelectedResource(formattedKitItems[0]._id);
           else setSelectedResource("");
         }
       } else if (type === "certificates") {
+        // Use resourceService for certificates
         settingsResponse = await resourceService.getCertificateSettings(eventId);
         if (settingsResponse && settingsResponse.success) {
-          console.log("Certificate settings loaded successfully:", settingsResponse.data);
-          const certificateTypes = settingsResponse.data.settings?.types || [];
+          const certificateTypes = settingsResponse.data?.settings?.types || [];
           setResourceOptions(certificateTypes);
-          currentResourceOptions = certificateTypes; // Keep track
+          currentResourceOptions = certificateTypes;
           if (certificateTypes.length > 0) setSelectedResource(certificateTypes[0]._id);
           else setSelectedResource("");
         }
       } else if (type === "certificatePrinting") {
-        console.log('[FetchResourceOptions] Fetching for certificatePrinting');
+        // Keep using resourceService for certificatePrinting
         settingsResponse = await resourceService.getCertificatePrintingSettings(eventId);
-        console.log('[FetchResourceOptions - CertPrint] Full API Response:', JSON.stringify(settingsResponse, null, 2));
         if (settingsResponse && settingsResponse.success && settingsResponse.data) {
-          console.log('[FetchResourceOptions - CertPrint] response.data:', JSON.stringify(settingsResponse.data, null, 2));
           if (Array.isArray(settingsResponse.data.settings?.templates)) {
-            // Store the full template object, not just _id and name
             const templateList = settingsResponse.data.settings.templates;
             setResourceOptions(templateList);
-            currentResourceOptions = templateList; // Keep track
+            currentResourceOptions = templateList;
             if (templateList.length > 0) setSelectedResource(templateList[0]._id);
             else setSelectedResource("");
-            console.log('[FetchResourceOptions - CertPrint] Templates set:', templateList);
           } else {
-            console.warn('[FetchResourceOptions - CertPrint] settings.templates is not an array or is missing.');
             setResourceOptions([]); currentResourceOptions = []; setSelectedResource("");
           }
         } else {
-          console.log('[FetchResourceOptions - CertPrint] response was not successful or response.data is null/undefined.');
           setResourceOptions([]); currentResourceOptions = []; setSelectedResource("");
         }
       }
 
       if (!settingsResponse || !settingsResponse.success || (settingsResponse.success && currentResourceOptions.length === 0)) {
-        console.warn(`Could not load options for ${type} or options array was empty after API call, using fallback data.`);
         const fallbackOptions = [
           { _id: `${type}_option_1`, name: `${getResourceTypeDisplay(type)} Option 1` },
           { _id: `${type}_option_2`, name: `${getResourceTypeDisplay(type)} Option 2` }
@@ -272,11 +266,10 @@ const ScannerStation = ({ eventId: eventIdProp }) => {
       }
       return settingsResponse;
     } catch (err) {
-      console.error(`Error fetching ${type} options:`, err);
       setError(`Failed to fetch ${type} options: ${err.message}`);
       const fallbackOnError = [{ _id: `${type}_error_option_1`, name: `Error Loading ${getResourceTypeDisplay(type)}` }];
       setResourceOptions(fallbackOnError);
-      if (fallbackOnError.length > 0) setSelectedResource(fallbackOnError[0]._id); // Ensure selectedResource is also set on error
+      if (fallbackOnError.length > 0) setSelectedResource(fallbackOnError[0]._id);
       return { success: false, message: err.message };
     }
   };

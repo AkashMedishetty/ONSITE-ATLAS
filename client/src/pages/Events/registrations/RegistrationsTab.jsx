@@ -47,7 +47,8 @@ import {
   message,
   Modal as AntdModal,
   Popconfirm,
-  Button as AntdButton
+  Button as AntdButton,
+  DatePicker
 } from 'antd';
 import {
   SearchOutlined,
@@ -68,6 +69,10 @@ import RegistrationForm from '../../Registration/RegistrationForm';
 import BulkImportWizard from '../../Registrations/BulkImportWizard';
 
 const { Option } = AntSelect;
+
+// Place these at the top of the component, before any JSX
+const dropdownStyle = { background: '#fff', color: '#1a202c' };
+const inputClass = 'bg-white text-gray-900';
 
 const RegistrationsTab = ({ eventId }) => {
   const navigate = useNavigate();
@@ -97,12 +102,10 @@ const RegistrationsTab = ({ eventId }) => {
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    mobile: '',
-    organization: '',
-    categoryId: '',
+    firstName: '', lastName: '', email: '', mobile: '', organization: '', designation: '', country: '',
+    mciNumber: '', membership: '',
+    customFields: {},
+    categoryId: '', status: 'active', registrationType: 'pre-registered', sponsoredBy: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
@@ -118,12 +121,29 @@ const RegistrationsTab = ({ eventId }) => {
   
   const [categoryFilter, setCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
+  const [registrationTypeFilter, setRegistrationTypeFilter] = useState('');
 
   // --- Diagnostic State --- 
   const [updateCounter, setUpdateCounter] = useState(0); // Force re-render
 
   // ADDED: State for event details for the modal
   const [currentEventDetailsForModal, setCurrentEventDetailsForModal] = useState(null);
+
+  // --- Add state for sponsors and event config ---
+  const [sponsors, setSponsors] = useState([]);
+  const [eventConfig, setEventConfig] = useState(null);
+
+  // --- Fetch sponsors and event config when edit modal opens ---
+  useEffect(() => {
+    if (isEditModalOpen && eventId) {
+      eventService.getEventSponsors(eventId).then(res => {
+        setSponsors(res?.results || []);
+      }).catch(() => setSponsors([]));
+      eventService.getEventById(eventId).then(res => {
+        setEventConfig(res?.data?.registrationSettings || null);
+      }).catch(() => setEventConfig(null));
+    }
+  }, [isEditModalOpen, eventId]);
 
   // Effect to monitor print modal visibility state
   useEffect(() => {
@@ -133,6 +153,18 @@ const RegistrationsTab = ({ eventId }) => {
   const [isExporting, setIsExporting] = useState(false); // State for export loading
 
   const [allRegistrations, setAllRegistrations] = useState([]);
+
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState({
+    category: '',
+    status: '',
+    registrationType: '',
+    badgePrinted: '',
+    startDate: null,
+    endDate: null,
+    paymentStatus: '',
+    workshopId: '',
+  });
 
   const fetchRegistrations = useCallback(async (page = 1, limit = 10, currentSearch = searchTerm, currentCategory = categoryFilter, currentStatus = statusFilter) => {
     setLoading(true);
@@ -145,6 +177,7 @@ const RegistrationsTab = ({ eventId }) => {
         ...(currentSearch && { search: currentSearch }),
         ...(currentCategory && currentCategory !== '' && { category: currentCategory }),
         ...(currentStatus && { status: currentStatus }),
+        ...(registrationTypeFilter && ['pre-registered','onsite','imported','sponsored','complementary'].includes(registrationTypeFilter) && { registrationType: registrationTypeFilter }),
       };
       const response = await registrationService.getRegistrations(eventId, filters);
       console.log('API Response (Axios):', response);
@@ -237,7 +270,7 @@ const RegistrationsTab = ({ eventId }) => {
       return;
     }
     
-    navigate(`/events/${eventId}/registrations/import`);
+    navigate(`/events/${eventId}/registrations/bulk-import`);
   };
   
   const handleExport = async () => {
@@ -350,83 +383,84 @@ const RegistrationsTab = ({ eventId }) => {
     setPreviewModal(true);
   };
 
+  // Always fetch the default designer badge template for the event, with detailed logging
   const fetchBadgeSettings = async (eventId) => {
-    // Try to fetch the default designer template for this event
     try {
+      console.log('[fetchBadgeSettings] Fetching templates for eventId:', eventId);
       const templatesResponse = await import('../../../services/badgeTemplateService').then(m => m.default.getTemplates(eventId));
+      console.log('[fetchBadgeSettings] API response:', templatesResponse);
       if (templatesResponse.success && Array.isArray(templatesResponse.data)) {
-        const defaultTemplate = templatesResponse.data.find(t => t.isDefault);
+        // Log all templates for this event
+        console.log('[fetchBadgeSettings] Templates fetched:', templatesResponse.data);
+        // Defensive: ensure eventId is string
+        const eventIdStr = typeof eventId === 'string' ? eventId : (eventId?.$oid || String(eventId));
+        // Pick the default template for this event
+        const defaultTemplate = templatesResponse.data.find(t => t.isDefault && (t.event === eventIdStr || t.event?._id === eventIdStr || t.event?.$oid === eventIdStr));
+        console.log('[fetchBadgeSettings] Picked default template:', defaultTemplate);
         if (defaultTemplate) {
-          console.log('[fetchBadgeSettings] Using default designer template:', defaultTemplate);
-          return defaultTemplate; // Use designer template with elements array
+          return defaultTemplate;
+        } else {
+          console.warn('[fetchBadgeSettings] No default designer template found for event:', eventIdStr);
+          return null;
         }
+      } else {
+        console.warn('[fetchBadgeSettings] No templates found or API error for event:', eventId);
+        return null;
       }
     } catch (err) {
       console.error('[fetchBadgeSettings] Error fetching designer templates:', err);
+      return null;
     }
-    // Fallback: use event badgeSettings (legacy)
-    try {
-      const response = await eventService.getBadgeSettings(eventId);
-      const settingsWrapper = response?.data;
-      const actualSettings = settingsWrapper?.data;
-      if (actualSettings && typeof actualSettings === 'object' && actualSettings.size) {
-        console.log('[fetchBadgeSettings] Fallback to event badgeSettings:', actualSettings);
-        return actualSettings;
-      }
-    } catch (error) {
-      console.error('[fetchBadgeSettings] Error fetching event badgeSettings:', error);
-    }
-    return null;
   };
 
+  // Fetch the latest badge template every time before printing
   const handlePrintBadgeClick = async (registration) => {
     console.log('[Action] handlePrintBadgeClick triggered', registration);
-    
-    // Ensure we have badge settings *before* proceeding
-    let currentBadgeSettings = badgeSettings;
-    if (!currentBadgeSettings) {
-      console.log('[Print Badge] Badge settings not cached, fetching...');
-      try {
-        // Fetch and update the badgeSettings state
-        currentBadgeSettings = await fetchBadgeSettings(eventId); 
-        if (!currentBadgeSettings) {
-          message.error('Failed to load badge settings. Cannot open print modal.');
-          console.error('[Print Badge] fetchBadgeSettings returned null or failed.');
-          return; // Stop if settings failed to load
-        }
-        console.log('[Print Badge] Fetched badge settings successfully:', currentBadgeSettings);
-        setBadgeSettings(currentBadgeSettings);
-      } catch (error) {
-        message.error(`Error fetching badge settings: ${error.message}`);
-        console.error('[Print Badge] Error in fetchBadgeSettings:', error);
-        return; // Stop if fetch errored
+    // Always fetch the latest badge template for this event
+    let currentBadgeSettings = null;
+    try {
+      currentBadgeSettings = await fetchBadgeSettings(eventId);
+      if (!currentBadgeSettings) {
+        message.error('Failed to load badge settings. Cannot open print modal.');
+        console.error('[Print Badge] fetchBadgeSettings returned null or failed.');
+        return; // Stop if settings failed to load
       }
+      setBadgeSettings(currentBadgeSettings); // Always set the latest
+      console.log('[Print Badge] Fetched badge settings successfully:', currentBadgeSettings);
+    } catch (error) {
+      message.error(`Error fetching badge settings: ${error.message}`);
+      console.error('[Print Badge] Error in fetchBadgeSettings:', error);
+      return; // Stop if fetch errored
     }
-
-    // Prepare registration data (can be done after fetching settings)
+    // Prepare registration data
     const registrationWithEvent = {
       ...registration,
-      // Add eventName if available from a state or context, otherwise fetch if needed
-      // eventName: event?.name || 'Event Name Not Found',
       eventId: eventId,
       qrCode: registration.registrationId // Assuming QR code is the registration ID
     };
-    
-    // Now that settings are confirmed, set state to show modal
-    console.log('[Print Badge] Setting selected registration and making modal visible.');
     setSelectedRegistration(registrationWithEvent);
     setIsPrintModalVisible(true);
     console.log('[State Update] setIsPrintModalVisible called with true'); 
   };
 
+  // Always fetch the latest badge template before printing
   const handlePrintBadge = async () => {
-    if (!selectedRegistration || !badgeSettings) return;
+    if (!selectedRegistration) return;
     setIsPrinting(true);
+    let currentBadgeSettings = badgeSettings;
     try {
+      // Always fetch the latest template before printing
+      currentBadgeSettings = await fetchBadgeSettings(eventId);
+      if (!currentBadgeSettings) {
+        message.error('Failed to load badge settings. Cannot print badge.');
+        setIsPrinting(false);
+        return;
+      }
+      setBadgeSettings(currentBadgeSettings); // Update state for consistency
       // Calculate badge pixel size
       const DPIN = 100;
-      const size = badgeSettings.size || { width: 3.375, height: 5.375 };
-      const unit = badgeSettings.unit || 'in';
+      const size = currentBadgeSettings.size || { width: 3.375, height: 5.375 };
+      const unit = currentBadgeSettings.unit || 'in';
       let badgeWidthPx, badgeHeightPx;
       if (unit === 'in') {
         badgeWidthPx = (size.width || 0) * DPIN;
@@ -455,7 +489,7 @@ const RegistrationsTab = ({ eventId }) => {
       root.render(
         <BadgeTemplate
           registrationData={normalizeRegistrationData(selectedRegistration)}
-          template={badgeSettings}
+          template={currentBadgeSettings}
           previewMode={false}
           scale={1}
         />
@@ -544,34 +578,41 @@ const RegistrationsTab = ({ eventId }) => {
     }
   };
 
+  // --- Update handleEditRegistration to populate all fields ---
   const handleEditRegistration = (registration) => {
-    console.log('[Action] handleEditRegistration triggered', registration);
-    const personalInfo = registration.personalInfo || {}; 
-    
+    const personal = registration.personalInfo || {};
+    const professional = registration.professionalInfo || {};
     setEditFormData({
       _id: registration._id,
       registrationId: registration.registrationId,
-      firstName: personalInfo.firstName || '',
-      lastName: personalInfo.lastName || '',
-      email: personalInfo.email || '',
-      mobile: personalInfo.mobile || '',
-      organization: personalInfo.organization || '',
-      categoryId: registration.category?._id || '', 
-      categoryName: registration.category?.name || '',
-      checkedIn: registration.checkedIn || false
+      firstName: personal.firstName || '',
+      lastName: personal.lastName || '',
+      email: personal.email || '',
+      mobile: personal.phone || '',
+      organization: personal.organization || '',
+      designation: personal.designation || '',
+      country: personal.country || '',
+      mciNumber: professional.mciNumber || '',
+      membership: professional.membership || '',
+      customFields: { ...registration.customFields },
+      categoryId: registration.category?._id || '',
+      status: registration.status || 'active',
+      registrationType: registration.registrationType || 'pre-registered',
+      sponsoredBy: registration.sponsoredBy || ''
     });
-    
     setValidationErrors({});
     setIsEditModalOpen(true);
   };
 
+  // --- Update handleEditFormChange to support all fields ---
   const handleEditFormChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setEditFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-    
+    const { name, value, type, checked } = e.target || {};
+    if (name?.startsWith('customFields.')) {
+      const field = name.replace('customFields.', '');
+      setEditFormData(prev => ({ ...prev, customFields: { ...prev.customFields, [field]: value } }));
+    } else {
+      setEditFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    }
     if (validationErrors[name]) {
       setValidationErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -598,61 +639,48 @@ const RegistrationsTab = ({ eventId }) => {
     return Object.keys(errors).length === 0;
   };
   
+  // --- Update handleUpdateRegistration to send all fields ---
   const handleUpdateRegistration = async () => {
     if (!validateEditForm()) return;
-    
     setIsSubmitting(true);
-    
     try {
-      // Construct the update payload correctly
       const updateData = {
-        personalInfo: { // Nest personal details under personalInfo
-        firstName: editFormData.firstName,
-        lastName: editFormData.lastName,
-        email: editFormData.email,
+        personalInfo: {
+          firstName: editFormData.firstName,
+          lastName: editFormData.lastName,
+          email: editFormData.email,
           phone: editFormData.mobile,
-        organization: editFormData.organization,
+          organization: editFormData.organization,
+          designation: editFormData.designation,
+          country: editFormData.country
         },
-        categoryId: editFormData.categoryId, // Keep categoryId at the top level
-        // Add status or other top-level fields if needed
+        professionalInfo: {
+          mciNumber: editFormData.mciNumber,
+          membership: editFormData.membership
+        },
+        customFields: editFormData.customFields,
+        categoryId: editFormData.categoryId,
+        status: editFormData.status,
+        registrationType: editFormData.registrationType,
+        sponsoredBy: editFormData.registrationType === 'sponsored' ? editFormData.sponsoredBy : undefined
       };
-      
-      console.log('[Frontend Update] Sending updateData:', updateData); // Log the payload being sent
-
-      const response = await registrationService.updateRegistration(
-        eventId, 
-        editFormData._id, 
-        updateData // Send the correctly structured object
-      );
-      
-      if (response?.data?.success) { 
-        const updatedRegData = response.data.data; 
-        console.log('[Update Success] Received updatedRegData Object:', updatedRegData);
-        console.log('[Update Pre-Set] personalInfo in updatedRegData:', updatedRegData?.personalInfo);
-
-        // --- Restore original state update logic --- 
-        setRegistrations(prevRegistrations => {
-          const updatedIndex = prevRegistrations.findIndex(reg => reg._id === editFormData._id);
-          if (updatedIndex === -1) {
-             console.warn('Could not find registration in state to update, appending instead.');
-             return [...prevRegistrations, updatedRegData];
-          }
-          const newRegistrations = [...prevRegistrations];
-          console.log(`[Update State] Replacing item at index: ${updatedIndex} with:`, updatedRegData);
-          newRegistrations[updatedIndex] = updatedRegData;
-          return newRegistrations;
+      const response = await registrationService.updateRegistration(eventId, editFormData._id, updateData);
+      if (response?.data?.success) {
+        const updatedRegData = response.data.data;
+        setRegistrations(prev => {
+          const idx = prev.findIndex(r => r._id === editFormData._id);
+          if (idx === -1) return [...prev, updatedRegData];
+          const newRegs = [...prev];
+          newRegs[idx] = updatedRegData;
+          return newRegs;
         });
-        // --- End Original logic ---
-        
         setIsEditModalOpen(false);
         setError(null);
         message.success('Registration updated successfully!');
-
       } else {
-        setError(`Failed to update registration: ${response?.data?.message || response?.message || 'Unknown error'}`); 
+        setError(`Failed to update registration: ${response?.data?.message || response?.message || 'Unknown error'}`);
       }
     } catch (err) {
-      console.error('Error updating registration:', err);
       setError(`Error updating registration: ${err.message}`);
     } finally {
       setIsSubmitting(false);
@@ -833,7 +861,6 @@ const RegistrationsTab = ({ eventId }) => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [currentRegistration, setCurrentRegistration] = useState(null);
 
   const handleOpenAddModal = () => {
@@ -866,15 +893,6 @@ const RegistrationsTab = ({ eventId }) => {
 
   const handleClosePrintModal = () => {
     setIsPrintModalOpen(false);
-  };
-
-  const handleOpenImportModal = () => {
-    setIsImportModalOpen(true);
-  };
-
-  const handleCloseImportModal = () => {
-    setIsImportModalOpen(false);
-    fetchRegistrations();
   };
 
   const columns = useMemo(() => [
@@ -1067,7 +1085,7 @@ const RegistrationsTab = ({ eventId }) => {
           </AntdButton>
           <AntdButton 
             icon={<ImportOutlined />} 
-            onClick={handleBulkImport} 
+            onClick={() => navigate(`/events/${eventId}/registrations/bulk-import`)}
             className="inline-flex" // Ensure display
           >
             Import
@@ -1079,6 +1097,13 @@ const RegistrationsTab = ({ eventId }) => {
             className="inline-flex" // Ensure display
           >
             Export
+          </AntdButton>
+          <AntdButton
+            icon={<ExportOutlined />}
+            onClick={() => setIsExportModalOpen(true)}
+            className="inline-flex"
+          >
+            Advanced Export
           </AntdButton>
         </div>
       </div>
@@ -1096,7 +1121,9 @@ const RegistrationsTab = ({ eventId }) => {
             <AntSelect
                 placeholder="Filter by Category"
                 allowClear
-                style={{ width: 200 }}
+                style={{ width: 200, background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                className={inputClass}
                 value={categoryFilter || ''}
                 onChange={handleCategoryChange}
             >
@@ -1107,13 +1134,30 @@ const RegistrationsTab = ({ eventId }) => {
             <AntSelect
                 placeholder="Filter by Status"
                 allowClear
-                style={{ width: 150 }}
+                style={{ width: 150, background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                className={inputClass}
                 value={statusFilter}
                 onChange={handleStatusChange}
             >
                 <Option value="active">Active</Option>
                 <Option value="cancelled">Cancelled</Option>
                 <Option value="no-show">No-Show</Option>
+            </AntSelect>
+            <AntSelect
+                placeholder="Filter by Reg. Type"
+                allowClear
+                style={{ width: 180, background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+                className={inputClass}
+                value={registrationTypeFilter}
+                onChange={setRegistrationTypeFilter}
+            >
+                <Option value="pre-registered">Pre-Registered</Option>
+                <Option value="onsite">Onsite</Option>
+                <Option value="imported">Imported</Option>
+                <Option value="sponsored">Sponsored</Option>
+                <Option value="complementary">Complementary</Option>
             </AntSelect>
         </div>
       </div>
@@ -1176,7 +1220,7 @@ const RegistrationsTab = ({ eventId }) => {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={handleBulkImport}
+                    onClick={() => navigate(`/events/${eventId}/registrations/bulk-import`)}
                   >
                     Import Registrations
                   </Button>
@@ -1407,6 +1451,54 @@ const RegistrationsTab = ({ eventId }) => {
             />
           </div>
           <div>
+              <label htmlFor="designation" className="block text-sm font-medium text-gray-700">Designation</label>
+            <Input
+                id="designation" 
+              name="designation"
+              value={editFormData.designation}
+              onChange={handleEditFormChange}
+            />
+          </div>
+          <div>
+              <label htmlFor="country" className="block text-sm font-medium text-gray-700">Country</label>
+            <Input
+                id="country" 
+              name="country"
+              value={editFormData.country}
+              onChange={handleEditFormChange}
+            />
+          </div>
+          <div>
+              <label htmlFor="mciNumber" className="block text-sm font-medium text-gray-700">MCI Number</label>
+            <Input
+                id="mciNumber" 
+              name="mciNumber"
+              value={editFormData.mciNumber}
+              onChange={handleEditFormChange}
+            />
+          </div>
+          <div>
+              <label htmlFor="membership" className="block text-sm font-medium text-gray-700">Membership</label>
+            <Input
+                id="membership" 
+              name="membership"
+              value={editFormData.membership}
+              onChange={handleEditFormChange}
+            />
+          </div>
+          {/* Render custom fields dynamically */}
+          {editFormData.customFields && Object.keys(editFormData.customFields).map((key) => (
+            <div key={key}>
+              <label htmlFor={`customFields.${key}`} className="block text-sm font-medium text-gray-700">{key}</label>
+              <Input
+                id={`customFields.${key}`}
+                name={`customFields.${key}`}
+                value={editFormData.customFields[key] || ''}
+                onChange={handleEditFormChange}
+              />
+            </div>
+          ))}
+          <div>
               <label htmlFor="categoryId" className="block text-sm font-medium text-gray-700">Category</label>
               <AntSelect 
               value={editFormData.categoryId}
@@ -1416,6 +1508,21 @@ const RegistrationsTab = ({ eventId }) => {
                 {categories.map(cat => (
                   <Option key={cat._id} value={cat._id}>{cat.name}</Option>
                 ))}
+              </AntSelect>
+            </div>
+            <div>
+              <label htmlFor="registrationType" className="block text-sm font-medium text-gray-700">Registration Type</label>
+              <AntSelect
+                id="registrationType"
+                value={editFormData.registrationType}
+                onChange={value => handleEditFormChange({ target: { name: 'registrationType', value } })}
+                style={{ width: '100%' }}
+              >
+                <Option value="pre-registered">Pre-Registered</Option>
+                <Option value="onsite">Onsite</Option>
+                <Option value="imported">Imported</Option>
+                <Option value="sponsored">Sponsored</Option>
+                <Option value="complementary">Complementary</Option>
               </AntSelect>
             </div>
             <div className="flex justify-end space-x-2 mt-4">
@@ -1444,17 +1551,25 @@ const RegistrationsTab = ({ eventId }) => {
       )}
 
       {console.log(`[Render Check - Print Modal] isVisible: ${isPrintModalVisible}, selectedReg: ${!!selectedRegistration}, badgeSettings: ${!!badgeSettings}`)}
-      {selectedRegistration && badgeSettings && (
+      {selectedRegistration && (
         <Modal
           isOpen={isPrintModalVisible}
           onClose={() => setIsPrintModalVisible(false)}
           title={`Print Badge: ${selectedRegistration.personalInfo?.firstName} ${selectedRegistration.personalInfo?.lastName}`}
         >
           <div id="badge-preview-container" className="mb-4 p-4 border rounded flex justify-center">
-            <BadgeTemplate 
-              registrationData={normalizeRegistrationData(selectedRegistration)}
-              template={badgeSettings}
-            />
+            {(() => {
+              console.log('[Print Modal] badgeSettings passed to BadgeTemplate:', badgeSettings);
+              if (!badgeSettings) {
+                return <div className="text-red-600 font-semibold">No default badge template found for this event. Please set a default template in the Badge Designer.</div>;
+              }
+              return (
+                <BadgeTemplate 
+                  registrationData={normalizeRegistrationData(selectedRegistration)}
+                  template={badgeSettings}
+                />
+              );
+            })()}
           </div>
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={() => setIsPrintModalVisible(false)}>Cancel</Button>
@@ -1462,29 +1577,13 @@ const RegistrationsTab = ({ eventId }) => {
               variant="primary" 
               onClick={handlePrintBadge} 
               loading={isPrinting ? true : undefined}
+              disabled={!badgeSettings}
             >
               Print
             </Button>
           </div>
         </Modal>
       )}
-
-      {/* Bulk Import Modal */}
-      <Modal
-        title="Bulk Import Registrations Wizard"
-        open={isImportModalOpen}
-        onCancel={handleCloseImportModal}
-        footer={null}
-        width={800}
-        destroyOnClose
-      >
-        {isImportModalOpen && (
-            <BulkImportWizard 
-                eventId={eventId} 
-                onClose={handleCloseImportModal} 
-            />
-        )}
-      </Modal>
 
       {/* --- Detail Modal --- */}
       {selectedRegistrant && (
@@ -1497,7 +1596,7 @@ const RegistrationsTab = ({ eventId }) => {
             <AntdButton key="print" icon={<PrinterOutlined />} onClick={() => handlePrintBadgeClick(selectedRegistrant)} disabled={!badgeSettings}>
               Print Badge
             </AntdButton>,
-            <AntdButton key="cert" icon={<MailOutlined />} onClick={() => handleSendCertificate(selectedRegistrant)} loading={isSendingCertificate}>
+            <AntdButton key="cert" icon={<MailOutlined />} onClick={() => handleSendCertificate(selectedRegistrant)} loading={isSendingCertificate ? true : undefined}>
               Send Certificate
             </AntdButton>,
             <AntdButton key="close" onClick={() => setIsDetailModalOpen(false)}>
@@ -1549,7 +1648,23 @@ const RegistrationsTab = ({ eventId }) => {
                    </div>
                  </div>
                  
-                <div className="space-y-3 pt-3 border-t border-gray-200">
+                {/* --- Professional Info --- */}
+                {(selectedRegistrant.professionalInfo && (selectedRegistrant.professionalInfo.mciNumber || selectedRegistrant.professionalInfo.membership)) && (
+                  <div className="space-y-3 pt-3 border-t border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Professional Info</h4>
+                    <div className="flex items-center text-sm text-gray-700">
+                      <span className="font-semibold w-32 inline-block">MCI Number:</span>
+                      <span>{selectedRegistrant.professionalInfo?.mciNumber || <span className="text-gray-400 italic">N/A</span>}</span>
+                    </div>
+                    <div className="flex items-center text-sm text-gray-700">
+                      <span className="font-semibold w-32 inline-block">Membership:</span>
+                      <span>{selectedRegistrant.professionalInfo?.membership || <span className="text-gray-400 italic">N/A</span>}</span>
+                    </div>
+                  </div>
+                )}
+                 
+                 {/* --- Registration Info --- */}
+                 <div className="space-y-3 pt-3 border-t border-gray-200">
                     <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Registration Info</h4>
                     <div className="flex items-center text-sm text-gray-700">
                        <CalendarDaysIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
@@ -1567,7 +1682,15 @@ const RegistrationsTab = ({ eventId }) => {
                      </div>
                      <div className="flex items-center text-sm text-gray-700">
                        <InformationCircleIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
-                       <span>Type: <Tag>{selectedRegistrant.registrationType || 'N/A'}</Tag></span>
+                       <span><strong>Type:</strong> <Tag color="blue">{selectedRegistrant.registrationType || 'N/A'}</Tag></span>
+                     </div>
+                     <div className="flex items-center text-sm text-gray-700">
+                       <InformationCircleIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
+                       <span><strong>Payment Status:</strong> <Tag color="orange">N/A</Tag> {/* TODO: Implement payment status */}</span>
+                     </div>
+                     <div className="flex items-center text-sm text-gray-700">
+                       <InformationCircleIcon className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
+                       <span><strong>Workshop Registration:</strong> <Tag color="default">N/A</Tag> {/* TODO: Implement workshop registration */}</span>
                      </div>
                      <div className="flex items-center text-sm text-gray-700">
                       {selectedRegistrant.checkIn?.isCheckedIn ? 
@@ -1713,6 +1836,158 @@ const RegistrationsTab = ({ eventId }) => {
           )}
         </AntdModal>
       )}
+
+      {/* Advanced Export Modal */}
+      <AntdModal
+        open={isExportModalOpen}
+        onCancel={() => setIsExportModalOpen(false)}
+        title="Advanced Export"
+        footer={null}
+        styles={{ body: { background: '#fff', color: '#1a202c' } }}
+      >
+        <div className="space-y-4">
+          <AntSelect
+            placeholder="Category"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.category}
+            onChange={v => setExportFilters(f => ({ ...f, category: v }))}
+          >
+            {allCategories.map(cat => (
+              <Option key={cat._id} value={cat._id}>{cat.name}</Option>
+            ))}
+          </AntSelect>
+          <AntSelect
+            placeholder="Status"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.status}
+            onChange={v => setExportFilters(f => ({ ...f, status: v }))}
+          >
+            <Option value="active">Active</Option>
+            <Option value="cancelled">Cancelled</Option>
+            <Option value="no-show">No-Show</Option>
+          </AntSelect>
+          <AntSelect
+            placeholder="Registration Type"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.registrationType}
+            onChange={v => setExportFilters(f => ({ ...f, registrationType: v }))}
+          >
+            <Option value="pre-registered">Pre-Registered</Option>
+            <Option value="onsite">Onsite</Option>
+            <Option value="imported">Imported</Option>
+            <Option value="sponsored">Sponsored</Option>
+            <Option value="complementary">Complementary</Option>
+          </AntSelect>
+          <AntSelect
+            placeholder="Badge Printed"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.badgePrinted}
+            onChange={v => setExportFilters(f => ({ ...f, badgePrinted: v }))}
+          >
+            <Option value="true">Yes</Option>
+            <Option value="false">No</Option>
+          </AntSelect>
+          <div className="flex gap-2">
+            <DatePicker
+              placeholder="Start Date"
+              style={{ width: '50%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+              className={inputClass}
+              inputReadOnly={false}
+              inputStyle={{ color: '#2A4365' }}
+              value={exportFilters.startDate}
+              onChange={date => setExportFilters(f => ({ ...f, startDate: date }))}
+            />
+            <DatePicker
+              placeholder="End Date"
+              style={{ width: '50%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+              className={inputClass}
+              inputReadOnly={false}
+              inputStyle={{ color: '#2A4365' }}
+              value={exportFilters.endDate}
+              onChange={date => setExportFilters(f => ({ ...f, endDate: date }))}
+            />
+          </div>
+          <AntSelect
+            placeholder="Payment Status"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.paymentStatus}
+            onChange={v => setExportFilters(f => ({ ...f, paymentStatus: v }))}
+          >
+            <Option value="pending">Pending</Option>
+            <Option value="completed">Completed</Option>
+            <Option value="failed">Failed</Option>
+            <Option value="refunded">Refunded</Option>
+            <Option value="partially_refunded">Partially Refunded</Option>
+          </AntSelect>
+          <AntSelect
+            placeholder="Workshop"
+            allowClear
+            style={{ width: '100%', background: '#fff', color: '#1a202c', border: '1px solid #2A4365', '::placeholder': { color: '#2A4365' } }}
+            dropdownStyle={{ background: '#fff', color: '#1a202c', border: '1px solid #2A4365' }}
+            className={inputClass}
+            value={exportFilters.workshopId}
+            onChange={v => setExportFilters(f => ({ ...f, workshopId: v }))}
+          >
+            {/* Map workshop options here if available */}
+          </AntSelect>
+          <div className="flex justify-end gap-2 mt-4">
+            <AntdButton onClick={() => setIsExportModalOpen(false)}>Cancel</AntdButton>
+            <AntdButton
+              type="primary"
+              icon={<ExportOutlined />}
+              loading={isExporting}
+              onClick={async () => {
+                setIsExporting(true);
+                try {
+                  const params = {};
+                  Object.entries(exportFilters).forEach(([k, v]) => {
+                    if (v && typeof v === 'object' && v.format) {
+                      params[k] = v.format('YYYY-MM-DD');
+                    } else if (v) {
+                      params[k] = v;
+                    }
+                  });
+                  const response = await registrationService.exportRegistrations(eventId, params);
+                  if (response instanceof Blob) {
+                    const url = window.URL.createObjectURL(response);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.setAttribute('download', `registrations_${eventId}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                    document.body.appendChild(link);
+                    link.click();
+                    link.parentNode.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                  } else {
+                    throw new Error('Export failed');
+                  }
+                  setIsExportModalOpen(false);
+                } catch (error) {
+                  message.error('Export failed: ' + (error.message || error.toString()));
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+            >
+              Export
+            </AntdButton>
+          </div>
+        </div>
+      </AntdModal>
 
     </div>
   );

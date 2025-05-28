@@ -14,7 +14,6 @@ const userSchema = mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       lowercase: true,
       validate(value) {
@@ -99,6 +98,19 @@ const userSchema = mongoose.Schema(
         default: 'UTC',
       },
     },
+    // Event-specific roles for non-admin users
+    eventRoles: [{
+      eventId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Event',
+        required: true,
+      },
+      role: {
+        type: String,
+        enum: roles.filter(r => r !== 'admin'), // Only non-admin roles
+        required: true,
+      },
+    }],
   },
   {
     timestamps: true,
@@ -137,6 +149,9 @@ userSchema.pre('save', async function (next) {
   }
   next();
 });
+
+// Add compound unique index for (email, eventId) in eventRoles (for non-admins)
+userSchema.index({ email: 1, 'eventRoles.eventId': 1 }, { unique: true, partialFilterExpression: { 'eventRoles.0': { $exists: true } } });
 
 /**
  * @typedef User

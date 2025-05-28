@@ -165,6 +165,7 @@ const EmailsTab = () => {
 
   // Send email
   const handleSendEmail = async () => {
+    console.log('[handleSendEmail] Called with:', { id, emailData, filters });
     // Validate inputs
     if (!emailData.subject.trim() || !emailData.body.trim()) {
       setSendStatus({
@@ -189,8 +190,10 @@ const EmailsTab = () => {
         specificEmails
       };
       
+      console.log('[handleSendEmail] Sending to API:', { id, emailData, filterData });
       // Send email
       const result = await emailService.sendEmail(id, emailData, filterData);
+      console.log('[handleSendEmail] API result:', result);
       
       // Handle result
       if (result.success) {
@@ -209,7 +212,7 @@ const EmailsTab = () => {
         });
       }
     } catch (error) {
-      console.error('Error sending email:', error);
+      console.error('[handleSendEmail] API error:', error);
       setSendStatus({
         type: 'error',
         message: 'Failed to send email: ' + (error.message || 'Unknown error')

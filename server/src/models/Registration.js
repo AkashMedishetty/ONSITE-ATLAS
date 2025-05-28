@@ -50,6 +50,10 @@ const registrationSchema = new mongoose.Schema({
       trim: true
     }
   },
+  professionalInfo: {
+    mciNumber: { type: String, trim: true },
+    membership: { type: String, trim: true }
+  },
   customFields: {
     type: Map,
     of: mongoose.Schema.Types.Mixed
@@ -160,7 +164,7 @@ const registrationSchema = new mongoose.Schema({
   },
   registrationType: {
     type: String,
-    enum: ['pre-registered', 'onsite', 'imported'],
+    enum: ['pre-registered', 'onsite', 'imported', 'sponsored', 'complementary'],
     default: 'pre-registered'
   },
   registeredBy: {

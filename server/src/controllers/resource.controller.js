@@ -258,7 +258,30 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
     }
 
     console.log(`[updateResourceSettings] Document details BEFORE save for type ${dbType}:`, JSON.stringify(resourceSettingsDoc.toObject(), null, 2));
-    // Save the settings
+       // --- PATCH: Auto-assign ObjectId to kitBag items and certificate types if missing ---
+   // For kitBag: Only assign a new _id if missing or invalid, and mark as modified so Mongoose saves the change
+   const { Types } = require('mongoose');
+   if (dbType === 'kitBag' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.items)) {
+     resourceSettingsDoc.settings.items = resourceSettingsDoc.settings.items.map(item => {
+       // Only generate a new _id if missing or invalid; preserve existing valid _id
+       if (!item._id || !Types.ObjectId.isValid(item._id)) {
+         return { ...item, _id: new Types.ObjectId() };
+       }
+       return item;
+     });
+     resourceSettingsDoc.markModified('settings.items'); // Ensure Mongoose saves the updated array
+   }
+   // For certificate: Only assign a new _id if missing or invalid, and mark as modified so Mongoose saves the change
+   if (dbType === 'certificate' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.types)) {
+     resourceSettingsDoc.settings.types = resourceSettingsDoc.settings.types.map(type => {
+       if (!type._id || !Types.ObjectId.isValid(type._id)) {
+         return { ...type, _id: new Types.ObjectId() };
+       }
+       return type;
+     });
+     resourceSettingsDoc.markModified('settings.types'); // Ensure Mongoose saves the updated array
+   }
+   // Save the settings
     await resourceSettingsDoc.save();
     console.log(`[updateResourceSettings] Document details AFTER save for type ${dbType} (refetched might be needed to confirm DB state, but this is post-save call).`);
 
@@ -1512,7 +1535,7 @@ const exportResourceUsage = asyncHandler(async (req, res, next) => {
 
   // Normalize type if needed (though frontend should send correct DB type)
   let dbType = type.toLowerCase();
-  if (dbType === 'kits') dbType = 'kitBag';
+  if (dbType === 'kits' || dbType === 'kitbags' || dbType === 'kit') dbType = 'kitbag';
   if (dbType === 'certificates') dbType = 'certificate';
 
   const validDbTypes = ['food', 'kitbag', 'certificate', 'certificateprinting'];

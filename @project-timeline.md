@@ -55,6 +55,7 @@
 - [x] 2024-06-09: Add reviewer filtering to abstract export (backend and frontend). Reviewer dropdown in export UI, backend supports reviewer query param.
 - [x] 2024-06-09: Update backend controller to accept eventId from both params and query, and ensure robust category/sub-topic name resolution for registrant abstract detail endpoint
   - Controller now robustly handles eventId from both params and query, and category/sub-topic resolution is aligned with getAbstractByIdForEvent logic.
+- [x] Update getEventReviewers to support both legacy managedEvents and new eventRoles structure
 
 ## Post-Event
 - [ ] Digital certificate generation
@@ -63,4 +64,5 @@
 - [ ] Data export and archiving
 
 ### Discovered During Work
-*   **(Ongoing) Bug: Abstract Category/Sub-Topic Not Displaying** - Investigating why category and sub-topic names are not appearing in `AbstractDetail.jsx`. Current focus is on backend controller `registrant.abstract.controller.js` log visibility and data lookup logic. (Date: Current Date) 
+*   **(Ongoing) Bug: Abstract Category/Sub-Topic Not Displaying** - Investigating why category and sub-topic names are not appearing in `AbstractDetail.jsx`. Current focus is on backend controller `registrant.abstract.controller.js` log visibility and data lookup logic. (Date: Current Date)
+- Refactor all event-scoped user queries to use eventRoles for consistency 

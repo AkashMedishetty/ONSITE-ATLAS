@@ -338,12 +338,13 @@ const updateCategoryPermissions = async (req, res, next) => {
       });
       return allMeals;
     };
-    const validMeals = foodSetting ? flattenMeals(foodSetting.settings) : [];
-    const validMealIds = new Set(validMeals.map(m => m._id.toString()));
-    const validKits = kitSetting?.settings?.items || [];
-    const validKitIds = new Set(validKits.map(k => k._id.toString()));
-    const validCerts = certSetting?.settings?.types || [];
-    const validCertIds = new Set(validCerts.map(c => c._id.toString()));
+    // Defensive: Only use items with a valid _id and .toString()
+    const validMeals = foodSetting ? flattenMeals(foodSetting.settings).filter(m => m._id && (typeof m._id === 'object' || typeof m._id === 'string') && m._id.toString) : [];
+    const validMealIds = new Set(validMeals.map(m => m._id && m._id.toString ? m._id.toString() : null).filter(Boolean));
+    const validKits = (kitSetting?.settings?.items || []).filter(k => k._id && (typeof k._id === 'object' || typeof k._id === 'string') && k._id.toString);
+    const validKitIds = new Set(validKits.map(k => k._id && k._id.toString ? k._id.toString() : null).filter(Boolean));
+    const validCerts = (certSetting?.settings?.types || []).filter(c => c._id && (typeof c._id === 'object' || typeof c._id === 'string') && c._id.toString);
+    const validCertIds = new Set(validCerts.map(c => c._id && c._id.toString ? c._id.toString() : null).filter(Boolean));
 
     // --- Clean and sync entitlements ---
     let mealEntitlements = Array.isArray(req.body.mealEntitlements) ? req.body.mealEntitlements : category.mealEntitlements || [];
@@ -351,28 +352,28 @@ const updateCategoryPermissions = async (req, res, next) => {
     let certificateEntitlements = Array.isArray(req.body.certificateEntitlements) ? req.body.certificateEntitlements : category.certificateEntitlements || [];
 
     // Meals
-    mealEntitlements = mealEntitlements.filter(e => e.mealId && validMealIds.has(e.mealId.toString()));
+    mealEntitlements = mealEntitlements.filter(e => e.mealId && e.mealId.toString && validMealIds.has(e.mealId.toString()));
     for (const meal of validMeals) {
-      const mealId = meal._id.toString();
-      if (!mealEntitlements.some(e => e.mealId && e.mealId.toString() === mealId)) {
+      const mealId = meal._id && meal._id.toString ? meal._id.toString() : null;
+      if (mealId && !mealEntitlements.some(e => e.mealId && e.mealId.toString && e.mealId.toString() === mealId)) {
         mealEntitlements.push({ mealId: meal._id, entitled: true });
         logger.info(`[updateCategoryPermissions] Added missing meal entitlement for meal ${meal.name} (${mealId}) to category ${category.name}`);
       }
     }
     // Kits
-    kitItemEntitlements = kitItemEntitlements.filter(e => e.itemId && validKitIds.has(e.itemId.toString()));
+    kitItemEntitlements = kitItemEntitlements.filter(e => e.itemId && e.itemId.toString && validKitIds.has(e.itemId.toString()));
     for (const kit of validKits) {
-      const kitId = kit._id.toString();
-      if (!kitItemEntitlements.some(e => e.itemId && e.itemId.toString() === kitId)) {
+      const kitId = kit._id && kit._id.toString ? kit._id.toString() : null;
+      if (kitId && !kitItemEntitlements.some(e => e.itemId && e.itemId.toString && e.itemId.toString() === kitId)) {
         kitItemEntitlements.push({ itemId: kit._id, entitled: true });
         logger.info(`[updateCategoryPermissions] Added missing kit entitlement for kit ${kit.name} (${kitId}) to category ${category.name}`);
       }
     }
     // Certificates
-    certificateEntitlements = certificateEntitlements.filter(e => e.certificateId && validCertIds.has(e.certificateId.toString()));
+    certificateEntitlements = certificateEntitlements.filter(e => e.certificateId && e.certificateId.toString && validCertIds.has(e.certificateId.toString()));
     for (const cert of validCerts) {
-      const certId = cert._id.toString();
-      if (!certificateEntitlements.some(e => e.certificateId && e.certificateId.toString() === certId)) {
+      const certId = cert._id && cert._id.toString ? cert._id.toString() : null;
+      if (certId && !certificateEntitlements.some(e => e.certificateId && e.certificateId.toString && e.certificateId.toString() === certId)) {
         certificateEntitlements.push({ certificateId: cert._id, entitled: true });
         logger.info(`[updateCategoryPermissions] Added missing certificate entitlement for certificate ${cert.name} (${certId}) to category ${category.name}`);
       }

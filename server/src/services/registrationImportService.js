@@ -81,8 +81,11 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
             event: eventId,
             registrationId: userProvidedId,
             personalInfo: regData.personalInfo || {},
+            // PATCH: Save professionalInfo if provided
+            ...(regData.professionalInfo && { professionalInfo: regData.professionalInfo }),
             category: regData.category, 
-            customFields: regData.customFields || {},
+            // PATCH: Save customFields if provided
+            ...(regData.customFields && { customFields: regData.customFields }),
             registrationType: 'imported',
             status: 'active',
             createdBy: userId,
@@ -156,8 +159,11 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
             event: eventId,
             registrationId: generatedId,
             personalInfo: regData.personalInfo || {},
+            // PATCH: Save professionalInfo if provided
+            ...(regData.professionalInfo && { professionalInfo: regData.professionalInfo }),
             category: regData.category,
-            customFields: regData.customFields || {},
+            // PATCH: Save customFields if provided
+            ...(regData.customFields && { customFields: regData.customFields }),
             registrationType: 'imported',
             status: 'active',
             createdBy: userId,

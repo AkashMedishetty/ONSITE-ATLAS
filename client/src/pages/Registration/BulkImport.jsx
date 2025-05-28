@@ -65,7 +65,9 @@ const BulkImport = () => {
               { id: 'f4', name: 'organization', label: 'Organization', required: false },
               { id: 'f5', name: 'phone', label: 'Phone Number', required: false },
               { id: 'f6', name: 'country', label: 'Country', required: false },
-              { id: 'f7', name: 'categoryId', label: 'Category', required: true }
+              { id: 'f7', name: 'categoryId', label: 'Category', required: true },
+              { id: 'f8', name: 'mciNumber', label: 'MCI Number', required: false },
+              { id: 'f9', name: 'membership', label: 'Membership', required: false }
             ],
             categories: categoriesResponse.data.map(cat => ({
               id: cat._id,
@@ -170,14 +172,28 @@ const BulkImport = () => {
       // Format the data according to mappings
       const formattedData = fileData.slice(1).map(row => {
         const formattedRow = {};
-        
+        let professionalInfo = {};
+        let customFields = {};
         // Apply field mappings
         Object.entries(selectedFields).forEach(([fieldName, excelColumn]) => {
           if (excelColumn) {
-            formattedRow[fieldName] = row[excelColumn];
+            if (fieldName === 'mciNumber' || fieldName === 'membership') {
+              professionalInfo[fieldName] = row[excelColumn];
+            } else if ([
+              'firstName','lastName','email','organization','phone','country','categoryId','registrationId'
+            ].includes(fieldName)) {
+              formattedRow[fieldName] = row[excelColumn];
+            } else {
+              customFields[fieldName] = row[excelColumn];
+            }
           }
         });
-        
+        if (Object.keys(professionalInfo).length > 0) {
+          formattedRow.professionalInfo = professionalInfo;
+        }
+        if (Object.keys(customFields).length > 0) {
+          formattedRow.customFields = customFields;
+        }
         return formattedRow;
       });
       

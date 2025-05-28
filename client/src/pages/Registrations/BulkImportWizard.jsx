@@ -59,9 +59,8 @@ const BulkImportWizard = () => {
     { id: 'state', label: 'State', required: false },
     { id: 'country', label: 'Country', required: false },
     { id: 'postalCode', label: 'Postal Code', required: false },
-    { id: 'dietaryRestrictions', label: 'Dietary Restrictions', required: false },
-    { id: 'emergencyContact', label: 'Emergency Contact', required: false },
-    { id: 'notes', label: 'Notes', required: false }
+    { id: 'mciNumber', label: 'MCI Number', required: false },
+    { id: 'membership', label: 'Membership', required: false }
   ];
   
   const allFields = [...requiredFields, ...optionalFields];
@@ -289,54 +288,51 @@ const BulkImportWizard = () => {
     fileData.forEach((row, index) => {
       const registrationPayload = {
         personalInfo: {},
+        professionalInfo: {},
+        customFields: {},
         originalFileRowNumber: index + 2,
       };
       let rowHasError = false;
-      const currentErrors = []; // Track errors for this specific row
-      
+      const currentErrors = [];
       Object.entries(fieldMappings).forEach(([fieldId, columnValue]) => {
         if (columnValue) {
           const columnLetter = columnValue.split(' ')[1];
           const headerIndex = columnLetter.charCodeAt(0) - 65;
           const originalHeader = headers.find(h => h.index === headerIndex)?.originalHeader;
-          
-          if (originalHeader) {
-            const rawValue = row[originalHeader];
-            
-            if (fieldId === 'categoryId') {
-              const categoryName = String(rawValue).trim();
-              const categoryId = categoryMap[categoryName.toLowerCase()];
-              
-              if (categoryId) {
-                  registrationPayload.category = categoryId; 
-              } else {
-                  if (failedCategoryCreations.has(categoryName.toLowerCase())) {
-                      currentErrors.push(`Category "${categoryName}" could not be created.`);
-                  } else if (!categoryName) {
-                       currentErrors.push(`Missing category name in source file.`);
-                  } else {
-                      currentErrors.push(`Category "${categoryName}" not found and was not created.`);
-                  }
-                  rowHasError = true;
-              }
-            } else if (fieldId === 'registrationId') {
-                if (rawValue !== null && rawValue !== undefined && String(rawValue).trim() !== '') {
-                    registrationPayload.registrationId = String(rawValue).trim();
-                } else {
-                    // Explicitly do nothing or handle as an empty/absent ID if needed,
-                    // though the backend already sorts this into recordsNeedingId
-                }
+          const rawValue = originalHeader ? row[originalHeader] : undefined;
+          if (fieldId === 'categoryId') {
+            const categoryName = String(rawValue).trim();
+            const categoryId = categoryMap[categoryName.toLowerCase()];
+            if (categoryId) {
+                registrationPayload.category = categoryId; 
             } else {
-              // Assign other fields (like email, phone, etc.)
-              if (['lastName', 'phoneNumber', 'postalCode'].includes(fieldId) && rawValue !== null && rawValue !== undefined) {
-                  registrationPayload.personalInfo[fieldId] = String(rawValue);
-              } else {
-                  registrationPayload.personalInfo[fieldId] = rawValue; 
-              }
+                if (failedCategoryCreations.has(categoryName.toLowerCase())) {
+                    currentErrors.push(`Category "${categoryName}" could not be created.`);
+                } else if (!categoryName) {
+                     currentErrors.push(`Missing category name in source file.`);
+                } else {
+                    currentErrors.push(`Category "${categoryName}" not found and was not created.`);
+                }
+                rowHasError = true;
             }
+          } else if (fieldId === 'registrationId') {
+              if (rawValue !== null && rawValue !== undefined && String(rawValue).trim() !== '') {
+                  registrationPayload.registrationId = String(rawValue).trim();
+              }
+          } else if (fieldId === 'mciNumber' || fieldId === 'membership') {
+            registrationPayload.professionalInfo[fieldId] = rawValue;
+          } else if ([
+            'firstName','lastName','email','organization','phoneNumber','address','city','state','country','postalCode'
+          ].includes(fieldId)) {
+            registrationPayload.personalInfo[fieldId] = rawValue;
+          } else {
+            registrationPayload.customFields[fieldId] = rawValue;
           }
         }
       });
+      // Remove empty objects
+      if (Object.keys(registrationPayload.professionalInfo).length === 0) delete registrationPayload.professionalInfo;
+      if (Object.keys(registrationPayload.customFields).length === 0) delete registrationPayload.customFields;
       
       // --- Refined Frontend Validation Check --- 
       const personalInfo = registrationPayload.personalInfo;

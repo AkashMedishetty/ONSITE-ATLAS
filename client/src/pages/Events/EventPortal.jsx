@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, formatDistance } from 'date-fns';
 import {
@@ -146,6 +146,12 @@ function EventPortal() {
   const [renderKey, setRenderKey] = useState(0);
   const [formChanged, setFormChanged] = useState(false);
   const [categoriesKey, setCategoriesKey] = useState(Date.now());
+  
+  // --- Add new state for dashboard-specific stats ---
+  const [dashboardAbstractStats, setDashboardAbstractStats] = useState({ total: 0, approved: 0, underReview: 0 });
+  const [dashboardResourceStats, setDashboardResourceStats] = useState({ food: 0, kits: 0, certificates: 0 });
+  const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false);
+  const [dashboardStatsError, setDashboardStatsError] = useState(null);
   
   // Memoize the setEvent function to prevent unnecessary re-renders
   const updateEvent = useMemo(() => {
@@ -449,6 +455,41 @@ function EventPortal() {
         setActivities([]);
       }
       
+      // --- Fetch dashboard-specific stats for Abstracts and Resources ---
+      setDashboardStatsLoading(true);
+      setDashboardStatsError(null);
+      try {
+        // Abstracts
+        const absStatsResp = await import('../../services/abstractService').then(m => m.default.getAbstractStatistics(id));
+        if (absStatsResp && absStatsResp.success && absStatsResp.data) {
+          const absData = absStatsResp.data;
+          setDashboardAbstractStats({
+            total: absData.totalAbstracts || 0,
+            approved: absData.byStatus?.approved || 0,
+            underReview: (absData.byStatus?.['under-review'] || 0) + (absData.byStatus?.pending || 0)
+          });
+        } else {
+          setDashboardAbstractStats({ total: 0, approved: 0, underReview: 0 });
+        }
+        // Resources
+        const [foodStats, kitStats, certStats] = await Promise.all([
+          import('../../services/eventService').then(m => m.default.getResourceTypeStatistics(id, 'food')),
+          import('../../services/eventService').then(m => m.default.getResourceTypeStatistics(id, 'kitBag')),
+          import('../../services/eventService').then(m => m.default.getResourceTypeStatistics(id, 'certificate')),
+        ]);
+        setDashboardResourceStats({
+          food: foodStats?.totalIssued || 0,
+          kits: kitStats?.totalIssued || 0,
+          certificates: certStats?.totalIssued || 0
+        });
+      } catch (err) {
+        setDashboardStatsError('Failed to load dashboard resource/abstract stats: ' + (err.message || err.toString()));
+        setDashboardAbstractStats({ total: 0, approved: 0, underReview: 0 });
+        setDashboardResourceStats({ food: 0, kits: 0, certificates: 0 });
+      } finally {
+        setDashboardStatsLoading(false);
+      }
+      
       setLoading(false);
     } catch (err) {
       console.error('Error in loadEventData:', err);
@@ -676,25 +717,16 @@ function EventPortal() {
         activeTabContent = <TabErrorBoundary tabName="Registrations"><RegistrationsTab eventId={id} /></TabErrorBoundary>; 
         break;
       case "sponsors":
-        const sponsorPathSegments = location.pathname.split('/');
-        const eventRegPrefix = event?.registrationSettings?.idPrefix || 'EVENT'; // Default if not found
 
-        console.log("[EventPortal] ActiveTab 'sponsors'. Pathname:", location.pathname, "Segments:", sponsorPathSegments);
-        console.log("[EventPortal] Checking for 'new': Length > 4?", sponsorPathSegments.length > 4, "Segment[4] === 'new'?", sponsorPathSegments[4] === 'new');
-        console.log("[EventPortal] Checking for 'edit': Length > 5?", sponsorPathSegments.length > 5, "Segment[5] === 'edit'?", sponsorPathSegments[5] === 'edit');
-
-        if (sponsorPathSegments.length > 4 && sponsorPathSegments[4] === 'new') {
-          console.log("[EventPortal] Rendering SponsorForm for 'new' with prefix:", eventRegPrefix);
-          activeTabContent = <TabErrorBoundary tabName="Add Sponsor"><SponsorForm eventRegPrefix={eventRegPrefix} /></TabErrorBoundary>;
-        } else if (sponsorPathSegments.length > 5 && sponsorPathSegments[5] === 'edit') {
-          const sponsorIdFromPath = sponsorPathSegments[4]; // This is the sponsorDbId
-          console.log("[EventPortal] Rendering SponsorForm for 'edit' with sponsorIdFromPath:", sponsorIdFromPath, "and prefix:", eventRegPrefix);
-          activeTabContent = <TabErrorBoundary tabName="Edit Sponsor"><SponsorForm eventRegPrefix={eventRegPrefix} sponsorIdForEdit={sponsorIdFromPath} /></TabErrorBoundary>;
-        } else {
-          console.log("[EventPortal] Rendering SponsorsList");
-          activeTabContent = <TabErrorBoundary tabName="Sponsors"><SponsorsList event={event} /></TabErrorBoundary>;
-        }
-        break;
+  // Add support for edit route
+  const sponsorEditMatch = location.pathname.match(/^\/events\/([^/]+)\/sponsors\/([^/]+)\/edit$/);
+  if (sponsorEditMatch && sponsorEditMatch[1] === id) {
+    activeTabContent = <SponsorForm />;
+  } else {
+    activeTabContent = <TabErrorBoundary tabName="Sponsors"><SponsorsList event={event} /></TabErrorBoundary>;
+  }
+  
+       break;
       case "categories":
         activeTabContent = <TabErrorBoundary tabName="Categories"><CategoriesTab eventId={id} key={categoriesKey} /></TabErrorBoundary>;
         break;
@@ -943,33 +975,23 @@ function EventPortal() {
                 <a href="#" onClick={(e) => { e.preventDefault(); navigateToSection('abstracts'); }} className="text-sm text-primary-600 hover:underline">View All</a>
               </div>
               <div className="flex flex-col items-center justify-center py-6">
-                <h2 className="text-4xl font-bold">
-                  {typeof statistics?.abstractsSubmitted === 'object' 
-                    ? (statistics?.abstractsSubmitted?.total || 0) 
-                    : (statistics?.abstractsSubmitted || 0)}
-                </h2>
+                {dashboardStatsLoading ? (
+                  <span className="text-gray-400">Loading...</span>
+                ) : dashboardStatsError ? (
+                  <span className="text-red-500 text-xs">{dashboardStatsError}</span>
+                ) : (
+                  <h2 className="text-4xl font-bold">{dashboardAbstractStats.total}</h2>
+                )}
                 <p className="text-sm text-gray-500">Total Submissions</p>
               </div>
               <div className="mt-2 flex justify-center gap-4">
                 <div className="flex items-center">
                   <span className="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>
-                  <span className="text-xs">Approved: {
-                    typeof statistics?.abstractsApproved === 'object'
-                      ? (statistics?.abstractsApproved?.total || 0)
-                      : (statistics?.abstractsApproved || 0)
-                  }</span>
+                  <span className="text-xs">Approved: {dashboardAbstractStats.approved}</span>
                 </div>
                 <div className="flex items-center">
                   <span className="inline-block w-3 h-3 rounded-full bg-yellow-500 mr-2"></span>
-                  <span className="text-xs">Under Review: {
-                    typeof statistics?.abstractsSubmitted === 'object' && typeof statistics?.abstractsApproved === 'object'
-                      ? ((statistics?.abstractsSubmitted?.total || 0) - (statistics?.abstractsApproved?.total || 0))
-                      : (typeof statistics?.abstractsSubmitted === 'object' 
-                          ? (statistics?.abstractsSubmitted?.total || 0) - (statistics?.abstractsApproved || 0)
-                          : (statistics?.abstractsSubmitted || 0) - (typeof statistics?.abstractsApproved === 'object' 
-                              ? (statistics?.abstractsApproved?.total || 0) 
-                              : (statistics?.abstractsApproved || 0)))
-                  }</span>
+                  <span className="text-xs">Under Review: {dashboardAbstractStats.underReview}</span>
                 </div>
               </div>
             </Card>
@@ -983,30 +1005,26 @@ function EventPortal() {
                 <a href="#" onClick={(e) => { e.preventDefault(); navigateToSection('resources'); }} className="text-sm text-primary-600 hover:underline">View All</a>
               </div>
               <div className="grid grid-cols-3 gap-4 text-center py-4">
-                <div>
-                  <h3 className="text-xl font-bold">
-                    {typeof statistics?.resourcesDistributed?.food === 'object'
-                      ? (statistics?.resourcesDistributed?.food?.total || 0)
-                      : (statistics?.resourcesDistributed?.food || 0)}
-                  </h3>
-                  <p className="text-xs text-gray-500">Food</p>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">
-                    {typeof statistics?.resourcesDistributed?.kits === 'object'
-                      ? (statistics?.resourcesDistributed?.kits?.total || 0)
-                      : (statistics?.resourcesDistributed?.kits || 0)}
-                  </h3>
-                  <p className="text-xs text-gray-500">Kit Bags</p>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">
-                    {typeof statistics?.resourcesDistributed?.certificates === 'object'
-                      ? (statistics?.resourcesDistributed?.certificates?.total || 0)
-                      : (statistics?.resourcesDistributed?.certificates || 0)}
-                  </h3>
-                  <p className="text-xs text-gray-500">Certificates</p>
-                </div>
+                {dashboardStatsLoading ? (
+                  <span className="col-span-3 text-gray-400">Loading...</span>
+                ) : dashboardStatsError ? (
+                  <span className="col-span-3 text-red-500 text-xs">{dashboardStatsError}</span>
+                ) : (
+                  <>
+                    <div>
+                      <h3 className="text-xl font-bold">{dashboardResourceStats.food}</h3>
+                      <p className="text-xs text-gray-500">Food</p>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">{dashboardResourceStats.kits}</h3>
+                      <p className="text-xs text-gray-500">Kit Bags</p>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold">{dashboardResourceStats.certificates}</h3>
+                      <p className="text-xs text-gray-500">Certificates</p>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="mt-4 flex justify-center">
                 <Button 

@@ -199,6 +199,27 @@ const RegistrationPortal = () => {
     
     setSubmitting(true);
     try {
+      // Dynamically build customFields from all custom fields in event config
+      let customFields = {};
+      if (event && event.registrationSettings && Array.isArray(event.registrationSettings.customFields)) {
+        event.registrationSettings.customFields.forEach(field => {
+          if (field && field.name && formData[field.name] !== undefined) {
+            customFields[field.name] = formData[field.name];
+          }
+        });
+      }
+      // Add legacy custom fields if present in formData
+      ['dietaryRestrictions','emergencyContact','emergencyPhone','specialRequirements','agreeToTerms'].forEach(f => {
+        if (formData[f] !== undefined && !(f in customFields)) {
+          customFields[f] = formData[f];
+        }
+      });
+      // Build professionalInfo if present
+      let professionalInfo = {};
+      ['mciNumber','membership'].forEach(f => {
+        if (formData[f]) professionalInfo[f] = formData[f];
+      });
+      if (Object.keys(professionalInfo).length === 0) professionalInfo = undefined;
       // Prepare registration data
       const registrationData = {
         eventId: eventId,
@@ -216,13 +237,8 @@ const RegistrationPortal = () => {
           country: formData.country || '',
           postalCode: formData.postalCode || ''
         },
-        customFields: {
-          dietaryRestrictions: formData.dietaryRestrictions || '',
-          emergencyContact: formData.emergencyContact || '',
-          emergencyPhone: formData.emergencyPhone || '',
-          specialRequirements: formData.specialRequirements || '',
-          agreeToTerms: formData.agreeToTerms || false
-        },
+        ...(customFields && Object.keys(customFields).length > 0 ? { customFields } : {}),
+        ...(professionalInfo ? { professionalInfo } : {}),
         isPublic: true
       };
       
@@ -309,9 +325,16 @@ const RegistrationPortal = () => {
       setStatus(null);
     } catch (error) {
       console.error('Registration error:', error);
+      // If error is from backend and has a response with a message, show that
+      let errorMessage = error.message || 'Failed to submit registration. Please try again.';
+      if (error.response && error.response.data && error.response.data.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.data && error.data.message) {
+        errorMessage = error.data.message;
+      }
       setStatus({
         type: 'error',
-        message: error.message || 'Failed to submit registration. Please try again.'
+        message: errorMessage
       });
     } finally {
       setSubmitting(false);

@@ -1,19 +1,32 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Button, Input, Select, Spinner, Alert } from '../../components/common';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Button, Input, Select, Spinner, Alert, Modal } from '../../components/common';
 import { Table, Tag } from 'antd'; // Import Table and Tag from antd
 import { PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
 import sponsorService from '../../services/sponsorService'; // Import the actual service
 import { toast } from 'react-toastify'; // For displaying success/error messages
+import SponsorForm from './SponsorForm';
 
 const SponsorsList = ({ event }) => {
   const eventId = event?._id;
   const location = useLocation();
+  const navigate = useNavigate();
   const [sponsors, setSponsors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // Modal state
+  const [viewSponsorId, setViewSponsorId] = useState(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewSponsor, setViewSponsor] = useState(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewError, setViewError] = useState(null);
+  // Edit modal state
+  const [editSponsorId, setEditSponsorId] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  // Add modal state
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const fetchSponsors = useCallback(async () => {
     if (!eventId) {
@@ -76,6 +89,72 @@ const SponsorsList = ({ event }) => {
     }
   };
 
+  // Fetch sponsor details for modal
+  const handleViewSponsor = async (sponsorDbId) => {
+    setViewSponsorId(sponsorDbId);
+    setShowViewModal(true);
+    setViewSponsor(null);
+    setViewError(null);
+    setViewLoading(true);
+    try {
+      // Try to find in the loaded list first
+      const found = sponsors.find(s => s.id === sponsorDbId);
+      if (found) {
+        setViewSponsor(found);
+        setViewLoading(false);
+        return;
+      }
+      // Otherwise fetch from API
+      const res = await sponsorService.getSponsorById(eventId, sponsorDbId);
+      if (res && res.success && res.data) {
+        setViewSponsor(res.data);
+      } else {
+        setViewError(res.message || 'Sponsor not found');
+      }
+    } catch (err) {
+      setViewError(err.message || 'Error loading sponsor');
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const closeViewModal = () => {
+    setShowViewModal(false);
+    setViewSponsorId(null);
+    setViewSponsor(null);
+    setViewError(null);
+    setViewLoading(false);
+  };
+
+  // Add handler for modal edit
+  const handleEditSponsorFromModal = () => {
+    console.log('[SponsorsList] handleEditSponsorFromModal called. viewSponsor:', viewSponsor);
+    if (viewSponsor && viewSponsor.id) {
+      closeViewModal();
+      console.log('[SponsorsList] Navigating to:', `/events/${eventId}/sponsors/${viewSponsor.id}/edit`);
+      navigate(`/events/${eventId}/sponsors/${viewSponsor.id}/edit`);
+    } else {
+      alert('Edit failed: Sponsor data missing or invalid.');
+    }
+  };
+
+  const openEditModal = (sponsorId) => {
+    setEditSponsorId(sponsorId);
+    setShowEditModal(true);
+  };
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditSponsorId(null);
+    fetchSponsors();
+  };
+  const openAddModal = () => {
+    setShowAddModal(true);
+  };
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    fetchSponsors();
+  };
+
   const columns = [
     {
       title: 'Sponsor ID',
@@ -118,13 +197,17 @@ const SponsorsList = ({ event }) => {
       title: 'Actions',
       key: 'actions',
       render: (text, record) => {
-        console.log('[SponsorsList ActionsColumn] Rendering action for record:', record, 'record.id:', record?.id);
         return (
           <div className="flex space-x-2">
-            {/* record.id is the database ID needed for edit/delete operations */}
-            <Link to={`/events/${eventId}/sponsors/${record.id}/edit`} title="Edit">
-              <Button variant="icon" size="sm"><PencilIcon className="h-4 w-4" /></Button>
-            </Link>
+            {/* View button opens modal */}
+            <Button variant="icon" size="sm" onClick={() => handleViewSponsor(record.id)} title="View">
+              <EyeIcon className="h-4 w-4" />
+            </Button>
+            {/* Edit button opens edit modal */}
+            <Button variant="icon" size="sm" onClick={() => openEditModal(record.id)} title="Edit">
+              <PencilIcon className="h-4 w-4" />
+            </Button>
+            {/* Delete button */}
             <Button variant="icon" size="sm" onClick={() => handleDeleteSponsor(record.id)} title="Delete" disabled={loading}>
               <TrashIcon className="h-4 w-4 text-red-500" />
             </Button>
@@ -159,18 +242,9 @@ const SponsorsList = ({ event }) => {
       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold">Sponsors Management</h1>
         <div className="flex items-center gap-2">
-          <Button 
-            variant="outline"
-            onClick={() => console.log('Export Sponsors - To be implemented')} 
-            leftIcon={<EyeIcon className="h-4 w-4 mr-1" />}
-          >
-            Export
+          <Button variant="primary" leftIcon={<PencilIcon className="h-4 w-4 mr-1" />} onClick={openAddModal}>
+            Add Sponsor
           </Button>
-          <Link to={`/events/${eventId}/sponsors/new`}>
-            <Button variant="primary" leftIcon={<PencilIcon className="h-4 w-4 mr-1" />}>
-              Add Sponsor
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -227,6 +301,42 @@ const SponsorsList = ({ event }) => {
             No sponsors have been added to this event yet. Click "Add Sponsor" to get started.
         </Alert>
       )}
+      {/* View Sponsor Modal */}
+      <Modal isOpen={showViewModal} onClose={closeViewModal} size="xl" centered={true}>
+        <div className="p-6 max-w-lg">
+          <h2 className="text-lg font-semibold mb-4">Sponsor Details</h2>
+          {viewLoading && <div className="flex justify-center items-center py-8"><Spinner /></div>}
+          {viewError && <Alert variant="danger">{viewError}</Alert>}
+          {viewSponsor && !viewLoading && !viewError && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><strong>Sponsor ID:</strong> {viewSponsor.sponsorId || 'N/A'}</div>
+              <div><strong>Company Name:</strong> {viewSponsor.companyName || 'N/A'}</div>
+              <div><strong>Authorized Person:</strong> {viewSponsor.authorizedPerson || 'N/A'}</div>
+              <div><strong>Email:</strong> {viewSponsor.email || 'N/A'}</div>
+              <div><strong>Display Phone:</strong> {viewSponsor.displayPhoneNumber || 'N/A'}</div>
+              <div><strong>Sponsoring Amount:</strong> {viewSponsor.sponsoringAmount !== undefined && viewSponsor.sponsoringAmount !== null ? viewSponsor.sponsoringAmount : 'N/A'}</div>
+              <div><strong>Registrant Allotment:</strong> {viewSponsor.registrantAllotment !== undefined && viewSponsor.registrantAllotment !== null ? viewSponsor.registrantAllotment : 'N/A'}</div>
+              <div><strong>Status:</strong> {viewSponsor.status || 'N/A'}</div>
+              <div className="md:col-span-2"><strong>Description / Notes:</strong> {viewSponsor.description || 'N/A'}</div>
+            </div>
+          )}
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="light" onClick={closeViewModal}>Close</Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Edit Sponsor Modal */}
+      <Modal isOpen={showEditModal} onClose={closeEditModal} title="Edit Sponsor" size="xl">
+        {showEditModal && (
+          <SponsorForm sponsorIdForEdit={editSponsorId} onClose={closeEditModal} />
+        )}
+      </Modal>
+      {/* Add Sponsor Modal */}
+      <Modal isOpen={showAddModal} onClose={closeAddModal} title="Add Sponsor" size="2xl" centered={true}>
+        {showAddModal && (
+          <SponsorForm onClose={closeAddModal} />
+        )}
+      </Modal>
     </div>
   );
 };

@@ -63,11 +63,15 @@ app.use('/api/registrant-portal/login', authLimiter);
 app.use('/api/registrant-portal/forgot-password', authLimiter);
 app.use('/api/registrant-portal/reset-password', authLimiter);
 
-// Parse JSON request body
-app.use(express.json({ limit: '10mb' }));
-
-// Parse URL-encoded request body
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Only parse JSON and urlencoded for non-multipart requests
+app.use((req, res, next) => {
+  if (req.is('multipart/form-data')) return next();
+  express.json({ limit: '10mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+  if (req.is('multipart/form-data')) return next();
+  express.urlencoded({ extended: true, limit: '10mb' })(req, res, next);
+});
 
 app.use(cookieParser());
 

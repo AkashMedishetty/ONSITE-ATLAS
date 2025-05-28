@@ -846,20 +846,17 @@ const resourceService = {
       if (!eventId || !resourceType) {
         throw new Error('Event ID and Resource Type are required for export.');
       }
-      
+      // Always normalize resourceType for backend compatibility
+      const normalizedType = normalizeResourceType(resourceType);
       // Add resourceType to the params object for the query string
-      const queryParams = { ...params, type: resourceType };
-      
+      const queryParams = { ...params, type: normalizedType };
       const url = `/events/${eventId}/resources/export`;
       console.log(`[exportResourceUsage] Calling API: GET ${url} with params:`, queryParams);
-      
       const response = await api.get(url, { 
         params: queryParams,
         responseType: 'blob' // Expect a Blob response
       });
-      
       return response.data; // Return the Blob
-      
     } catch (error) {
       console.error(`Error exporting ${resourceType} usage:`, error);
       return { 

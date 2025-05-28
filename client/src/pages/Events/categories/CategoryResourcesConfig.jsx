@@ -1117,6 +1117,20 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
     }
   };
   
+  // --- Add handler functions for 'Allow All' actions ---
+  const handleAllowAllMeals = () => {
+    setMealEntitlements((prev) => prev.map(e => ({ ...e, entitled: true })));
+    setSelectedFoodItems(foodItems.map(item => item._id)); // Ensure all are checked
+  };
+  const handleAllowAllKits = () => {
+    setKitItemEntitlements((prev) => prev.map(e => ({ ...e, entitled: true })));
+    setSelectedKitItems(kitItems.map(item => item._id)); // Ensure all are checked
+  };
+  const handleAllowAllCertificates = () => {
+    setCertificateEntitlements((prev) => prev.map(e => ({ ...e, entitled: true })));
+    setSelectedCertificateTypes(certificateTypes.map(type => type._id)); // Ensure all are checked
+  };
+  
   if (!isOpen) return null;
   const registrantWarning = registrants.length < (category?.registrantCount || 0);
   return (
@@ -1128,7 +1142,6 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
       fullWidth={true}
       className="max-w-[98vw] w-full mx-auto"
       contentClassName="p-0 overflow-visible"
-      overlayClassName="overflow-visible"
     >
       {error && (
         <Alert type="error" message={error} onClose={() => setError(null)} className="m-4" />
@@ -1162,11 +1175,36 @@ const CategoryResourcesConfig = ({ isOpen, onClose, category, eventId, onSave })
             />
           </div>
           <div className="flex-1 overflow-y-auto px-6 py-4 bg-gray-50">
+            {/* In each resource tab, add the button at the top right of the tab content */}
+            {activeTab === 'food' && (
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-gray-700">Meal Entitlements</h4>
+                <Button size="sm" variant="primary" onClick={handleAllowAllMeals}>
+                  Allow All Meals
+                </Button>
+              </div>
+            )}
+            {activeTab === 'kit' && (
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-gray-700">Kit Item Entitlements</h4>
+                <Button size="sm" variant="primary" onClick={handleAllowAllKits}>
+                  Allow All Kits
+                </Button>
+              </div>
+            )}
+            {activeTab === 'certificate' && (
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-gray-700">Certificate Entitlements</h4>
+                <Button size="sm" variant="primary" onClick={handleAllowAllCertificates}>
+                  Allow All Certificates
+                </Button>
+              </div>
+            )}
             {renderTabContent()}
           </div>
           <div className="flex justify-end gap-3 px-6 py-4 bg-white border-t sticky bottom-0 z-10">
             <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button variant="primary" onClick={handleSave} loading={saving}>Save</Button>
+            <Button variant="primary" onClick={handleSave} loading={!!saving}>Save</Button>
           </div>
         </div>
       )}

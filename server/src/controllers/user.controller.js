@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const mongoose = require('mongoose');
 
 /**
  * Get all users
@@ -12,14 +13,32 @@ const archiver = require('archiver');
  */
 const getUsers = async (req, res, next) => {
   try {
-    const users = await User.find().select('-password -refreshToken');
-
+    // Accept eventId from query or params
+    const eventId = req.query.eventId || req.params.eventId;
+    if (!eventId) {
+      logger.warn('getUsers: No eventId provided');
+      return next(createApiError(400, 'Event ID is required to list users.'));
+    }
+    // Convert eventId to ObjectId for query
+    const eventObjectId = new mongoose.Types.ObjectId(eventId);
+    logger.info(`[getUsers] Querying users for eventId: ${eventId}, as ObjectId: ${eventObjectId}`);
+    // Find users whose eventRoles contains this eventId
+    const users = await User.find({
+      'eventRoles.eventId': eventObjectId
+    }).select('-password -refreshToken');
+    logger.info(`[getUsers] Found ${users.length} users for eventId: ${eventId}`);
+    if (users.length === 0) {
+      logger.info(`[getUsers] Users array: ${JSON.stringify(users, null, 2)}`);
+    }
+    // Ensure _id is always a string
+    const usersWithId = users.map(u => ({ ...u.toObject(), _id: u._id ? u._id.toString() : undefined }));
     res.status(200).json({
       success: true,
       count: users.length,
-      data: users
+      data: usersWithId
     });
   } catch (error) {
+    logger.error(`[getUsers] Error: ${error.message}`);
     next(error);
   }
 };
@@ -33,48 +52,39 @@ const createUser = async (req, res, next) => {
   try {
     const { name, email, password, role, eventId } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return next(createApiError(400, 'User already exists with this email'));
+    // Block admin creation from this endpoint
+    if (role === 'admin') {
+      return next(createApiError(403, 'Admin users cannot be created from this interface.'));
     }
 
-    // Create new user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: role || 'staff'
-    });
-
-    // If eventId is provided and role is one of the specified, associate user with the event
-    if (eventId) {
-      console.log('UserCreate Controller: eventId present:', eventId, 'User role:', user.role);
-      const rolesToAssociate = ['reviewer', 'staff', 'manager'];
-      if (rolesToAssociate.includes(user.role)) {
-        // Ensure managedEvents is an array and add the eventId if not already present
-        // (User.create would have returned the created user, so we can modify it and save)
-        if (!user.managedEvents) {
-          user.managedEvents = [];
-        }
-        if (!user.managedEvents.includes(eventId)) {
-          user.managedEvents.push(eventId);
-          await user.save(); // Save the user with the updated managedEvents
-          logger.info(`User ${user.email} associated with event ${eventId}`);
-        }
+    // For non-admin roles, check for existing user with this email and eventId
+    let user = await User.findOne({ email });
+    if (user) {
+      // Check if event-role pair already exists
+      const alreadyAssigned = user.eventRoles && user.eventRoles.some(er => er.eventId.toString() === eventId && er.role === role);
+      if (alreadyAssigned) {
+        return next(createApiError(400, 'User already exists with this email and event for this role'));
       }
+      // Add new event-role pair
+      user.eventRoles.push({ eventId, role });
+      await user.save();
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      logger.info(`User ${user.email} assigned new event-role: ${eventId} - ${role}`);
+      return res.status(201).json({ success: true, data: userResponse });
+    } else {
+      // Create new user with first event-role
+      user = await User.create({
+        name,
+        email,
+        password,
+        eventRoles: [{ eventId, role }],
+      });
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      logger.info(`New user created: ${user.email} for event ${eventId} as ${role}`);
+      return res.status(201).json({ success: true, data: userResponse });
     }
-
-    // Remove password from response
-    const userResponse = user.toObject(); // Convert to plain object if it's a Mongoose doc
-    delete userResponse.password;
-
-    logger.info(`New user created: ${user.email}`);
-
-    res.status(201).json({
-      success: true,
-      data: userResponse // Send the modified user object without password
-    });
   } catch (error) {
     logger.error('Error creating user:', error);
     next(error);

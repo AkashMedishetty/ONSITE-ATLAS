@@ -1072,20 +1072,43 @@ const AbstractsTab = ({ event }) => {
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Submission Period</h4>
             <p>
-              {formatDate(event?.abstractSettings?.submissionStartDate || event?.startDate)} - {formatDate(event?.abstractSettings?.submissionEndDate || event?.endDate)}
+              {/* Prefer new fields, fallback to legacy */}
+              {formatDate(
+                event?.abstractSettings?.submissionStartDate ||
+                event?.abstractSettings?.startDate ||
+                event?.startDate ||
+                event?.abstractSettings?.deadline // fallback: single deadline as end
+              )} - {formatDate(
+                event?.abstractSettings?.submissionEndDate ||
+                event?.abstractSettings?.endDate ||
+                event?.endDate ||
+                event?.abstractSettings?.deadline // fallback: single deadline as end
+              )}
             </p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Review Deadline</h4>
-            <p>{formatDate(event?.abstractSettings?.reviewDeadline || event?.endDate)}</p>
+            <p>{formatDate(
+              event?.abstractSettings?.reviewDeadline ||
+              event?.abstractSettings?.deadline ||
+              event?.endDate
+            )}</p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Word Limit</h4>
-            <p>{event?.abstractSettings?.maxWordCount || 500} words</p>
+            <p>{
+              event?.abstractSettings?.maxWordCount ||
+              event?.abstractSettings?.maxLength ||
+              500
+            } words</p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-500 mb-1">Allow Edits After Submission</h4>
-            <p>{event?.abstractSettings?.allowEdit ? 'Yes' : 'No'}</p>
+            <p>{
+              event?.abstractSettings?.allowEdit !== undefined
+                ? (event.abstractSettings.allowEdit ? 'Yes' : 'No')
+                : (event?.abstractSettings?.allowEditing ? 'Yes' : 'No')
+            }</p>
           </div>
         </div>
         

@@ -16,28 +16,24 @@ const emailService = {
    * @returns {Promise} Promise with API response
    */
   sendEmail: async (eventId, emailData, filters = {}) => {
-    // If attachments are present, use FormData
+    // Always use FormData, even if there are no attachments
+    const formData = new FormData();
+    formData.append('email', JSON.stringify({ subject: emailData.subject, body: emailData.body }));
+    formData.append('filters', JSON.stringify(filters));
     if (emailData.attachments && emailData.attachments.length > 0) {
-      const formData = new FormData();
-      formData.append('email', JSON.stringify({ subject: emailData.subject, body: emailData.body }));
-      formData.append('filters', JSON.stringify(filters));
       emailData.attachments.forEach(file => {
         formData.append('attachments', file);
       });
-      const response = await api.post(`/events/${eventId}/emails/send`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      return response.data;
     } else {
-      // No attachments, send as JSON
-      const response = await api.post(`/events/${eventId}/emails/send`, {
-        email: emailData,
-        filters
-      });
-      return response.data;
+      // Add a dummy file with a valid mimetype to ensure multipart boundary is present and multer never fails
+      formData.append('attachments', new File([''], 'empty.txt', { type: 'text/plain' }));
     }
+    const response = await api.post(`/events/${eventId}/emails/send`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
   },
 
   /**

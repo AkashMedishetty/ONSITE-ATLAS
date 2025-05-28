@@ -68,7 +68,17 @@ const getRegistrations = asyncHandler(async (req, res) => {
       { 'personalInfo.lastName': { $regex: search, $options: 'i' } },
       { 'personalInfo.email': { $regex: search, $options: 'i' } },
       { 'personalInfo.organization': { $regex: search, $options: 'i' } },
-      { 'personalInfo.phone': { $regex: search, $options: 'i' } }
+      { 'personalInfo.phone': { $regex: search, $options: 'i' } },
+      // Support searching by full name (firstName + ' ' + lastName)
+      {
+        $expr: {
+          $regexMatch: {
+            input: { $concat: ['$personalInfo.firstName', ' ', '$personalInfo.lastName'] },
+            regex: search,
+            options: 'i'
+          }
+        }
+      }
     ];
   }
   
@@ -296,9 +306,11 @@ const createRegistration = asyncHandler(async (req, res) => {
     event: eventId,
     category: categoryId,
     personalInfo,
-    status: 'active', // Ensure status is valid based on schema enum
-    // Include other fields passed in req.body if necessary (e.g., customFields)
+    // PATCH: Save professionalInfo if provided
+    ...(req.body.professionalInfo && { professionalInfo: req.body.professionalInfo }),
+    // PATCH: Save customFields if provided
     ...(req.body.customFields && { customFields: req.body.customFields }),
+    status: 'active', // Ensure status is valid based on schema enum
     createdAt: new Date(),
     updatedAt: new Date()
   });
@@ -368,17 +380,29 @@ const updateRegistration = asyncHandler(async (req, res, next) => {
   if (personalInfo) {
     console.log('[Backend Update] Updating personalInfo fields:', personalInfo);
     for (const key in personalInfo) {
-      // Update if the key exists in the incoming data, regardless of previous value
       if (personalInfo.hasOwnProperty(key)) { 
         console.log(`[Backend Update] Setting personalInfo.${key} = ${personalInfo[key]}`);
         registration.personalInfo[key] = personalInfo[key];
       }
     }
-    // Mongoose needs paths within subdocuments to be explicitly marked sometimes
     registration.markModified('personalInfo'); 
     console.log('[Backend Update] Marked personalInfo as modified.');
   }
-  
+
+  // PATCH: Save professionalInfo if provided
+  if (req.body.professionalInfo) {
+    registration.professionalInfo = req.body.professionalInfo;
+    registration.markModified('professionalInfo');
+    console.log('[Backend Update] Updated professionalInfo:', req.body.professionalInfo);
+  }
+
+  // PATCH: Save customFields if provided (Map)
+  if (req.body.customFields) {
+    registration.customFields = req.body.customFields;
+    registration.markModified('customFields');
+    console.log('[Backend Update] Updated customFields:', req.body.customFields);
+  }
+
   if (status) registration.status = status;
   
   registration.updatedAt = new Date();
@@ -843,136 +867,211 @@ exports.addRegistrationNote = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Export registrations to Excel
+// @desc    Export registrations to Excel (ALL DATA, ALL FILTERS, FLATTENED)
 // @route   GET /api/events/:id/registrations/export
 // @access  Private
 const exportRegistrationsController = asyncHandler(async (req, res) => {
   const eventId = req.params.id;
-  const { category, status, search } = req.query; // Get filters from query
+  // --- Accept all possible filters from query ---
+  const {
+    category, status, search, registrationType, badgePrinted, startDate, endDate, paymentStatus, workshopId
+  } = req.query;
 
-  console.log(`[Export] Starting export for event: ${eventId}, Filters:`, req.query);
-
-  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) { 
-    console.error(`[Export] Invalid or missing Event ID from route params: ${eventId}`);
+  if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
     return res.status(400).json({ success: false, message: 'Valid Event ID is required in the route.' });
   }
 
-  try {
-    // 1. Build Filter Query (using the validated eventId)
-    const filter = { event: eventId };
-    if (category) filter.category = category;
-    if (status) filter.status = status;
-    if (search) {
-      filter.$or = [
-        { registrationId: { $regex: search, $options: 'i' } },
-        { 'personalInfo.firstName': { $regex: search, $options: 'i' } },
-        { 'personalInfo.lastName': { $regex: search, $options: 'i' } },
-        { 'personalInfo.email': { $regex: search, $options: 'i' } },
-        { 'personalInfo.organization': { $regex: search, $options: 'i' } }
-        // Add more searchable fields if needed
-      ];
-    }
-    console.log('[Export] Applying filter:', filter);
-
-    // 2. Fetch ALL matching registrations (no pagination)
-    const registrations = await Registration.find(filter)
-      .populate('category', 'name') // Populate category name
-      .sort({ createdAt: -1 })
-      .lean(); // Use .lean() for performance when not modifying docs
-      
-    console.log(`[Export] Found ${registrations.length} registrations to export.`);
-
-    if (registrations.length === 0) {
-       return sendSuccess(res, 404, 'No registrations found matching the criteria for export.');
-    }
-
-    // 3. Create Excel Workbook
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'OnSite Atlas';
-    workbook.created = new Date();
-    const worksheet = workbook.addWorksheet('Registrations');
-
-    // 4. Define Columns
-    worksheet.columns = [
-      { header: 'Registration ID', key: 'registrationId', width: 20 },
-      { header: 'First Name', key: 'firstName', width: 20 },
-      { header: 'Last Name', key: 'lastName', width: 20 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Phone', key: 'phone', width: 20 },
-      { header: 'Organization', key: 'organization', width: 30 },
-      { header: 'Designation', key: 'designation', width: 20 },
-      { header: 'Country', key: 'country', width: 15 },
-      { header: 'Category', key: 'category', width: 25 },
-      { header: 'Status', key: 'status', width: 15 },
-      { header: 'Type', key: 'registrationType', width: 15 },
-      { header: 'Registered At', key: 'createdAt', width: 20 },
-      { header: 'Checked In', key: 'checkedIn', width: 15 },
-      { header: 'Checked In At', key: 'checkedInAt', width: 20 },
-      { header: 'Badge Printed', key: 'badgePrinted', width: 15 },
-      // Add custom fields headers dynamically later if needed
+  // --- Build Filter Query ---
+  const filter = { event: eventId };
+  if (category) filter.category = category;
+  if (status) filter.status = status;
+  if (registrationType) filter.registrationType = registrationType;
+  if (badgePrinted !== undefined && badgePrinted !== '') filter.badgePrinted = badgePrinted === 'true';
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) filter.createdAt.$lte = new Date(endDate);
+  }
+  if (search) {
+    filter.$or = [
+      { registrationId: { $regex: search, $options: 'i' } },
+      { 'personalInfo.firstName': { $regex: search, $options: 'i' } },
+      { 'personalInfo.lastName': { $regex: search, $options: 'i' } },
+      { 'personalInfo.email': { $regex: search, $options: 'i' } },
+      { 'personalInfo.organization': { $regex: search, $options: 'i' } },
+      { 'personalInfo.phone': { $regex: search, $options: 'i' } },
+      {
+        $expr: {
+          $regexMatch: {
+            input: { $concat: ['$personalInfo.firstName', ' ', '$personalInfo.lastName'] },
+            regex: search,
+            options: 'i'
+          }
+        }
+      }
     ];
-    
-    // Style Header Row
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern:'solid',
-      fgColor:{argb:'FFDDDDDD'} // Light grey fill
-    };
-    worksheet.getRow(1).border = {
-      bottom: { style:'thin' }
-    };
+  }
 
-    // 5. Add Data Rows
-    registrations.forEach(reg => {
-      worksheet.addRow({
-        registrationId: reg.registrationId,
-        firstName: reg.personalInfo?.firstName || '',
-        lastName: reg.personalInfo?.lastName || '',
-        email: reg.personalInfo?.email || '',
-        phone: reg.personalInfo?.phone || '',
-        organization: reg.personalInfo?.organization || '',
-        designation: reg.personalInfo?.designation || '',
-        country: reg.personalInfo?.country || '',
-        category: reg.category?.name || '', // Use populated category name
-        status: reg.status,
-        registrationType: reg.registrationType,
-        createdAt: reg.createdAt ? reg.createdAt.toLocaleString() : '',
-        checkedIn: reg.checkIn?.isCheckedIn ? 'Yes' : 'No',
-        checkedInAt: reg.checkIn?.checkedInAt ? reg.checkIn.checkedInAt.toLocaleString() : '',
-        badgePrinted: reg.badgePrinted ? 'Yes' : 'No',
-        // Add custom fields data dynamically later if needed
+  // --- Fetch ALL matching registrations (no pagination) ---
+  let registrations = await Registration.find(filter)
+    .populate('category', 'name color')
+    .populate('event', 'name startDate endDate')
+    .lean();
+
+  if (!registrations.length) {
+    return sendSuccess(res, 404, 'No registrations found matching the criteria for export.');
+  }
+
+  // --- Gather all related data for each registration ---
+  const registrationIds = registrations.map(r => r._id);
+
+  // Fetch related data in bulk for efficiency
+  const [resources, abstracts, payments, workshops] = await Promise.all([
+    // All resources for these registrations
+    require('../models/Resource').find({ registration: { $in: registrationIds } }).lean(),
+    // All abstracts for these registrations
+    require('../models/Abstract').find({ registration: { $in: registrationIds } }).lean(),
+    // All payments for these registrations
+    require('../models/Payment').find({ registration: { $in: registrationIds } }).lean(),
+    // All workshops where this registration is in attendees or registrations
+    require('../models/Workshop').find({
+      $or: [
+        { registrations: { $in: registrationIds } },
+        { 'attendees.registration': { $in: registrationIds } }
+      ]
+    }).lean()
+  ]);
+
+  // --- Build dynamic columns ---
+  // Collect all custom field keys
+  const allCustomFieldKeys = new Set();
+  registrations.forEach(reg => {
+    if (reg.customFields) Object.keys(reg.customFields).forEach(k => allCustomFieldKeys.add(k));
+  });
+
+  // Collect all resource types/items
+  const allResourceTypes = ['food', 'kitBag', 'certificate'];
+  const allResourceDetails = { food: new Set(), kitBag: new Set(), certificate: new Set() };
+  resources.forEach(res => {
+    if (allResourceTypes.includes(res.type) && res.details && res.details.name) {
+      allResourceDetails[res.type].add(res.details.name);
+    }
+  });
+
+  // Collect all abstract fields
+  const allAbstractFields = ['title', 'status', 'topic', 'submissionType'];
+
+  // Collect all payment fields
+  const allPaymentFields = ['status', 'amount', 'currency', 'gateway', 'invoiceNumber'];
+
+  // Collect all workshop titles
+  const allWorkshopTitles = new Set();
+  workshops.forEach(ws => allWorkshopTitles.add(ws.title));
+
+  // --- Define columns ---
+  const columns = [
+    { header: 'Registration ID', key: 'registrationId' },
+    { header: 'First Name', key: 'firstName' },
+    { header: 'Last Name', key: 'lastName' },
+    { header: 'Email', key: 'email' },
+    { header: 'Phone', key: 'phone' },
+    { header: 'Organization', key: 'organization' },
+    { header: 'Designation', key: 'designation' },
+    { header: 'Country', key: 'country' },
+    { header: 'Category', key: 'category' },
+    { header: 'Status', key: 'status' },
+    { header: 'Type', key: 'registrationType' },
+    { header: 'Registered At', key: 'createdAt' },
+    { header: 'Checked In', key: 'checkedIn' },
+    { header: 'Badge Printed', key: 'badgePrinted' },
+    // Professional Info
+    { header: 'MCI Number', key: 'mciNumber' },
+    { header: 'Membership', key: 'membership' },
+  ];
+  // Add custom fields
+  allCustomFieldKeys.forEach(key => columns.push({ header: key, key: `custom_${key}` }));
+  // Add resource columns
+  Object.entries(allResourceDetails).forEach(([type, names]) => {
+    names.forEach(name => columns.push({ header: `${type}:${name}`, key: `${type}_${name}` }));
+  });
+  // Add abstract columns
+  allAbstractFields.forEach(field => columns.push({ header: `Abstract ${field}`, key: `abstract_${field}` }));
+  // Add payment columns
+  allPaymentFields.forEach(field => columns.push({ header: `Payment ${field}`, key: `payment_${field}` }));
+  // Add workshop columns
+  allWorkshopTitles.forEach(title => columns.push({ header: `Workshop: ${title}`, key: `workshop_${title}` }));
+
+  // --- Create Excel workbook ---
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Registrations');
+  worksheet.columns = columns;
+
+  // --- Add rows ---
+  for (const reg of registrations) {
+    const row = {
+      registrationId: reg.registrationId,
+      firstName: reg.personalInfo?.firstName || '',
+      lastName: reg.personalInfo?.lastName || '',
+      email: reg.personalInfo?.email || '',
+      phone: reg.personalInfo?.phone || '',
+      organization: reg.personalInfo?.organization || '',
+      designation: reg.personalInfo?.designation || '',
+      country: reg.personalInfo?.country || '',
+      category: reg.category?.name || '',
+      status: reg.status,
+      registrationType: reg.registrationType,
+      createdAt: reg.createdAt ? new Date(reg.createdAt).toLocaleString() : '',
+      checkedIn: reg.checkIn?.isCheckedIn ? 'Yes' : 'No',
+      badgePrinted: reg.badgePrinted ? 'Yes' : 'No',
+      mciNumber: reg.professionalInfo?.mciNumber || '',
+      membership: reg.professionalInfo?.membership || '',
+    };
+    // Custom fields
+    allCustomFieldKeys.forEach(key => {
+      row[`custom_${key}`] = reg.customFields?.[key] || '';
+    });
+    // Resource usage
+    Object.entries(allResourceDetails).forEach(([type, names]) => {
+      names.forEach(name => {
+        const used = resources.find(r => r.registration?.toString() === reg._id.toString() && r.type === type && r.details?.name === name && r.status !== 'voided');
+        row[`${type}_${name}`] = used ? 'Yes' : '';
       });
     });
-    
-    console.log('[Export] Added data rows to worksheet.');
-
-    // 6. Set Response Headers
-    const filename = `registrations_${eventId}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    );
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${filename}"`
-    );
-    
-    console.log(`[Export] Setting headers for filename: ${filename}`);
-
-    // 7. Write Workbook to Response Stream
-    await workbook.xlsx.write(res);
-    res.end(); // End the response after writing the file
-    console.log('[Export] Finished writing workbook to response.');
-
-  } catch (error) {
-    console.error('[Export] Error generating Excel export:', error);
-    // Ensure response isn't already sent before sending error
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, message: 'Failed to generate export file.', error: error.message });
-    }
+    // Abstracts (concatenate multiple)
+    const regAbstracts = abstracts.filter(a => a.registration?.toString() === reg._id.toString());
+    allAbstractFields.forEach(field => {
+      row[`abstract_${field}`] = regAbstracts.map(a => a[field] || '').filter(Boolean).join('; ');
+    });
+    // Payments (concatenate multiple)
+    const regPayments = payments.filter(p => p.registration?.toString() === reg._id.toString());
+    allPaymentFields.forEach(field => {
+      row[`payment_${field}`] = regPayments.map(p => p[field] || '').filter(Boolean).join('; ');
+    });
+    // Workshops
+    workshops.forEach(ws => {
+      const isRegistered = (ws.registrations || []).some(rid => rid.toString() === reg._id.toString()) ||
+        (ws.attendees || []).some(a => a.registration?.toString() === reg._id.toString());
+      row[`workshop_${ws.title}`] = isRegistered ? 'Yes' : '';
+    });
+    worksheet.addRow(row);
   }
+
+  // --- Style header row ---
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+  worksheet.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFDDDDDD' }
+  };
+  worksheet.getRow(1).border = { bottom: { style: 'thin' } };
+
+  // --- Set response headers and send file ---
+  const filename = `registrations_${eventId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  await workbook.xlsx.write(res);
+  res.end();
 });
 
 /**
@@ -1192,17 +1291,36 @@ const createRegistrationPublic = async (req, res, next) => {
   }
   // --- End ID Generation ---
 
-  // Create new registration
-  const registration = await Registration.create({
-    registrationId,
-    event: eventId,
-    category: categoryId,
-    personalInfo,
-    status: 'active',
-    ...(req.body.customFields && { customFields: req.body.customFields }),
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
+  let registration;
+  try {
+    registration = await Registration.create({
+      registrationId,
+      event: eventId,
+      category: categoryId,
+      personalInfo,
+      // PATCH: Save professionalInfo if provided
+      ...(req.body.professionalInfo && { professionalInfo: req.body.professionalInfo }),
+      // PATCH: Save customFields if provided
+      ...(req.body.customFields && { customFields: req.body.customFields }),
+      status: 'active',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      // Duplicate key error (likely due to unique index on event/category/first/last name)
+      return res.status(400).json({
+        success: false,
+        message: 'A registration with this name already exists in this category for this event.'
+      });
+    }
+    // Other errors
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create registration',
+      error: err.message
+    });
+  }
 
   // Return created registration with populated references
   const populatedRegistration = await Registration.findById(registration._id)
@@ -1223,6 +1341,18 @@ const createRegistrationPublic = async (req, res, next) => {
 
   return sendSuccess(res, 201, 'Registration created successfully', populatedRegistration);
 };
+
+// --- PATCH: Enforce sponsoredBy for sponsored registrations ---
+function validateSponsoredBy(req, res, next) {
+  const { registrationType, sponsoredBy } = req.body;
+  if (registrationType === 'sponsored' && !sponsoredBy) {
+    return res.status(400).json({
+      success: false,
+      message: 'sponsoredBy is required when registrationType is sponsored.'
+    });
+  }
+  next();
+}
 
 module.exports = {
   getRegistrations,

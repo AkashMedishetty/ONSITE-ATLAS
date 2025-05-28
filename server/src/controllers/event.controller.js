@@ -310,7 +310,7 @@ const getEventStatistics = asyncHandler(async (req, res) => {
       // Return consistent default structure on bad ID
       return sendSuccess(res, 400, 'Invalid Event ID format', {
         registrations: { total: 0, checkedIn: 0, byDay: [], byCategory: {} },
-        resources: { food: { total: 0 }, kitBags: { total: 0 }, certificates: { total: 0 } }
+        resources: { food: { total: 0 }, kitBag: { total: 0 }, certificates: { total: 0 } }
       });
     }
     const eventObjectId = new mongoose.Types.ObjectId(eventId);
@@ -320,7 +320,7 @@ const getEventStatistics = asyncHandler(async (req, res) => {
     if (!eventExists) {
       return sendSuccess(res, 200, 'Event statistics (event not found)', {
          registrations: { total: 0, checkedIn: 0, byDay: [], byCategory: {} },
-         resources: { food: { total: 0 }, kitBags: { total: 0 }, certificates: { total: 0 } }
+         resources: { food: { total: 0 }, kitBag: { total: 0 }, certificates: { total: 0 } }
       });
     }
 
@@ -450,7 +450,7 @@ const getEventStatistics = asyncHandler(async (req, res) => {
       },
       resources: { // Structure matches frontend expectation? Check EventPortal.jsx if needed
         food: { total: resourceCounts.food || 0 },
-        kitBags: { total: resourceCounts.kitBag || 0 }, // Ensure key matches frontend if different
+        kitBag: { total: resourceCounts.kitBag || 0 }, // Ensure key matches frontend if different
         certificates: { total: resourceCounts.certificate || 0 }
       }
     };
@@ -463,7 +463,7 @@ const getEventStatistics = asyncHandler(async (req, res) => {
     // Return consistent default structure on error
     return sendSuccess(res, 500, 'Failed to fetch event statistics', {
         registrations: { total: 0, checkedIn: 0, byDay: [], byCategory: {} },
-        resources: { food: { total: 0 }, kitBags: { total: 0 }, certificates: { total: 0 } }
+        resources: { food: { total: 0 }, kitBag: { total: 0 }, certificates: { total: 0 } }
     }, { error: error.message });
   }
 });
@@ -882,15 +882,18 @@ const getEventReviewers = asyncHandler(async (req, res, next) => {
     return next(createApiError('Invalid Event ID format', 400));
   }
 
-  // Log the query we're about to execute
+  // Support both legacy managedEvents and new eventRoles structure
   const query = {
     role: 'reviewer',
-    managedEvents: { $in: [eventObjectId] }
+    $or: [
+      { managedEvents: { $in: [eventObjectId] } },
+      { eventRoles: { $elemMatch: { eventId: eventObjectId, role: 'reviewer' } } }
+    ]
   };
   console.log('MongoDB Query:', JSON.stringify(query));
 
   // Fetch users with the 'reviewer' role and associated with the event
-  const reviewers = await User.find(query).select('name email managedEvents role');
+  const reviewers = await User.find(query).select('name email managedEvents eventRoles role');
 
   console.log('Raw reviewers result:', reviewers);
   if (Array.isArray(reviewers)) {
@@ -900,6 +903,7 @@ const getEventReviewers = asyncHandler(async (req, res, next) => {
         name: r.name,
         email: r.email,
         managedEvents: r.managedEvents,
+        eventRoles: r.eventRoles,
         role: r.role
       });
     });

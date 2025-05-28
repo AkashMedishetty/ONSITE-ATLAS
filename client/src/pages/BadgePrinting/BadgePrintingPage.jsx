@@ -188,15 +188,17 @@ const BadgePrintingPage = ({ eventId }) => {
       try {
         const response = await badgeTemplateService.getTemplates(eventId);
         if (response.success && Array.isArray(response.data)) {
-          const defaultTemplate = response.data.find(t => t.isDefault);
+          const defaultTemplate = response.data.find(
+            t => t.isDefault && t.event && (t.event === eventId)
+          );
           if (defaultTemplate) {
             setDesignerTemplate(defaultTemplate);
             setTemplatePreview(defaultTemplate);
-            console.log('[BadgePrintingPage] Using default designer template:', defaultTemplate);
+            console.log('[BadgePrintingPage] Using event-specific default designer template:', defaultTemplate);
           } else {
             setDesignerTemplate(null);
             setTemplatePreview('standard');
-            console.warn('[BadgePrintingPage] No default designer template found, using standard.');
+            console.warn('[BadgePrintingPage] No event-specific default designer template found, using standard.');
           }
         } else {
           setDesignerTemplate(null);

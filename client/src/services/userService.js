@@ -12,12 +12,13 @@ const createUser = (userData) => {
 };
 
 /**
- * Gets all users.
- * @param {object} params - Optional query parameters (e.g., for pagination, sorting, filtering).
+ * Gets all users for a specific event.
+ * @param {string} eventId - The event ID to filter users by.
  * @returns {Promise} Axios promise object.
  */
-const getUsers = (params) => {
-  return api.get(API_URL, { params });
+const getUsers = (eventId) => {
+  if (!eventId) throw new Error('eventId is required to fetch users');
+  return api.get(API_URL, { params: { eventId } });
 };
 
 /**
