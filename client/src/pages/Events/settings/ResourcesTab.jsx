@@ -221,12 +221,8 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
     file: null
   });
   const [editingMeal, setEditingMeal] = useState(null);
-  const [localResourceSettings, setLocalResourceSettings] = useState({
-    food: { enabled: true, days: [] },
-    kits: { enabled: true, items: [] },
-    certificates: { enabled: true, types: [] },
-    certificatePrinting: { enabled: true, templates: [] }
-  });
+  const [localResourceSettings, setLocalResourceSettings] = useState(null); // null until backend fetch
+  const [backendWarning, setBackendWarning] = useState(null);
   
   const hasLoadedOnce = useRef(false);
   const lastLoadedSection = useRef(null);
@@ -361,43 +357,12 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
   }, [draggingField, handleFieldDragInternal]); 
 
   useEffect(() => {
-    if (initialSection && initialSection !== activeSection && [
-      'food', 'kits', 'certificates', 'certificatePrinting'
-    ].includes(initialSection)) {
-      console.log(`ResourceSettings: Setting activeSection from initialSection prop: ${initialSection}`);
-      setActiveSection(initialSection);
-      lastLoadedSection.current = null; 
-    }
-  }, [initialSection]);
-
-  useEffect(() => {
-    if (!event?._id) {
-      console.log("ResourceSettings: Skipping load, no event ID.");
-      return;
-    }
-
-    if (!hasLoadedOnce.current) {
-      console.log("ResourceSettings: Initializing local state for the first time.");
-      console.log("ResourceSettings: Initial event.resourceSettings:", event.resourceSettings);
-      const initialSettings = event.resourceSettings || {
-        food: { enabled: true, days: [] },
-        kits: { enabled: true, items: [] },
-        certificates: { enabled: true, types: [] },
-        certificatePrinting: { enabled: true, templates: [] }
-      };
-      setLocalResourceSettings(initialSettings);
-    }
-
-    if (activeSection !== lastLoadedSection.current || !hasLoadedOnce.current) {
-        console.log(`ResourceSettings: Conditions met. Triggering load for event ${event._id}, section ${activeSection}`);
-        loadResourceSettings(activeSection, event._id);
-        lastLoadedSection.current = activeSection;
-        hasLoadedOnce.current = true;
-    } else {
-        console.log(`ResourceSettings: Skipping load for section ${activeSection}, already loaded.`);
-    }
-
-  }, [event?._id, activeSection, event?.resourceSettings]);
+    if (!event?._id) return;
+    // Always fetch from backend on section change or event change
+    loadResourceSettings(activeSection, event._id);
+    lastLoadedSection.current = activeSection;
+    hasLoadedOnce.current = true;
+  }, [event?._id, activeSection]);
 
   const loadResourceSettings = useCallback(async (section, eventId) => {
     if (loading) {
@@ -470,12 +435,22 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
       }
 
       if (settingsData !== null) {
-        // Update local state
         setLocalResourceSettings(prevSettings => {
-          console.log(`ResourceSettings: Updating local state for section ${section} with fetched data:`, settingsData);
+          // If previous state was non-empty and backend returns empty/default, warn and block save
+          const isPrevNonEmpty = prevSettings && Object.keys(prevSettings[section] || {}).length > 0;
+          const isNowEmpty = !settingsData || Object.keys(settingsData).length === 0 ||
+            (Array.isArray(settingsData.days) && settingsData.days.length === 0) ||
+            (Array.isArray(settingsData.items) && settingsData.items.length === 0) ||
+            (Array.isArray(settingsData.types) && settingsData.types.length === 0) ||
+            (Array.isArray(settingsData.templates) && settingsData.templates.length === 0);
+          if (isPrevNonEmpty && isNowEmpty) {
+            setBackendWarning(`Warning: The backend returned empty/default settings for '${section}'. Your previous configuration is not shown. Saving now will overwrite your data. Please refresh or contact support if this is unexpected.`);
+          } else {
+            setBackendWarning(null);
+          }
           return {
-            ...prevSettings,
-            [section]: settingsData 
+            ...(prevSettings || {}),
+            [section]: settingsData
           };
         });
 
@@ -594,10 +569,10 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
   };
   
   const saveResourceSettings = async (type) => {
-    if (!event?._id || !localResourceSettings[type]) {
-      setError(`Cannot save ${type} settings: Missing event ID or settings data.`);
-      showToast(`Cannot save ${type} settings: Missing event ID or settings data.`, 'error');
-      return false; // Return false on initial validation fail
+    if (!event?._id || !localResourceSettings[type] || backendWarning) {
+      setError(`Cannot save ${type} settings: ${backendWarning || 'Missing event ID or settings data.'}`);
+      showToast(`Cannot save ${type} settings: ${backendWarning || 'Missing event ID or settings data.'}`, 'error');
+      return false;
     }
 
     setLoading(true);
@@ -2166,6 +2141,8 @@ const ResourcesTab = ({ event, setEvent, setFormChanged = () => {}, initialSecti
           100% { opacity: 0; transform: translateY(20px); }
         }
       `}</style>
+      
+      {backendWarning && <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4">{backendWarning}</div>}
     </div>
   );
 };

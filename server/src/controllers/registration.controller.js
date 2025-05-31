@@ -300,6 +300,15 @@ const createRegistration = asyncHandler(async (req, res) => {
   }
   // --- End ID Generation ---
   
+  // Determine registrationType based on event start date (admin logic)
+  let registrationType = 'pre-registered';
+  if (new Date() > new Date(event.startDate)) {
+    registrationType = 'onsite';
+  }
+  if (req.body.registrationType) {
+    registrationType = req.body.registrationType;
+  }
+
   // Create new registration
   const registration = await Registration.create({
     registrationId,
@@ -310,6 +319,7 @@ const createRegistration = asyncHandler(async (req, res) => {
     ...(req.body.professionalInfo && { professionalInfo: req.body.professionalInfo }),
     // PATCH: Save customFields if provided
     ...(req.body.customFields && { customFields: req.body.customFields }),
+    registrationType,
     status: 'active', // Ensure status is valid based on schema enum
     createdAt: new Date(),
     updatedAt: new Date()

@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const qrcode = require('qrcode');
 const { Event, Registration } = require('../models');
 const logger = require('../utils/logger');
+const { htmlToText } = require('html-to-text');
 
 /**
  * Format a date string for email templates
@@ -141,7 +142,8 @@ const sendRegistrationConfirmationEmail = async (registrationId) => {
       from: `"${event.emailSettings.senderName}" <${event.emailSettings.senderEmail}>`,
       to: registration.personalInfo.email,
       subject: processTemplate(emailTemplate.subject, emailData),
-      html: emailBody
+      html: emailBody,
+      text: htmlToText(emailBody, { wordwrap: 130 })
     };
     
     // Add reply-to if configured

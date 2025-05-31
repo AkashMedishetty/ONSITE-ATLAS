@@ -533,7 +533,7 @@ function AbstractSubmissionForm() {
             console.log("File was removed from form, but no new file provided. Existing server file might persist or need admin removal if not replaced.");
         }
         
-        navigate(`/registrant-portal/event/${eventId}/abstracts`, { replace: true });
+        navigate(`/registrant-portal/abstracts?event=${eventId}`, { replace: true });
 
       } else {
         setSubmitMessage({ type: 'error', text: metadataResponse.message || 'Submission failed.' });

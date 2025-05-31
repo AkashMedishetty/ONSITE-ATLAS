@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const asyncHandler = require('./async');
 const ErrorResponse = require('../utils/errorResponse');
 const config = require('../config/config');
+const EventClient = require('../models/EventClient');
 
 /**
  * Middleware to protect routes that require authentication
@@ -71,18 +72,23 @@ const protect = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse('Not authorized, sponsor not found', 401));
       }
       console.log(`[Protect Middleware] Sponsor (ID: ${req.sponsor._id}, SponsorAppID: ${req.sponsor.sponsorId}) authenticated for ${req.originalUrl}`);
-      // To allow generic req.user checks for role-based authorization further down (like the restrict middleware)
-      // we can populate req.user with essential details from the sponsor, including a role.
-      // The 'sponsor' role is already defined in src/config/roles.js
-      req.user = { 
-        _id: req.sponsor._id, 
-        id: req.sponsor._id, // for consistency if some parts use .id
-        role: 'sponsor', // Assign the 'sponsor' role
-        sponsorDetails: req.sponsor, // Attach full sponsor details if needed
-        // Add other common fields if restrict middleware or others expect them, e.g., email
-        email: req.sponsor.contactEmail, // Assuming contactEmail is present
-        name: req.sponsor.companyName // Assuming companyName is present
-      };
+      req.user = { ...decoded };
+      req.user.sponsorDetails = req.sponsor;
+    } else if (decoded.type === 'client') {
+      // Support for client portal JWTs (EventClient)
+      const client = await EventClient.findById(decoded.id);
+      if (!client) {
+        console.log('[Protect Middleware] Client not found for decoded token ID:', decoded.id);
+        return next(new ErrorResponse('Not authorized, client not found', 401));
+      }
+      if (client.status !== 'Active') {
+        return next(new ErrorResponse('Client account is not active', 403));
+      }
+      req.client = client;
+      // Set req.user for controller compatibility (role-based checks, etc.)
+      req.user = client;
+      req.user.role = 'client';
+      console.log(`[Protect Middleware] Client (ID: ${client._id}, ClientID: ${client.clientId}) authenticated for ${req.originalUrl}`);
     } else {
       // Assume 'user' type or default to User model if type is undefined
       req.user = await User.findById(decoded.id).select('-password');
@@ -194,13 +200,66 @@ const restrict = (...roles) => {
         message: `User role '${req.user.role}' not authorized to access this route. Allowed: ${roles.join(', ')}`
       });
     }
-    
     next();
   };
 };
 
+/**
+ * Middleware to protect routes that require event client authentication
+ */
+const protectClient = asyncHandler(async (req, res, next) => {
+  let token;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies && req.cookies.clientToken) {
+    token = req.cookies.clientToken;
+  }
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Client not authorized, no token provided' });
+  }
+  try {
+    const secret = process.env.CLIENT_JWT_SECRET || process.env.JWT_SECRET;
+    if (!secret) {
+      logger.error('[ProtectClient] JWT_SECRET or CLIENT_JWT_SECRET not configured.');
+      return res.status(500).json({ success: false, message: 'Server configuration error: JWT secret not set.' });
+    }
+    const decoded = jwt.verify(token, secret);
+    if (decoded.type !== 'client') {
+      return res.status(401).json({ success: false, message: 'Not a valid client token' });
+    }
+    const client = await EventClient.findById(decoded.id);
+    if (!client) {
+      return res.status(401).json({ success: false, message: 'Client not found for this token' });
+    }
+    if (client.status !== 'Active') {
+      return res.status(403).json({ success: false, message: 'Client account is not active' });
+    }
+    req.client = client;
+    next();
+  } catch (error) {
+    logger.error('Client token verification error:', error.name, error.message);
+    let message = 'Client not authorized, token failed';
+    if (error.name === 'JsonWebTokenError') message = 'Invalid token format.';
+    if (error.name === 'TokenExpiredError') message = 'Token expired. Please log in again.';
+    return res.status(401).json({ success: false, message });
+  }
+});
+
+// Middleware to protect admin routes (user with role 'admin')
+const protectAdmin = asyncHandler(async (req, res, next) => {
+  // Use the generic protect middleware to populate req.user
+  await protect(req, res, async function() {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+    next();
+  });
+});
+
 module.exports = {
   protect,
   protectRegistrant,
-  restrict
-}; 
+  restrict,
+  protectClient,
+  protectAdmin
+};

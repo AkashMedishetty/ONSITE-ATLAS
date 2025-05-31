@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 const mongoose = require('mongoose');
+const { generateAbstractsExcel } = require('../utils/excelHelper');
 
 /**
  * Get all users
@@ -193,7 +194,6 @@ const getAssignedAbstractsForReviewer = async (req, res, next) => {
     })
     .populate('event', 'name slug') // Populate event name and slug for context
     .populate('category', 'name') // Populate category name for reviewer dashboard
-    .select('title abstractNumber status submissionDate event reviewDetails.reviews category') // Add category to selected fields
     .lean();
 
     // Optionally, you might want to tailor the reviewDetails.reviews to only show this reviewer's review or summary
@@ -269,80 +269,34 @@ const generateCsvFromArray = (headers, dataArray) => {
 // Implementation for exportReviewerAbstractDetails
 const exportReviewerAbstractDetails = async (req, res, next) => {
   try {
-    const reviewerId = req.user._id; // Assuming req.user is populated by 'protect' middleware
+    const reviewerId = req.user._id;
     const { eventId } = req.params;
-
     if (!eventId) {
       return next(createApiError(400, 'Event ID is required'));
     }
-
+    // Find all abstracts assigned to this reviewer for the event
     const abstracts = await Abstract.find({
       event: eventId,
       'reviewDetails.assignedTo': reviewerId
     })
-    .populate('event', 'name')
-    .populate('category', 'name')
-    .populate('authors.user', 'name affiliation') // If authors are stored as references
-    .select('title submissionDate event category authors reviewDetails.reviews')
-    .lean();
-
+      .populate('event')
+      .populate('category')
+      .populate('registration')
+      .lean();
     if (!abstracts || abstracts.length === 0) {
-      // Send an empty CSV if no abstracts are found for this reviewer and event
-      const emptyCsvHeaders = ['Title', 'Author(s)', 'Submission Date', 'Your Review Status', 'Category'];
-      const emptyCsvString = generateCsvFromArray(emptyCsvHeaders, []);
-      const emptyFileName = `no_abstract_details_${reviewerId}_${eventId}_${Date.now()}.csv`;
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="${emptyFileName}"`);
-      return res.status(200).end(emptyCsvString);
+      // Return an empty Excel file with headers only
+      const { buffer, fileName } = await generateAbstractsExcel([], { eventName: 'Event', categoryOrTopic: 'all', exportMode: 'single-row' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.end(buffer);
     }
-
-    const csvHeaders = ['Title', 'Author(s)', 'Submission Date', 'Your Review Status', 'Category', 'Event Name'];
-    const csvData = abstracts.map(abs => {
-      const myReview = abs.reviewDetails && abs.reviewDetails.reviews
-        ? abs.reviewDetails.reviews.find(review => review.reviewer && String(review.reviewer) === String(reviewerId))
-        : null;
-      const myReviewStatus = myReview ? (myReview.isComplete ? myReview.decision : 'Pending Review') : 'Not Reviewed';
-      
-      let authorNames = 'N/A';
-      // Ensure abs.authors is an array and has elements before mapping
-      if (abs.authors && Array.isArray(abs.authors) && abs.authors.length > 0) {
-        authorNames = abs.authors.map(author => {
-            // Check if author itself is an object before trying to access properties
-            if (author && typeof author === 'object') {
-                if (author.user && typeof author.user === 'object' && author.user.name) {
-                    return author.user.name;
-                }
-                // Fallback if author.user is not populated or name is directly on author object
-                if (typeof author.name === 'string') {
-                    return author.name;
-                }
-            }
-            return ''; // Return empty string if author structure is not as expected
-        }).filter(name => name).join('; ');
-        
-        // If after mapping and filtering, authorNames is empty, set back to 'N/A'
-        if (!authorNames) {
-            authorNames = 'N/A';
-        }
-      }
-
-      return {
-        'Title': abs.title || 'N/A',
-        'Author(s)': authorNames,
-        'Submission Date': abs.submissionDate ? new Date(abs.submissionDate).toLocaleDateString() : 'N/A',
-        'Your Review Status': myReviewStatus,
-        'Category': abs.category?.name || 'N/A',
-        'Event Name': abs.event?.name || 'N/A'
-      };
-    });
-
-    const csvString = generateCsvFromArray(csvHeaders, csvData);
-    const fileName = `abstract_details_${reviewerId}_${eventId}_${Date.now()}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
+    // For subtopic name resolution, also populate eventInfo
+    const event = await require('../models/Event').findById(eventId).lean();
+    const abstractsWithEventInfo = abstracts.map(abs => ({ ...abs, eventInfo: event }));
+    const { buffer, fileName } = await generateAbstractsExcel(abstractsWithEventInfo, { eventName: event?.name || 'Event', categoryOrTopic: 'all', exportMode: 'single-row' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.status(200).end(csvString);
-
+    return res.end(buffer);
   } catch (error) {
     logger.error(`Error exporting abstract details for reviewer ${req.user?._id}, event ${req.params.eventId}: ${error.message}`);
     next(error);
@@ -434,26 +388,15 @@ const downloadReviewerAbstractFiles = async (req, res, next) => {
           // Using a simple prefix for uniqueness within the zip for now.
           archive.file(filePath, { name: `${abstract._id}_${abstract.fileName}` });
           filesAdded++;
-        } else {
-          logger.warn(`File not found for abstract ${abstract._id}: ${filePath}. Path from DB: ${abstract.fileUrl}. Skipping.`);
         }
       }
     }
-    
     if (filesAdded === 0) {
-        archive.abort(); // Abort if no files were actually added to prevent empty zip
-        fs.unlink(zipFilePath, () => {}); // Clean up empty zip file
-        if (!headersSent) {
-            headersSent = true;
-            return next(createApiError(404, 'No valid files could be found to include in the ZIP archive.'));
-        }
-        return; // Stop further processing
+      return next(createApiError(404, 'No files found to zip'));
     }
-
-    await archive.finalize();
-
+    archive.finalize();
   } catch (error) {
-    logger.error(`Error downloading abstract files for reviewer ${req.user?._id}, event ${req.params.eventId}: ${error.message}`);
+    logger.error(`Error downloading files for reviewer ${req.user?._id}, event ${req.params.eventId}: ${error.message}`);
     next(error);
   }
 };
@@ -468,4 +411,4 @@ module.exports = {
   getUsersForEvent,
   exportReviewerAbstractDetails,
   downloadReviewerAbstractFiles
-}; 
+};

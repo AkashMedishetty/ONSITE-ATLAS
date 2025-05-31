@@ -17,8 +17,9 @@ const generateSponsorToken = (sponsor) => {
     sponsorId: sponsor.sponsorId, // The generated SPN-xxxx-nnn ID
     type: 'sponsor', // To distinguish from other user/registrant types
   };
+  // Set sponsor JWT expiry to 4 hours regardless of config
   return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: `${config.jwt.accessExpirationMinutes}m`,
+    expiresIn: '4h', // 4 hours for sponsor sessions
   });
 };
 

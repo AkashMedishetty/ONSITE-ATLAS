@@ -18,6 +18,8 @@ const registrantPortalRoutesFile = require('./registrantPortalRoutes.js'); // CO
 const scheduleRoutes = require('./schedule.routes'); // IMPORT schedule.routes
 const sponsorAuthRoutes = require('./sponsorAuth.routes'); // Added Sponsor Auth Routes
 const registrationResourceModalRoutes = require('./registrationResourceModal.routes');
+const clientPortalRoutes = require('./clientPortal.routes');
+const clientBulkImportRoutes = require('./clientBulkImport.routes');
 
 // Mount routes
 router.use('/events', eventRoutes);
@@ -50,5 +52,9 @@ router.use(scheduleRoutes); // MOUNT scheduleRoutes
 router.use('/registrant-portal', registrantPortalRoutesFile); // Use the correctly required file
 
 router.use(registrationResourceModalRoutes);
+
+router.use('/client-portal', clientPortalRoutes);
+
+router.use('/client-bulk-import', clientBulkImportRoutes);
 
 module.exports = router; 

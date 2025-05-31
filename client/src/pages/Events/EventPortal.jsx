@@ -17,12 +17,12 @@ import {
   LinkIcon,
   ClipboardIcon,
   UserGroupIcon,
-  
   DocumentDuplicateIcon,
   CheckBadgeIcon,
   ShieldCheckIcon,
   EnvelopeIcon,
-  QrCodeIcon
+  QrCodeIcon,
+  UserIcon
 } from '@heroicons/react/24/outline';
 import { Card, Tabs, Badge, Button, Spinner, Alert, SafeCard } from '../../components/common';
 import eventService from '../../services/eventService';
@@ -65,6 +65,7 @@ import EventUserManagementTab from './settings/EventUserManagementTab'; // Impor
 import SponsorsList from '../../pages/SponsorManagement/SponsorsList'; // Added for Sponsors Tab
 import SponsorForm from '../../pages/SponsorManagement/SponsorForm'; // Import SponsorForm
 import AnnouncementsTab from './announcements/AnnouncementsTab'; // Import the AnnouncementsTab component
+import EventClientTab from './tabs/EventClientTab'; // To be created
 
 // Simple error boundary component for tabs - RESTORING THIS
 const TabErrorBoundary = ({ children, tabName }) => {
@@ -118,6 +119,7 @@ const eventNavItems = [
   { id: "emails", label: "Emails", icon: <FiMail /> },
   { id: "reports", label: "Reports", icon: <FiBarChart2 /> },
   { id: "user-management", label: "User Management", icon: <UserGroupIcon className="w-5 h-5" /> },
+  { id: "client", label: "Client", icon: <UserIcon className="w-5 h-5" /> },
   { id: "settings", label: "Settings", icon: <FiSettings /> }
 ];
 
@@ -773,6 +775,13 @@ function EventPortal() {
           </TabErrorBoundary>
         );
         break;
+      case "client":
+        activeTabContent = (
+          <TabErrorBoundary tabName="Client">
+            <EventClientTab eventId={id} />
+          </TabErrorBoundary>
+        );
+        break;
       case "settings":
         activeTabContent = (
           <TabErrorBoundary tabName="Settings">
@@ -1185,6 +1194,25 @@ function EventPortal() {
                     <button
                       type="button"
                       onClick={() => copyToClipboard(`${window.location.origin}/portal/sponsor-login/${id}`)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-r-md bg-gray-50 text-gray-700 sm:text-sm"
+                    >
+                      <ClipboardIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Client Portal</label>
+                  <div className="flex rounded-md shadow-sm">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/portal/client-login/${id}`}
+                      className="flex-1 min-w-0 block w-full px-3 py-2 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(`${window.location.origin}/portal/client-login/${id}`)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-r-md bg-gray-50 text-gray-700 sm:text-sm"
                     >
                       <ClipboardIcon className="h-4 w-4" />

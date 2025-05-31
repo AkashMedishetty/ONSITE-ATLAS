@@ -10,7 +10,7 @@ const envVarsSchema = Joi.object()
     PORT: Joi.number().default(3000),
     MONGODB_URL: Joi.string().required().description('MongoDB connection URL'),
     JWT_SECRET: Joi.string().required().description('JWT secret key'),
-    JWT_ACCESS_EXPIRATION_MINUTES: Joi.number().default(30).description('Minutes after which access tokens expire'),
+    JWT_ACCESS_EXPIRATION_MINUTES: Joi.number().default(240).description('Minutes after which access tokens expire (default 4 hours, applies to sponsors)'),
     JWT_REFRESH_EXPIRATION_DAYS: Joi.number().default(30).description('Days after which refresh tokens expire'),
     JWT_RESET_PASSWORD_EXPIRATION_MINUTES: Joi.number().default(10).description('Minutes after which reset password token expires'),
     JWT_VERIFY_EMAIL_EXPIRATION_MINUTES: Joi.number().default(10).description('Minutes after which verify email token expires'),

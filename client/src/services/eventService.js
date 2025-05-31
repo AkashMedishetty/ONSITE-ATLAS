@@ -550,21 +550,19 @@ const getEventDashboard = async (id) => {
 
 // Get categories for a specific event
 const getEventCategories = async (eventId) => {
-  if (!eventId) {
-    console.warn('getEventCategories called without eventId');
-    return {
-      success: false,
-      message: 'Event ID is required',
-      data: []
-    };
-  }
-  
+  if (!eventId) throw new Error('getEventCategories called without eventId');
   try {
     console.log(`Fetching categories for event ID: ${eventId}`);
-    const response = await axios.get(`${baseURL}/events/${eventId}/categories`);
+    // Detect sponsor portal context
+    let headers = {};
+    if (typeof window !== 'undefined' && window.location.pathname.includes('sponsor-portal')) {
+      const sponsorToken = localStorage.getItem('sponsorToken');
+      if (sponsorToken) {
+        headers['Authorization'] = `Bearer ${sponsorToken}`;
+      }
+    }
+    const response = await axios.get(`${baseURL}/events/${eventId}/categories`, { headers });
     console.log('Categories response:', response.data);
-    
-    // Simply return the standardized response
     return response.data;
   } catch (error) {
     console.error(`Error fetching categories for event ${eventId}:`, error);
@@ -893,6 +891,28 @@ const getEventSponsors = async (eventId) => {
   }
 };
 
+// Get categories for the sponsor portal (sponsor's event only)
+const getSponsorPortalCategories = async () => {
+  try {
+    let headers = {};
+    if (typeof window !== 'undefined') {
+      const sponsorToken = localStorage.getItem('sponsorToken');
+      if (sponsorToken) {
+        headers['Authorization'] = `Bearer ${sponsorToken}`;
+      }
+    }
+    const response = await axios.get(`${baseURL}/sponsor-portal-auth/me/categories`, { headers });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching sponsor portal categories:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Failed to fetch sponsor categories',
+      data: []
+    };
+  }
+};
+
 const eventService = {
   createEvent,
   fetchEvents,
@@ -912,7 +932,8 @@ const eventService = {
   getEventUsers,
   getEventReviewers,
   getEventCategoriesPublic,
-  getEventSponsors
+  getEventSponsors,
+  getSponsorPortalCategories
 };
 
 export default eventService; 

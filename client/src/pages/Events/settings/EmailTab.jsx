@@ -686,7 +686,7 @@ The Organizing Team`
                 <strong>Subject:</strong> {renderPreview(template.subject)}
                 <br />
                 <strong>Body:</strong>
-                <div className="mt-1">{renderPreview(template.body)}</div>
+                <div className="mt-1" dangerouslySetInnerHTML={{ __html: renderPreview(template.body) + '<div style="color:#888;font-size:12px;margin-top:8px;">[QR_CODE] will be replaced with the actual QR code image in the real email.</div>' }} />
               </div>
             </div>
             <div className="mt-6">

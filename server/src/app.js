@@ -9,12 +9,15 @@ const fileUpload = require('express-fileupload');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const routes = require('./routes');
-const { ApiError, errorHandler } = require('./utils/ApiError');
+const ApiError = require('./utils/ApiError');
+const { errorHandler } = require('./middleware/errorHandler');
 const { protect } = require('./middleware/auth.middleware');
 const config = require('./config/config');
 const path = require('path');
 const mongoose = require('mongoose');
 const logger = require('./utils/logger');
+const sponsorPortalRoutes = require('./routes/sponsorPortal.routes');
+const clientPortalRoutes = require('./routes/clientPortal.routes');
 
 // Initialize express app
 const app = express();
@@ -136,6 +139,12 @@ app.use('/api/events/:id/statistics', protect, (req, res, next) => {
   const { getEventStatistics } = require('./controllers/event.controller');
   return getEventStatistics(req, res, next);
 });
+
+// Add sponsor portal routes
+app.use('/api/sponsor-portal-auth', sponsorPortalRoutes);
+
+// Add client portal routes
+app.use('/api/client-portal-auth', clientPortalRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

@@ -59,7 +59,7 @@ const ReviewerAbstractReviewPage = () => {
       setError('');
       try {
         // Pass both eventId and abstractId to the service call
-        const response = await abstractService.getAbstractById(eventId, abstractId);
+        const response = await abstractService.getAbstractById(eventId, abstractId, authUser?.role || 'reviewer');
         if (response.success && response.data) {
           setAbstract(response.data);
           console.log(

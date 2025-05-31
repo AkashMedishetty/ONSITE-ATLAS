@@ -66,3 +66,28 @@
 ### Discovered During Work
 *   **(Ongoing) Bug: Abstract Category/Sub-Topic Not Displaying** - Investigating why category and sub-topic names are not appearing in `AbstractDetail.jsx`. Current focus is on backend controller `registrant.abstract.controller.js` log visibility and data lookup logic. (Date: Current Date)
 - Refactor all event-scoped user queries to use eventRoles for consistency 
+- [x] Add pagination to ClientRegistrantsPage.jsx
+- [x] Refactored client portal bulk import to match admin/sponsor robustness
+  - Single source of truth: ClientBulkImport.jsx
+  - Uses async job, robust polling, error handling
+  - All import logic unified and modular
+
+## Development Status
+
+- [x] Project requirements gathering
+- [x] System architecture design
+- [x] Database schema design
+- [x] UI/UX strategy
+- [x] Implementation planning
+- [x] Project structure setup
+- [x] Core component development
+- [x] Backend API development
+- [x] Feature implementation
+- [ ] Testing and refinement
+- [ ] Deployment
+- [x] Admin UI for event client management (Client tab CRUD)
+
+## Discovered During Work
+- [ ] TODO: Add advanced features to Event Client tab: bulk import/export, advanced filtering, audit logs, and per-client activity view.
+- [ ] Ensure all paginated endpoints in client portal have consistent UI/UX and state handling.
+- [ ] Update documentation and onboarding for client users to use the new import flow 

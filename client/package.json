@@ -38,6 +38,8 @@
     "bootstrap": "^5.3.3",
     "chart.js": "^4.4.9",
     "date-fns": "^4.1.0",
+    "echarts": "^5.6.0",
+    "echarts-for-react": "^3.0.2",
     "express-rate-limit": "^7.5.0",
     "framer-motion": "^12.5.0",
     "html2canvas": "^1.4.1",
@@ -62,7 +64,7 @@
     "react-select": "^5.10.1",
     "react-to-print": "^3.0.5",
     "react-toastify": "^11.0.5",
-    "recharts": "^2.15.1",
+    "recharts": "^2.15.3",
     "sweetalert2": "^11.17.2",
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"

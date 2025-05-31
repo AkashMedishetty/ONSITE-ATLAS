@@ -1,4 +1,4 @@
-import api from './api'; // Assuming your base api instance is in api.js
+import api from './api'; // Use the generic API instance for admin/other portals
 
 /**
  * Service for managing event announcements.
@@ -18,7 +18,7 @@ export const announcementService = {
     if (!eventId) throw new Error('Event ID is required to create an announcement.');
     try {
       const response = await api.post(`/events/${eventId}/announcements`, announcementData);
-      return response.data; // Assuming response structure is { success: true, data: {...} }
+      return response.data;
     } catch (error) {
       console.error('Error creating announcement:', error.response?.data || error.message);
       throw error.response?.data || new Error('Failed to create announcement');
@@ -38,7 +38,7 @@ export const announcementService = {
     if (!eventId) throw new Error('Event ID is required to fetch announcements.');
     try {
       const response = await api.get(`/events/${eventId}/announcements`, { params });
-      return response.data; // Assuming response structure is { success: true, count, total, pagination, data: [...] }
+      return response.data;
     } catch (error) {
       console.error('Error fetching announcements by event:', error.response?.data || error.message);
       throw error.response?.data || new Error('Failed to fetch announcements');

@@ -13,111 +13,33 @@ const SponsorLoginPortal = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  // Initialize loggedInSponsor from localStorage in case of a page refresh
-  const [loggedInSponsor, setLoggedInSponsor] = useState(() => sponsorAuthService.getCurrentSponsorData());
 
   useEffect(() => {
-    console.log('[SponsorLoginPortal] Mounted. Event ID from useParams:', eventId);
-    // If already logged in (e.g. from localStorage), ensure consistency or re-validate if necessary
-    // For now, simply having loggedInSponsor populated will show the welcome screen.
+    // No welcome card logic here
   }, [eventId]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    console.log(`[Login Attempt] Event ID: ${eventId}`);
-
     if (!sponsorIdInput.trim() || !passwordInput.trim()) {
       setError('Sponsor ID and Password are required.');
       setLoading(false);
       return;
     }
-
     const trimmedSponsorId = sponsorIdInput.trim();
-    // Password (contactPhone) is sent as is, backend will handle validation if needed (e.g. length)
-    // The backend expects the raw phone number for hashing and comparison.
     const processedPassword = passwordInput.trim(); 
-    console.log(`[Login Attempt] Trying with Sponsor ID: '${trimmedSponsorId}', Processed Password: '${processedPassword}'`);
-
     try {
-      // API call using the service
-      const { sponsor } = await sponsorAuthService.login(eventId, trimmedSponsorId, processedPassword);
-      console.log('[Login Attempt] API Login successful. Sponsor data:', sponsor);
-      setLoggedInSponsor(sponsor); // Set the sponsor data received from backend
-      
-      // Add automatic navigation to the sponsor portal
-      navigate('/sponsor-portal');
+      await sponsorAuthService.login(eventId, trimmedSponsorId, processedPassword);
+      navigate('/sponsor-portal/dashboard');
     } catch (err) {
-      console.error("[Login Attempt] API Login Error:", err);
       setError(err.message || 'Invalid Sponsor ID or Password. Please check your credentials and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    sponsorAuthService.logout();
-    setLoggedInSponsor(null);
-    setSponsorIdInput('');
-    setPasswordInput('');
-    // Navigate to login page or home page if desired
-    // navigate('/'); 
-  };
-
-  if (loggedInSponsor) {
-    // Displaying sponsor details from the state which is populated from API response
-    return (
-      <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center py-12 sm:px-6 lg:px-8">
-        <div className="sm:mx-auto sm:w-full sm:max-w-lg">
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Welcome, {loggedInSponsor.companyName}!
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Event ID: {eventId} | Sponsor ID: {loggedInSponsor.sponsorId}
-          </p>
-        </div>
-
-        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg">
-          <Card>
-            <div className="p-6">
-              <h3 className="text-xl font-semibold mb-4">Your Sponsorship Details</h3>
-              <div className="space-y-3">
-                <p><strong>Authorized Person:</strong> {loggedInSponsor.authorizedPerson}</p>
-                <p><strong>Contact Email:</strong> {loggedInSponsor.contactEmail}</p>
-                {/* Do not display contactPhone if it's the password. Or show a masked version if necessary. */}
-                {/* <p><strong>Contact Phone:</strong> {loggedInSponsor.contactPhone}</p> */}
-                <p><strong>Amount Sponsoring:</strong> {loggedInSponsor.sponsoringAmount ? `$${Number(loggedInSponsor.sponsoringAmount).toLocaleString()}` : 'N/A'}</p>
-                <p><strong>Registrant Allotment:</strong> {loggedInSponsor.registrantAllotment}</p>
-                <p><strong>Status:</strong> {loggedInSponsor.status}</p>
-                <p><strong>Tier:</strong> {loggedInSponsor.tierName || 'N/A'}</p>
-              </div>
-              <div className="mt-6">
-                <Button 
-                  variant="primary" 
-                  className="w-full"
-                  onClick={() => navigate('/sponsor-portal/registrants')}
-                >
-                  Manage Your Registrants
-                </Button>
-              </div>
-              <div className="mt-4">
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={handleLogout} // Use the new handleLogout function
-                >
-                  Logout
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Login Form (remains mostly the same, but debug button can be removed or repurposed)
+  // Only show login form
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -133,7 +55,6 @@ const SponsorLoginPortal = () => {
           Event ID: {eventId}
         </p>
       </div>
-
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <Card>
           <div className="p-8 space-y-6">
@@ -152,7 +73,7 @@ const SponsorLoginPortal = () => {
                     id="sponsorId"
                     name="sponsorId"
                     type="text"
-                    autoComplete="username" // Added for better UX
+                    autoComplete="username"
                     required
                     value={sponsorIdInput}
                     onChange={(e) => setSponsorIdInput(e.target.value)}
@@ -160,7 +81,6 @@ const SponsorLoginPortal = () => {
                   />
                 </div>
               </div>
-
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Password (Your Contact Phone)
@@ -170,10 +90,10 @@ const SponsorLoginPortal = () => {
                     id="password"
                     name="password"
                     type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password" // Added for better UX
+                    autoComplete="current-password"
                     required
                     value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)} // Raw input, no more slicing/replacing here
+                    onChange={(e) => setPasswordInput(e.target.value)}
                     placeholder="10-digit phone number"
                     className="pr-10" 
                   />
@@ -190,13 +110,11 @@ const SponsorLoginPortal = () => {
                   </button>
                 </div>
               </div>
-              
               <div className="flex items-center justify-between">
                 <div className="text-sm">
                   {/* Optional: Add forgot password or help link here */}
                 </div>
               </div>
-
               <div>
                 <Button type="submit" variant="primary" className="w-full" disabled={loading}>
                   {loading ? (
@@ -210,7 +128,6 @@ const SponsorLoginPortal = () => {
                 </Button>
               </div>
             </form>
-            {/* Removed the Debug local storage button as it's no longer relevant */}
             <div className="mt-6 text-center text-sm text-gray-500">
                 Need help? <Link to="/contact-support" className="font-medium text-primary-600 hover:text-primary-500">Contact Support</Link>
             </div>

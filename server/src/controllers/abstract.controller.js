@@ -432,9 +432,9 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
      logger.info(`[updateAbstract] Registrant owner ${req.registrant._id} attempting update for abstract ${abstractId}`);
     isAuthorized = true;
     const event = await Event.findById(abstract.event);
-    if (event && event.abstractSettings && !event.abstractSettings.allowEditingAfterSubmission && abstract.status !== 'draft' && abstract.status !== 'revision-requested') {
-        logger.warn(`[updateAbstract] Registrant ${req.registrant._id} cannot edit abstract ${abstractId} as editing after submission is disallowed and status is ${abstract.status}`);
-        return next(createApiError('Editing is not allowed after initial submission for this event, unless revision is requested.', 400));
+    if (event && event.abstractSettings && !event.abstractSettings.allowEditing) {
+        logger.warn(`[updateAbstract] Registrant ${req.registrant._id} cannot edit abstract ${abstractId} as editing is disallowed by event settings.`);
+        return next(createApiError('Editing is not allowed for abstracts in this event.', 400));
     }
     if (editableStatuses.includes(abstract.status)) {
         canEdit = true;
@@ -502,7 +502,7 @@ exports.updateAbstract = asyncHandler(async (req, res, next) => {
   }
   
   // Word count check from event settings if content is being updated
-  if (updateData.content && (req.user.role === 'admin' || req.user.role === 'staff' || req.registrant)) {
+  if (updateData.content && ((req.user && (req.user.role === 'admin' || req.user.role === 'staff')) || req.registrant)) {
     const event = await Event.findById(abstract.event);
     if (event && event.abstractSettings && event.abstractSettings.maxLength) {
         const wordCount = updateData.content.trim().split(/\s+/).length;
@@ -713,8 +713,11 @@ exports.uploadAbstractFile = asyncHandler(async (req, res, next) => {
 
   const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
   const newFileName = `abstract_${abstract._id}_${uniqueSuffix}${fileExt}`;
-  const uploadDir = path.join(__dirname, '..', '..' ,'uploads', 'abstracts', event._id.toString());
+  // NEW:
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'abstracts', event._id.toString());
   const newFilePath = path.join(uploadDir, newFileName);
+  logger.info(`[uploadAbstractFile] uploadDir: ${uploadDir}`);
+  logger.info(`[uploadAbstractFile] newFilePath: ${newFilePath}`);
   
   try {
     if (!fs.existsSync(uploadDir)) {
@@ -869,7 +872,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       if (abstract.fileUrl && abstract.fileName) {
         const regId = abstract.registrationInfo ? abstract.registrationInfo.registrationId : 'unknown';
         const authorName = abstract.registrationInfo ? `${abstract.registrationInfo.personalInfo.firstName}_${abstract.registrationInfo.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
-        const filePath = path.join(__dirname, `../..${abstract.fileUrl}`);
+        const filePath = path.join(process.cwd(), 'public', abstract.fileUrl.replace(/^\/?/, ''));
         
         console.log(`[abstract.controller] Processing file: ${filePath}`);
         
@@ -896,7 +899,9 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   if (exportMode && exportMode.startsWith('excel')) {
     const excelMode = exportMode === 'excel-multi' ? 'multi-row' : 'single-row';
     const catOrTopic = filterCategory || filterTopic || 'all';
-    const { buffer, fileName } = await generateAbstractsExcel(abstracts, {
+    // Attach eventInfo to each abstract for subtopic name resolution
+    const abstractsWithEventInfo = abstracts.map(abs => ({ ...abs, eventInfo: event }));
+    const { buffer, fileName } = await generateAbstractsExcel(abstractsWithEventInfo, {
       eventName: event.name,
       categoryOrTopic: catOrTopic,
       exportMode: excelMode,
@@ -914,7 +919,9 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
   if (exportMode && exportMode.startsWith('excel')) {
     const excelMode = exportMode === 'excel-multi' ? 'multi-row' : 'single-row';
     const catOrTopic = filterCategory || filterTopic || 'all';
-    const { buffer, fileName } = await generateAbstractsExcel(abstracts, {
+    // Attach eventInfo to each abstract for subtopic name resolution
+    const abstractsWithEventInfo = abstracts.map(abs => ({ ...abs, eventInfo: event }));
+    const { buffer, fileName } = await generateAbstractsExcel(abstractsWithEventInfo, {
       eventName: event.name,
       categoryOrTopic: catOrTopic,
       exportMode: excelMode,
@@ -963,7 +970,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
       if (abstract.fileUrl && abstract.fileName) {
         const regId = abstract.registrationInfo ? abstract.registrationInfo.registrationId : 'unknown';
         const authorName = abstract.registrationInfo ? `${abstract.registrationInfo.personalInfo.firstName}_${abstract.registrationInfo.personalInfo.lastName}`.replace(/\s+/g, '_') : 'unknown';
-        const filePath = path.join(__dirname, `../..${abstract.fileUrl}`);
+        const filePath = path.join(process.cwd(), 'public', abstract.fileUrl.replace(/^\/?/, ''));
         if (fs.existsSync(filePath)) {
           const fileExt = path.extname(abstract.fileName);
           const fileBaseName = path.basename(abstract.fileName, fileExt);
@@ -1068,7 +1075,7 @@ exports.downloadAbstracts = asyncHandler(async (req, res, next) => {
     
     // If there's a file attached to the abstract, add it too
     if (abstract.fileUrl) {
-      const filePath = path.join(__dirname, `../..${abstract.fileUrl}`);
+      const filePath = path.join(process.cwd(), 'public', abstract.fileUrl.replace(/^\/?/, ''));
       if (fs.existsSync(filePath)) {
         // Add original file to archive with registration ID prefix
         const fileExt = path.extname(abstract.fileName);
@@ -1540,8 +1547,8 @@ const downloadAbstractAttachment = asyncHandler(async (req, res, next) => {
   }
 
   // Construct the physical path to the file
-  // This matches the logic used for deletion: server/public/uploads/abstracts/filename.ext
-  const physicalFilePath = path.join(__dirname, '../..', abstract.fileUrl); 
+  // Always resolve to server/public/uploads/abstracts/... regardless of leading slash
+  const physicalFilePath = path.join(__dirname, '..', '..', 'public', abstract.fileUrl.replace(/^\/?/, ''));
 
   if (!fs.existsSync(physicalFilePath)) {
     logger.error(`File not found at physical path: ${physicalFilePath} for abstract ${abstractId}`);

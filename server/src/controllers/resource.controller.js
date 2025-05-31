@@ -91,13 +91,25 @@ const getResourceSettings = asyncHandler(async (req, res) => {
       if (dbQueryType === 'certificatePrinting') {
         // For certificatePrinting, templates are stored directly on the document
         settingsData = { templates: resourceSettingDoc.certificatePrintingTemplates || [] }; 
-        // Include other general settings if they exist under resourceSettingDoc.settings
         if (resourceSettingDoc.settings && Object.keys(resourceSettingDoc.settings).length > 0) {
           settingsData = { ...settingsData, ...resourceSettingDoc.settings };
         }
       } else {
-        // For other types, settings are under the .settings property
         settingsData = resourceSettingDoc.settings || defaultResourceSettings(dbQueryType);
+        // --- PATCH: Always include both days and meals for food ---
+        if (dbQueryType === 'food') {
+          // Ensure days exists
+          settingsData.days = Array.isArray(settingsData.days) ? settingsData.days : [];
+          // Flatten meals from days
+          settingsData.meals = settingsData.days.flatMap(day => Array.isArray(day.meals) ? day.meals : []);
+        }
+        // --- PATCH: Ensure kitBag items and certificate types have valid _id as string ---
+        if (dbQueryType === 'kitBag' && Array.isArray(settingsData.items)) {
+          settingsData.items = settingsData.items.map(item => ({ ...item, _id: item._id ? item._id.toString() : undefined }));
+        }
+        if (dbQueryType === 'certificate' && Array.isArray(settingsData.types)) {
+          settingsData.types = settingsData.types.map(type => ({ ...type, _id: type._id ? type._id.toString() : undefined }));
+        }
       }
       message = `${type} settings retrieved successfully`;
     } else {
@@ -228,6 +240,25 @@ exports.updateResourceSettings = asyncHandler(async (req, res, next) => {
     } else {
       // Update existing settings
       console.log(`[updateResourceSettings] Updating existing ResourceSetting for type: ${dbType}`);
+      // --- SAFETY CHECK: Prevent accidental overwrite with empty settings ---
+      let isIncomingEmpty = false;
+      if (dbType === 'food' && settings && Array.isArray(settings.days) && settings.days.length === 0) isIncomingEmpty = true;
+      if (dbType === 'kitBag' && settings && Array.isArray(settings.items) && settings.items.length === 0) isIncomingEmpty = true;
+      if (dbType === 'certificate' && settings && Array.isArray(settings.types) && settings.types.length === 0) isIncomingEmpty = true;
+      if (dbType === 'certificatePrinting' && settings && Array.isArray(settings.templates) && settings.templates.length === 0) isIncomingEmpty = true;
+      // If incoming settings are empty and existing settings are non-empty, block update
+      let isExistingNonEmpty = false;
+      if (dbType === 'food' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.days) && resourceSettingsDoc.settings.days.length > 0) isExistingNonEmpty = true;
+      if (dbType === 'kitBag' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.items) && resourceSettingsDoc.settings.items.length > 0) isExistingNonEmpty = true;
+      if (dbType === 'certificate' && resourceSettingsDoc.settings && Array.isArray(resourceSettingsDoc.settings.types) && resourceSettingsDoc.settings.types.length > 0) isExistingNonEmpty = true;
+      if (dbType === 'certificatePrinting' && resourceSettingsDoc.certificatePrintingTemplates && resourceSettingsDoc.certificatePrintingTemplates.length > 0 && settings && Array.isArray(settings.templates) && settings.templates.length === 0) isExistingNonEmpty = true;
+      if (isIncomingEmpty && isExistingNonEmpty) {
+        console.warn(`[updateResourceSettings] BLOCKED: Attempt to overwrite non-empty settings for type ${dbType} with empty settings. User: ${req.user.email}, Event: ${eventId}`);
+        return res.status(400).json({
+          success: false,
+          message: `Blocked: Refusing to overwrite non-empty ${dbType} settings with empty data. If you intend to clear all settings, please do so explicitly.`,
+        });
+      }
       if (dbType === 'certificatePrinting') {
         console.log('[updateResourceSettings] CERTPRINT_UPDATE: Current doc.certificatePrintingTemplates BEFORE change:', JSON.stringify(resourceSettingsDoc.certificatePrintingTemplates, null, 2));
         console.log('[updateResourceSettings] CERTPRINT_UPDATE: Incoming settings.templates FROM CLIENT:', JSON.stringify(settings.templates, null, 2));

@@ -3,6 +3,8 @@ const Event = require('../models/Event');
 const { ErrorResponse } = require('../middleware/error');
 const asyncHandler = require('../middleware/async');
 const logger = require('../config/logger');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * @desc    Get all abstracts for the current registrant
@@ -318,12 +320,13 @@ exports.downloadAbstract = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse('No file associated with this abstract', 404));
     }
 
-    // For now, this is a placeholder. In a real scenario, you would stream the file from S3 or a local path.
-    res.status(200).json({ 
-      success: true, 
-      message: 'Download functionality not yet implemented.', 
-      fileUrl: abstract.fileUrl || null 
-    });
+    // PATCH: Actually stream the file from disk
+    const filePath = path.join(__dirname, '..', 'public', abstract.fileUrl);
+    if (!fs.existsSync(filePath)) {
+      logger.warn(`File not found at path: ${filePath}`);
+      return next(new ErrorResponse('File not found on server', 404));
+    }
+    return res.download(filePath, abstract.fileName);
   } catch (error) {
     logger.error(`Error downloading abstract file: ${error.message}`);
     return next(new ErrorResponse('Error downloading abstract file', 500));

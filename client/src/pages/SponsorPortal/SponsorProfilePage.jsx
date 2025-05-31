@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import sponsorAuthService from '../../services/sponsorAuthService';
-import { Spinner, Alert } from '../../components/common'; // Assuming you have these common components
+import { Spinner, Alert, Button, Card } from '../../components/common';
+import { useNavigate } from 'react-router-dom';
 
 const SponsorProfilePage = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -22,23 +24,10 @@ const SponsorProfilePage = () => {
     fetchProfile();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-full">
-        <Spinner size="lg" /> <span className="ml-2">Loading profile...</span>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex justify-center items-center h-full"><Spinner size="lg" /> <span className="ml-2">Loading profile...</span></div>;
+  if (error) return <Alert variant="danger" title="Error">{error}</Alert>;
+  if (!profile) return <Alert variant="info">No profile data found.</Alert>;
 
-  if (error) {
-    return <Alert variant="danger" title="Error">{error}</Alert>;
-  }
-
-  if (!profile) {
-    return <Alert variant="info">No profile data found.</Alert>;
-  }
-
-  // Helper to render profile details
   const renderDetail = (label, value) => (
     <div className="py-2 sm:grid sm:grid-cols-3 sm:gap-4">
       <dt className="text-sm font-medium text-gray-500">{label}</dt>
@@ -47,17 +36,12 @@ const SponsorProfilePage = () => {
   );
 
   return (
-    <div className="container mx-auto">
+    <div className="container mx-auto max-w-2xl p-4">
       <h1 className="text-2xl font-bold mb-6 text-gray-800">My Sponsor Profile</h1>
-      
-      <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+      <Card>
         <div className="px-4 py-5 sm:px-6 bg-gray-50">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            {profile.companyName}
-          </h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Sponsorship Details
-          </p>
+          <h3 className="text-lg leading-6 font-medium text-gray-900">{profile.companyName}</h3>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">Sponsorship Details</p>
         </div>
         <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
           <dl className="sm:divide-y sm:divide-gray-200">
@@ -71,6 +55,9 @@ const SponsorProfilePage = () => {
             {renderDetail('Description / Notes', profile.description)}
           </dl>
         </div>
+      </Card>
+      <div className="mt-6 flex justify-end">
+        <Button variant="outline" onClick={() => navigate('/sponsor-portal/dashboard')}>Back to Dashboard</Button>
       </div>
     </div>
   );

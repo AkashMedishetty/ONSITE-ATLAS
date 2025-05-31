@@ -205,7 +205,6 @@ const generateRegistrationsExcel = async (registrations, options = {}) => {
  */
 const generateAbstractsExcel = async (abstracts, options = {}) => {
   const { eventName = 'Event', categoryOrTopic = 'all', exportMode = 'single-row' } = options;
-  // Use a local sanitize function for file names
   const sanitize = (name) => (name || '').toString().replace(/[^a-zA-Z0-9_.-]/g, '_').substring(0, 50);
   const safeEvent = sanitize(eventName);
   const safeCat = sanitize(categoryOrTopic);
@@ -215,74 +214,126 @@ const generateAbstractsExcel = async (abstracts, options = {}) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Abstracts');
 
-  // Define columns
+  // Expanded columns for reviewer export
   let columns = [
     { header: 'Event Name', key: 'eventName' },
+    { header: 'Abstract Number', key: 'abstractNumber' },
     { header: 'Abstract ID', key: 'abstractId' },
     { header: 'Title', key: 'title' },
-    { header: 'Topic', key: 'topic' },
+    { header: 'Authors', key: 'authors' },
+    { header: 'Author Affiliations', key: 'authorAffiliations' },
     { header: 'Category', key: 'category' },
-    { header: 'Author Name', key: 'authorName' },
-    { header: 'Submission Date', key: 'submissionDate' },
+    { header: 'Topic', key: 'topic' },
+    { header: 'SubTopic', key: 'subTopic' },
+    { header: 'Submission Type', key: 'submissionType' },
     { header: 'Status', key: 'status' },
+    { header: 'Submission Date', key: 'submissionDate' },
+    { header: 'Registration ID', key: 'registrationId' },
+    { header: 'First Name', key: 'firstName' },
+    { header: 'Last Name', key: 'lastName' },
+    { header: 'Email', key: 'email' },
+    { header: 'Phone', key: 'phone' },
+    { header: 'Organization', key: 'organization' },
+    { header: 'Keywords', key: 'keywords' },
+    { header: 'File Name', key: 'fileName' },
+    { header: 'File URL', key: 'fileUrl' },
+    { header: 'Reviewers', key: 'reviewers' },
+    { header: 'Review Scores', key: 'reviewScores' },
+    { header: 'Review Decisions', key: 'reviewDecisions' },
+    { header: 'Review Comments', key: 'reviewComments' },
   ];
   if (exportMode === 'multi-row') {
     columns = columns.concat([
       { header: 'Reviewer Name', key: 'reviewerName' },
+      { header: 'Reviewer Email', key: 'reviewerEmail' },
       { header: 'Review Date', key: 'reviewDate' },
-      { header: 'Review Comments', key: 'reviewComments' },
+      { header: 'Review Comment', key: 'reviewComment' },
       { header: 'Review Score', key: 'reviewScore' },
-    ]);
-  } else {
-    columns = columns.concat([
-      { header: 'All Reviews', key: 'allReviews' },
+      { header: 'Review Decision', key: 'reviewDecision' },
     ]);
   }
   worksheet.columns = columns;
 
-  // Add rows
   for (const abs of abstracts) {
+    // Registration info
+    const reg = abs.registrationInfo || abs.registration || {};
+    const personal = reg.personalInfo || {};
+    // Category info
+    const cat = abs.category || abs.categoryInfo || {};
+    // Keywords
+    const keywords = Array.isArray(abs.keywords) ? abs.keywords.join(', ') : (abs.keywords || '');
+    // Reviewers
+    let reviewers = '';
+    let reviewerEmails = '';
+    if (abs.reviewDetails && Array.isArray(abs.reviewDetails.assignedTo)) {
+      reviewers = abs.reviewDetails.assignedTo.map(r => r?.name || r?.email || r?.toString()).join(', ');
+      reviewerEmails = abs.reviewDetails.assignedTo.map(r => r?.email || '').join(', ');
+    }
+    // Reviews
+    let reviewScores = '';
+    let reviewDecisions = '';
+    let reviewComments = '';
+    if (abs.reviewDetails && Array.isArray(abs.reviewDetails.reviews)) {
+      reviewScores = abs.reviewDetails.reviews.map(r => r.score).filter(x => x !== undefined && x !== null).join(', ');
+      reviewDecisions = abs.reviewDetails.reviews.map(r => r.decision).filter(x => x).join(', ');
+      reviewComments = abs.reviewDetails.reviews.map(r => r.comments).filter(x => x).join(' | ');
+    }
+    // SubTopic name (if possible)
+    let subTopic = abs.subTopic;
+    if (abs.eventInfo && abs.eventInfo.abstractSettings && Array.isArray(abs.eventInfo.abstractSettings.categories)) {
+      // Try to find the category and subtopic by ID
+      let catId = cat._id?.toString() || cat.toString();
+      let subTopicId = abs.subTopic?.toString();
+      const catObj = abs.eventInfo.abstractSettings.categories.find(c => c._id?.toString() === catId);
+      if (catObj && Array.isArray(catObj.subTopics)) {
+        const sub = catObj.subTopics.find(st => st._id?.toString() === subTopicId);
+        if (sub) subTopic = sub.name;
+      }
+    }
     const baseRow = {
-      eventName: eventName,
+      eventName,
+      abstractNumber: abs.abstractNumber || '',
       abstractId: abs._id?.toString() || '',
       title: abs.title || '',
+      authors: abs.authors || '',
+      authorAffiliations: abs.authorAffiliations || '',
+      category: cat.name || cat || '',
       topic: abs.topic || '',
-      category: abs.category?.name || abs.category || '',
-      authorName: abs.registrationInfo ? `${abs.registrationInfo.personalInfo?.firstName || ''} ${abs.registrationInfo.personalInfo?.lastName || ''}`.trim() : '',
-      submissionDate: abs.submissionDate ? new Date(abs.submissionDate).toLocaleString() : '',
+      subTopic: subTopic || '',
+      submissionType: abs.submissionType || '',
       status: abs.status || '',
+      submissionDate: abs.submissionDate ? new Date(abs.submissionDate).toLocaleString() : '',
+      registrationId: reg.registrationId || '',
+      firstName: personal.firstName || '',
+      lastName: personal.lastName || '',
+      email: personal.email || '',
+      phone: personal.phone || '',
+      organization: personal.organization || '',
+      keywords,
+      fileName: abs.fileName || '',
+      fileUrl: abs.fileUrl || '',
+      reviewers,
+      reviewScores,
+      reviewDecisions,
+      reviewComments,
     };
-    if (exportMode === 'multi-row') {
-      // Each review gets its own row
-      if (Array.isArray(abs.reviewComments) && abs.reviewComments.length > 0) {
-        for (const review of abs.reviewComments) {
-          worksheet.addRow({
-            ...baseRow,
-            reviewerName: review.reviewerName || review.reviewer || '',
-            reviewDate: review.timestamp ? new Date(review.timestamp).toLocaleString() : '',
-            reviewComments: review.comment || '',
-            reviewScore: review.score || '',
-          });
-        }
-      } else {
-        worksheet.addRow({ ...baseRow, reviewerName: '', reviewDate: '', reviewComments: '', reviewScore: '' });
+    if (exportMode === 'multi-row' && abs.reviewDetails && Array.isArray(abs.reviewDetails.reviews) && abs.reviewDetails.reviews.length > 0) {
+      for (const review of abs.reviewDetails.reviews) {
+        worksheet.addRow({
+          ...baseRow,
+          reviewerName: review.reviewer?.name || review.reviewer?.toString() || '',
+          reviewerEmail: review.reviewer?.email || '',
+          reviewDate: review.reviewedAt ? new Date(review.reviewedAt).toLocaleString() : '',
+          reviewComment: review.comments || '',
+          reviewScore: review.score || '',
+          reviewDecision: review.decision || '',
+        });
       }
     } else {
-      // Single row, all reviews as JSON string
-      let allReviews = '';
-      if (Array.isArray(abs.reviewComments) && abs.reviewComments.length > 0) {
-        allReviews = JSON.stringify(abs.reviewComments.map(r => ({
-          reviewer: r.reviewerName || r.reviewer || '',
-          date: r.timestamp ? new Date(r.timestamp).toLocaleString() : '',
-          comment: r.comment || '',
-          score: r.score || ''
-        })), null, 2);
-      }
-      worksheet.addRow({ ...baseRow, allReviews });
+      worksheet.addRow(baseRow);
     }
   }
 
-  // Format header row
   worksheet.getRow(1).font = { bold: true };
   worksheet.getRow(1).fill = {
     type: 'pattern',

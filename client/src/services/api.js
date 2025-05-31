@@ -21,39 +21,28 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    // Check URL to determine which token to use
+    // Detect sponsor portal endpoints
+    const isSponsorEndpoint = config.url.includes('/sponsor-portal-auth') || config.url.includes('/sponsor-auth');
     const isRegistrantEndpoint = config.url.includes('/registrant-portal');
     const isAuthEndpoint = config.url.includes('/auth/login') || config.url.includes('/auth/register');
-    
-    // Skip adding token for auth endpoints
     if (isAuthEndpoint) {
-      console.log(`[Request Interceptor] Auth endpoint detected: ${config.url}, skipping token`);
       return config;
     }
-    
-    // Get the appropriate token
-    const tokenKey = isRegistrantEndpoint ? 'registrantToken' : 'token';
-    const token = localStorage.getItem(tokenKey);
-    
-    console.log(`[Request Interceptor] ${isRegistrantEndpoint ? 'Registrant' : 'User'} token check for ${config.url}. Found: ${token ? 'Yes' : 'No'}`);
-    
-    // Add token to headers if it exists
+    // Use correct token
+    let token;
+    if (isSponsorEndpoint) {
+      token = localStorage.getItem('sponsorToken');
+    } else if (isRegistrantEndpoint) {
+      token = localStorage.getItem('registrantToken');
+    } else {
+      token = localStorage.getItem('token');
+    }
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log(`[Request Interceptor] ${isRegistrantEndpoint ? 'Registrant' : 'User'} Authorization header added for ${config.url}`);
-    } else {
-      console.warn(`[Request Interceptor] No ${isRegistrantEndpoint ? 'registrant' : 'user'} token found for ${config.url}`);
     }
-    
-    // Log requests in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`API Request: ${config.method.toUpperCase()} ${config.url}`);
-    }
-    
     return config;
   },
   (error) => {
-    console.error('API Request Error:', error);
     return Promise.reject(error);
   }
 );
@@ -75,6 +64,7 @@ api.interceptors.response.use(
     const url = originalRequest?.url || '';
     
     // Determine portal type by URL
+    const isSponsorEndpoint = url.includes('/sponsor-portal-auth') || url.includes('/sponsor-auth');
     const isRegistrantEndpoint = url.includes('/registrant-portal');
     const isReviewerEndpoint = url.includes('/reviewer-portal');
     const isAdminEndpoint = url.includes('/admin') || url.includes('/global-admin') || url.includes('/super-admin');
@@ -82,6 +72,32 @@ api.interceptors.response.use(
     
     // Don't handle auth errors for login/register endpoints
     if (isAuthEndpoint) {
+      return Promise.reject(error);
+    }
+
+    // Sponsor portal: redirect to sponsor login with eventId
+    if (isSponsorEndpoint && error.response?.status === 401 && !originalRequest._retry) {
+      // Try to get eventId from sponsorData BEFORE removing it
+      let eventId = null;
+      const sponsorData = localStorage.getItem('sponsorData');
+      if (sponsorData) {
+        try {
+          eventId = JSON.parse(sponsorData).eventId;
+        } catch {}
+      }
+      // Remove sponsor token and data
+      localStorage.removeItem('sponsorToken');
+      localStorage.removeItem('sponsorData');
+      if (!eventId) {
+        // Try to get from current path if possible
+        const match = window.location.pathname.match(/sponsor-portal\/events\/(\w+)/);
+        if (match) eventId = match[1];
+      }
+      if (eventId) {
+        window.location.href = `/portal/sponsor-login/${eventId}`;
+      } else {
+        window.location.href = '/portal/sponsor-login/';
+      }
       return Promise.reject(error);
     }
 
@@ -95,7 +111,7 @@ api.interceptors.response.use(
       loginPath = '/admin/login';
     }
 
-    // Handle 401 errors
+    // Handle 401 errors for other portals
     if (error.response?.status === 401 && !originalRequest._retry) {
       console.error(`Authentication failed (401) for ${isRegistrantEndpoint ? 'registrant' : isReviewerEndpoint ? 'reviewer' : isAdminEndpoint ? 'admin' : 'user'}, logging out.`);
       // Store intended destination before redirect

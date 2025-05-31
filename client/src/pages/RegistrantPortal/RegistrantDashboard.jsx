@@ -73,6 +73,11 @@ const styles = {
     fontSize: '1rem', // Slightly adjusted
     marginBottom: 0
   },
+  welcomeEventVenue: {
+    color: '#e0e7ff',
+    fontSize: '0.95rem',
+    marginBottom: 0
+  },
   badgePreview: { 
     backgroundColor: 'rgba(255, 255, 255, 0.95)', // Slightly more opaque
     color: '#343a40',
@@ -547,6 +552,18 @@ const RegistrantDashboard = () => {
                 <h1 style={styles.welcomeTitle} className="welcome-event-name">
                   {eventDetails?.basicInfo?.eventName || eventDetails?.name || 'Your Event Dashboard'}
                 </h1>
+                {/* Event Location (Venue) */}
+                {eventDetails?.venue && (
+                  <p style={styles.welcomeEventVenue} className="welcome-event-venue">
+                    <FaMapMarkerAlt className="me-1" />
+                    {eventDetails.venue.name}
+                    {eventDetails.venue.address && `, ${eventDetails.venue.address}`}
+                    {eventDetails.venue.city && `, ${eventDetails.venue.city}`}
+                    {eventDetails.venue.state && `, ${eventDetails.venue.state}`}
+                    {eventDetails.venue.country && `, ${eventDetails.venue.country}`}
+                    {eventDetails.venue.zipCode && `, ${eventDetails.venue.zipCode}`}
+                  </p>
+                )}
                 <p style={styles.welcomeSubtitle} className="welcome-registrant-name">
                   Welcome, {registration?.personalInfo?.firstName || 'Registrant'}!
                 </p>
@@ -694,7 +711,7 @@ const RegistrantDashboard = () => {
               </ListGroup.Item>
               <ListGroup.Item style={styles.listItem}>
                 <span style={styles.listItemLabel}>Phone:</span>
-                <span style={styles.listItemValue}>{registration?.personalInfo?.mobileNumber || 'N/A'}</span>
+                <span style={styles.listItemValue}>{registration?.personalInfo?.phone || registration?.personalInfo?.mobileNumber || 'N/A'}</span>
               </ListGroup.Item>
               <ListGroup.Item style={styles.listItem}>
                 <span style={styles.listItemLabel}>Institution:</span>
@@ -858,7 +875,18 @@ const RegistrantDashboard = () => {
                       <FaMapMarkerAlt className="detail-icon" />
                       <span>Location</span>
                     </div>
-                    <div className="detail-value">{eventDetails.location || 'N/A'}</div>
+                    <div className="detail-value">
+                      {eventDetails.venue
+                        ? [
+                            eventDetails.venue.name,
+                            eventDetails.venue.address,
+                            eventDetails.venue.city,
+                            eventDetails.venue.state,
+                            eventDetails.venue.country,
+                            eventDetails.venue.zipCode
+                          ].filter(Boolean).join(', ')
+                        : 'N/A'}
+                    </div>
                   </div>
                   
                   {deadlines && deadlines.length > 0 && (

@@ -86,7 +86,8 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
             category: regData.category, 
             // PATCH: Save customFields if provided
             ...(regData.customFields && { customFields: regData.customFields }),
-            registrationType: 'imported',
+            // Preserve registrationType if provided (for client portal 'complementary')
+            registrationType: regData.registrationType || 'imported',
             status: 'active',
             createdBy: userId,
             createdAt: regData.createdAt || new Date(),
@@ -164,7 +165,8 @@ async function processBulkImportJob(jobId, registrationsData, eventId, userId) {
             category: regData.category,
             // PATCH: Save customFields if provided
             ...(regData.customFields && { customFields: regData.customFields }),
-            registrationType: 'imported',
+            // Preserve registrationType if provided (for client portal 'complementary')
+            registrationType: regData.registrationType || 'imported',
             status: 'active',
             createdBy: userId,
             createdAt: regData.createdAt || new Date(),

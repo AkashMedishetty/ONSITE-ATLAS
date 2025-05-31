@@ -20,6 +20,7 @@ const Dashboard = require('./Dashboard');
 const AnalyticsDataCache = require('./AnalyticsDataCache');
 const Report = require('./Report');
 const EventSponsor = require('./EventSponsor');
+const EventClient = require('./EventClient');
 
 module.exports = {
   User,
@@ -43,5 +44,6 @@ module.exports = {
   Dashboard,
   AnalyticsDataCache,
   Report,
-  EventSponsor
+  EventSponsor,
+  EventClient
 }; 

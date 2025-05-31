@@ -636,7 +636,11 @@ const eventSchema = new mongoose.Schema({
         ref: 'Category'
       }]
     }]
-  }
+  },
+  eventClients: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'EventClient'
+  }]
 }, {
   timestamps: true
 });

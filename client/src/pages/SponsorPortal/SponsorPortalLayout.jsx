@@ -24,13 +24,19 @@ const SponsorPortalLayout = () => {
   }, [navigate, sponsor]); // sponsor is in dependency array
 
   const handleLogout = () => {
-    const eventIdToRedirect = sponsor?.eventId; // Get eventId before clearing data
+    // Get eventId BEFORE clearing storage
+    let eventId = null;
+    const sponsorData = localStorage.getItem('sponsorData');
+    if (sponsorData) {
+      try {
+        eventId = JSON.parse(sponsorData).eventId;
+      } catch {}
+    }
     sponsorAuthService.logout();
-    if (eventIdToRedirect) {
-      navigate(`/portal/sponsor-login/${eventIdToRedirect}`);
+    if (eventId) {
+      window.location.href = `/portal/sponsor-login/${eventId}`;
     } else {
-      // Fallback if eventId wasn't available in sponsor data for some reason
-      navigate('/'); // Fallback to application root
+      window.location.href = '/portal/sponsor-login/';
     }
   };
 
@@ -49,6 +55,12 @@ const SponsorPortalLayout = () => {
           <p className="text-sm text-gray-400">{sponsor.companyName}</p>
         </div>
         <nav className="flex-grow">
+          <Link 
+            to="/sponsor-portal/dashboard" 
+            className="block px-8 py-3 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+          >
+            Dashboard
+          </Link>
           <Link 
             to="/sponsor-portal/profile" 
             className="block px-8 py-3 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"

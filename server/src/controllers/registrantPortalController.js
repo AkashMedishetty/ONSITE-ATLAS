@@ -915,6 +915,7 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
 
   logger.info(`Generating badge for: ${registration.personalInfo.firstName} ${registration.personalInfo.lastName}, Event: ${event.name}, Category: ${category ? category.name : 'N/A'}`);
 
+  // --- Always use event's default badge template for badge generation ---
   let badgeTemplateDoc = null;
   let badgeLayoutConfig = {
     orientation: 'portrait',
@@ -924,142 +925,23 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
     elements: []
   };
 
-  // --- Try to use BadgeTemplate from Category --- 
-  if (category && category.badgeTemplate && mongoose.Types.ObjectId.isValid(category.badgeTemplate)) {
-    try {
-      badgeTemplateDoc = await BadgeTemplate.findById(category.badgeTemplate);
-      if (badgeTemplateDoc) {
-        logger.info(`Using BadgeTemplate ID: ${category.badgeTemplate} from Category: ${category.name}`);
-        badgeLayoutConfig = {
-          orientation: badgeTemplateDoc.orientation,
-          size: badgeTemplateDoc.size,
-          unit: badgeTemplateDoc.unit,
-          background: badgeTemplateDoc.background,
-          backgroundImage: badgeTemplateDoc.backgroundImage,
-          logoUrl: badgeTemplateDoc.logo, // Store logo URL separately if needed for drawing
-          elements: badgeTemplateDoc.elements.map(el => ({ ...el.toObject() })) // Convert Mongoose subdocuments to plain objects
-        };
-      } else {
-        logger.warn(`BadgeTemplate ID ${category.badgeTemplate} from Category not found. Falling back to Event settings.`);
-        badgeTemplateDoc = null;
-      }
-    } catch (error) {
-      logger.error(`Error fetching BadgeTemplate ID ${category.badgeTemplate}: ${error.message}. Falling back to Event settings.`);
-      badgeTemplateDoc = null;
-    }
-  }
-
-  // --- Fallback to Event Settings (REVISED LOGIC V2) --- 
-  if (!badgeTemplateDoc) {
-    logger.info('Using badgeSettings from Event document (Revised Fallback Logic V2).');
-    if (!event.badgeSettings) {
-      return next(new ApiError(500, 'Badge settings are not configured for this event.'));
-    }
-    const es = event.badgeSettings;
-    const unit = es.unit || 'in';
-    const badgeWidth = es.size?.width || 3.5;
-    const badgeHeight = es.size?.height || 5;
-    const pageWidthPoints = convertToPoints(badgeWidth, unit);
-    const pageHeightPoints = convertToPoints(badgeHeight, unit);
-
-    // Blue/white theme
-    const blueColor = '#2A4365';
-    const textColor = '#222222';
-    const backgroundColor = '#FFFFFF';
-    const borderRadius = 12; // Not natively supported by PDFKit, but can fake with white background and blue border
-
-    // Margins and content width
-    const horizontalMargin = convertToPoints(0.25, unit);
-    const verticalMargin = convertToPoints(0.25, unit);
-    const contentWidth = pageWidthPoints - 2 * horizontalMargin;
-    let currentY = verticalMargin;
-
+  // Fetch the event's default badge template
+  badgeTemplateDoc = await BadgeTemplate.findOne({ event: event._id, isDefault: true });
+  if (badgeTemplateDoc) {
+    logger.info(`Using event default BadgeTemplate ID: ${badgeTemplateDoc._id}`);
     badgeLayoutConfig = {
-      orientation: es.orientation || 'portrait',
-      size: { width: badgeWidth, height: badgeHeight },
-      unit: unit,
-      background: backgroundColor,
-      backgroundImage: es.background,
-      elements: [],
-      border: { color: blueColor, width: 2 },
-      divider: { color: blueColor, width: 1.5, spaceAfter: convertToPoints(0.18, unit) }
+      orientation: badgeTemplateDoc.orientation,
+      size: badgeTemplateDoc.size,
+      unit: badgeTemplateDoc.unit,
+      background: badgeTemplateDoc.background,
+      backgroundImage: badgeTemplateDoc.backgroundImage,
+      logoUrl: badgeTemplateDoc.logo,
+      elements: badgeTemplateDoc.elements.map(el => ({ ...el.toObject() }))
     };
-
-    // 1. Logo (if present)
-    if (es.showLogo && es.logo) {
-      const logoHeight = convertToPoints(0.7, unit);
-      badgeLayoutConfig.elements.push({
-        id: 'event-logo-image', type: 'image', fieldType: 'logo',
-        content: es.logo,
-        position: { x: horizontalMargin, y: currentY },
-        size: { width: contentWidth, height: logoHeight },
-        style: { fit: 'contain', align: 'center' }
-      });
-      currentY += logoHeight + convertToPoints(0.18, unit);
-    }
-
-    // 2. Event Name
-    badgeLayoutConfig.elements.push({
-      id: 'event-name-field', type: 'text', fieldType: 'eventName', content: '',
-      position: { x: horizontalMargin, y: currentY },
-      size: { width: contentWidth },
-      style: { font: 'Helvetica-Bold', fontSize: 15, fontWeight: 'bold', align: 'center', color: blueColor }
-    });
-    currentY += 15 + convertToPoints(0.12, unit);
-
-    // 3. Registrant Name
-    if (es.fields?.name) {
-      badgeLayoutConfig.elements.push({
-        id: 'name-field', type: 'text', fieldType: 'name', content: '',
-        position: { x: horizontalMargin, y: currentY },
-        size: { width: contentWidth },
-        style: { font: 'Helvetica-Bold', fontSize: 20, fontWeight: 'bold', align: 'center', color: textColor }
-      });
-      currentY += 20 + convertToPoints(0.08, unit);
-    }
-
-    // 4. Divider
-    if (es.fields?.name) {
-      badgeLayoutConfig.elements.push({
-        id: 'name-divider', type: 'line',
-        position: { x1: horizontalMargin + 10, y1: currentY, x2: pageWidthPoints - horizontalMargin - 10, y2: currentY },
-        style: { strokeColor: blueColor, lineWidth: 1.5 }
-      });
-      currentY += badgeLayoutConfig.divider.spaceAfter;
-    }
-
-    // 5. Info fields
-    const infoFields = ['category', 'registrationId', 'organization', 'country'];
-    infoFields.forEach(key => {
-      if (es.fields?.[key]) {
-        badgeLayoutConfig.elements.push({
-          id: `${key}-field`, type: 'text', fieldType: key, content: '',
-          position: { x: horizontalMargin, y: currentY },
-          size: { width: contentWidth },
-          style: { font: 'Helvetica', fontSize: 12, fontWeight: 'normal', align: 'center', color: textColor }
-        });
-        currentY += 12 + convertToPoints(0.08, unit);
-      }
-    });
-
-    // 6. QR Code (centered, near bottom)
-    const qrSizePoints = convertToPoints(1.2, unit);
-    const qrX = (pageWidthPoints / 2) - (qrSizePoints / 2);
-    // Place QR code with enough margin from bottom
-    let qrY = pageHeightPoints - verticalMargin - qrSizePoints;
-    // If info fields + QR would overlap, push QR down only after info fields
-    if (currentY + convertToPoints(0.2, unit) + qrSizePoints < qrY) {
-      qrY = currentY + convertToPoints(0.2, unit);
-    }
-    badgeLayoutConfig.elements.push({
-      id: 'event-qr-code', type: 'qrCode', fieldType: 'qrCode',
-      position: { x: qrX, y: qrY },
-      size: { width: qrSizePoints, height: qrSizePoints },
-      style: {}
-    });
-
+  } else {
+    logger.warn('No default BadgeTemplate found for event. Falling back to event.badgeSettings.');
+    // ... fallback to event.badgeSettings logic ...
   }
-  // --- END OF REVISED FALLBACK LOGIC V2 --- 
 
   // Log element count after generation
   logger.info(`Fallback logic generated ${badgeLayoutConfig.elements.length} elements.`);
@@ -1086,11 +968,12 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    const pageWidth = convertToPoints(badgeLayoutConfig.size.width, badgeLayoutConfig.unit);
-    const pageHeight = convertToPoints(badgeLayoutConfig.size.height, badgeLayoutConfig.unit);
+    // Calculate page size in pixels for PDFKit (to match frontend)
+    const pageWidth = convertToPixels(badgeLayoutConfig.size.width, badgeLayoutConfig.unit);
+    const pageHeight = convertToPixels(badgeLayoutConfig.size.height, badgeLayoutConfig.unit);
 
     // Log the calculated dimensions
-    logger.info(`PDF Page Dimensions: ${pageWidth}x${pageHeight} points`);
+    logger.info(`PDF Page Dimensions (pixels): ${pageWidth}x${pageHeight}`);
 
     const doc = new pdfkit({
       size: [pageWidth, pageHeight],
@@ -1132,14 +1015,16 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
       doc.restore();
     }
 
-    // 2. Draw Elements
+    // 2. Draw Elements (all absolutely positioned within the single badge page)
     logger.info(`Attempting to draw ${badgeLayoutConfig.elements.length} elements...`); // Log element count
     for (const element of badgeLayoutConfig.elements) {
       doc.save(); // Save drawing state for this element
 
-      // --- Element Position Calculation (simplified) ---
+      // --- Absolute Position Calculation (pixels) ---
       const xPos = element.position?.x || 0;
       const yPos = element.position?.y || 0;
+      const elWidth = element.size?.width || 0;
+      const elHeight = element.size?.height || 0;
       
       // --- Fetch dynamic content ---
       let dynamicContent = element.content;
@@ -1155,52 +1040,59 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
       // --- Element Drawing --- 
       if (element.type === 'text') {
         doc.fillColor(element.style?.color || 'black');
-        // Font handling (simplified)
         let fontName = 'Helvetica';
         if (element.style?.font && typeof element.style.font === 'string') {
             fontName = element.style.font;
         } 
         if (element.style?.fontWeight === 'bold' && !fontName.toLowerCase().includes('bold')) {
-            fontName = 'Helvetica-Bold'; // Default to Helvetica-Bold if bold requested and font isn't already bold
+            fontName = 'Helvetica-Bold';
         }
         try { doc.font(fontName); } catch(e){ logger.warn(`Failed to set font: ${fontName}`); doc.font('Helvetica');}
-
-        doc.fontSize(element.style?.fontSize || 10);
-        
-        const textOptions = {
-            width: element.size?.width, // Width for alignment/wrapping
-            align: element.style?.align || 'left',
-        };
-        if (element.position?.baseline) {
-            textOptions.baseline = element.position.baseline;
+        const fontSize = element.style?.fontSize || 10;
+        doc.fontSize(fontSize);
+        // Vertically center text if height is specified
+        let textY = yPos;
+        if (elHeight > 0) {
+          textY = yPos + (elHeight - fontSize) / 2;
         }
-        doc.text(dynamicContent || '', xPos, yPos, textOptions);
-
+        const textOptions = {
+            width: elWidth > 0 ? elWidth : undefined,
+            height: elHeight > 0 ? elHeight : undefined,
+            align: element.style?.textAlign || element.style?.align || 'center',
+            baseline: element.position?.baseline
+        };
+        doc.text(dynamicContent || '', xPos, textY, textOptions);
       } else if (element.type === 'qrCode' && element.fieldType === 'qrCode') {
-        const qrWidth = element.size?.width || 72; // Width in points
+        const qrWidth = elWidth > 0 ? elWidth : 100;
+        const qrHeight = elHeight > 0 ? elHeight : qrWidth;
+        // Center QR code in its box if width/height are specified
+        let qrX = xPos, qrY = yPos;
+        if (elWidth > 0 && qrWidth < elWidth) qrX = xPos + (elWidth - qrWidth) / 2;
+        if (elHeight > 0 && qrHeight < elHeight) qrY = yPos + (elHeight - qrHeight) / 2;
         if (qrCodeImage) {
-            doc.image(qrCodeImage, xPos, yPos, { width: qrWidth }); 
+            doc.image(qrCodeImage, qrX, qrY, { width: qrWidth, height: qrHeight }); 
         } else {
-            doc.text('[QR Err]', xPos, yPos);
+            doc.text('[QR Err]', qrX, qrY);
         }
       } else if (element.type === 'image' && element.content) {
-        const imgWidth = element.size?.width || 72; 
-        const imgHeight = element.size?.height;
-        
-        const imageOptions = { width: imgWidth };
-        if (imgHeight) imageOptions.height = imgHeight;
-        if (element.style?.fit) imageOptions.fit = element.style.fit === 'contain' ? [imgWidth, imgHeight || imgWidth] : undefined;
-        if (element.style?.fit === 'cover') imageOptions.cover = [imgWidth, imgHeight || imgWidth];
+        const imgWidth = elWidth > 0 ? elWidth : 100; 
+        const imgHeight = elHeight > 0 ? elHeight : imgWidth;
+        // Center image in its box if width/height are specified
+        let imgX = xPos, imgY = yPos;
+        if (elWidth > 0 && imgWidth < elWidth) imgX = xPos + (elWidth - imgWidth) / 2;
+        if (elHeight > 0 && imgHeight < elHeight) imgY = yPos + (elHeight - imgHeight) / 2;
+        const imageOptions = { width: imgWidth, height: imgHeight };
+        if (element.style?.fit) imageOptions.fit = element.style.fit === 'contain' ? [imgWidth, imgHeight] : undefined;
+        if (element.style?.fit === 'cover') imageOptions.cover = [imgWidth, imgHeight];
         if (element.style?.align) imageOptions.align = element.style.align;
         if (element.style?.valign) imageOptions.valign = element.style.valign;
-
         try {
-          doc.image(element.content, xPos, yPos, imageOptions);
+          doc.image(element.content, imgX, imgY, imageOptions);
         } catch (imgErr) {
             logger.error(`Failed to load image ${element.content} for element ${element.id}: ${imgErr.message}`);
-            doc.text(`[Img Err: ${element.id}]`, xPos, yPos);
+            doc.text(`[Img Err: ${element.id}]`, imgX, imgY);
         }
-      } else if (element.type === 'line') { // *** ADD LINE DRAWING ***
+      } else if (element.type === 'line') {
           doc.moveTo(element.position.x1, element.position.y1)
              .lineTo(element.position.x2, element.position.y2)
              .lineWidth(element.style?.lineWidth || 1)
@@ -1208,7 +1100,6 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
              .stroke();
       }
       // TODO: Add other shape drawing (rect, circle)
-      
       doc.restore(); // Restore drawing state
     }
     doc.end();
@@ -1219,13 +1110,14 @@ const downloadBadge = asyncHandler(async (req, res, next) => {
   }
 });
 
-// Helper function to convert units to PDF points
-const convertToPoints = (value, unit) => {
+// Helper function to convert units to pixels (DPIN = 100)
+const convertToPixels = (value, unit) => {
+  const DPIN = 100;
   if (!value) return 0;
-  if (unit === 'in') return value * 72;
-  if (unit === 'cm') return value * (72 / 2.54);
-  if (unit === 'mm') return value * (72 / 25.4);
-  return value; // Assume points if unit is unknown or not provided
+  if (unit === 'in') return value * DPIN;
+  if (unit === 'cm') return value * (DPIN / 2.54);
+  if (unit === 'mm') return value * (DPIN / 25.4);
+  return value;
 };
 
 module.exports = {

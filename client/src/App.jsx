@@ -38,6 +38,8 @@ import LandingPagePreview from './pages/LandingPages/LandingPagePreview';
 import PublicLandingPage from './pages/Public/PublicLandingPage';
 import AbstractManagementDashboard from './pages/AbstractManagement/AbstractManagementDashboard';
 import AbstractReview from './pages/AbstractManagement/AbstractReview';
+import ClientLoginPage from './pages/ClientPortal/ClientLoginPage';
+import ClientPortalRoutes from './pages/ClientPortal/ClientPortalRoutes';
 
 // Lazily loaded components
 const EventSettings = lazy(() => import('./pages/Events/EventSettings'));
@@ -70,6 +72,7 @@ import { RegistrantAuthProvider } from './contexts/RegistrantAuthContext.jsx';
 import PrivateRoute from './components/PrivateRoute';
 import PublicRoute from './components/PublicRoute';
 import RegistrantRoute from './components/RegistrantRoute';
+import { ClientAuthProvider } from './contexts/ClientAuthContext';
 
 // Admin pages
 import EventsPage from './pages/Events/EventsPage';
@@ -122,6 +125,7 @@ import NotFoundPage from './pages/NotFound/NotFoundPage';
 const SponsorPortalLayout = lazy(() => import('./pages/SponsorPortal/SponsorPortalLayout'));
 const SponsorProfilePage = lazy(() => import('./pages/SponsorPortal/SponsorProfilePage'));
 const SponsorRegistrantListPage = lazy(() => import('./pages/SponsorPortal/SponsorRegistrantListPage'));
+const SponsorDashboard = lazy(() => import('./pages/SponsorPortal/SponsorDashboard'));
 
 // Import sponsorAuthService for SponsorRoute
 import sponsorAuthService from './services/sponsorAuthService';
@@ -143,17 +147,18 @@ const SponsorRoute = ({ children }) => {
     return children;
   }
 
-  // Invalid or no session, attempt to redirect to a relevant sponsor login page.
-  // If sponsorDetails exist and contain an eventId, use that for redirection.
-  // This covers cases like token expired but we still know which event they were associated with.
-  if (sponsorDetails && sponsorDetails.eventId) {
-    return <Navigate to={`/portal/sponsor-login/${sponsorDetails.eventId}`} replace />;
+  // Try to get eventId from sponsorDetails, or from the current URL if missing
+  let eventId = sponsorDetails && sponsorDetails.eventId;
+  if (!eventId && typeof window !== 'undefined') {
+    // Try to extract from /sponsor-portal/events/:eventId or /portal/sponsor-login/:eventId
+    const match = window.location.pathname.match(/sponsor-portal(?:\/events)?\/(\w+)/) || window.location.pathname.match(/portal\/sponsor-login\/(\w+)/);
+    if (match) eventId = match[1];
   }
-
-  // If no token AND no sponsorDetails (or sponsorDetails without eventId),
-  // we don't know which event's sponsor login to direct to.
-  // Redirect to the application root as a fallback.
-  return <Navigate to="/" replace />;
+  if (eventId) {
+    return <Navigate to={`/portal/sponsor-login/${eventId}`} replace />;
+  }
+  // Fallback
+  return <Navigate to="/portal/sponsor-login/" replace />;
 };
 
 // Add a wrapper for ScannerStation to inject eventId from params
@@ -187,6 +192,14 @@ const App = () => {
                 <Route path="reviewer/:eventId" element={<ReviewerLoginPage />} />
                 <Route path="sponsor-login/:eventId" element={<SponsorLoginPortal />} />
                 <Route path="sponsor-dashboard/:eventId/:sponsorId/registrants" element={<SponsorRegistrantManagement />} />
+                <Route
+                  path="client-login/:eventId"
+                  element={
+                    <ClientAuthProvider>
+                      <ClientLoginPage />
+                    </ClientAuthProvider>
+                  }
+                />
               </Route>
 
               {/* Registrant Portal Routes */}
@@ -224,7 +237,7 @@ const App = () => {
                 <Route index element={<Navigate to="profile" replace />} />
                 <Route path="profile" element={<SponsorProfilePage />} />
                 <Route path="registrants" element={<SponsorRegistrantListPage />} />
-                {/* Add other sponsor portal routes here, e.g., my-registrants */}
+                <Route path="dashboard" element={<SponsorDashboard />} />
               </Route>
 
               {/* Main Dashboard and Management Routes */}
@@ -358,6 +371,16 @@ const App = () => {
 
               {/* Catch-all 404 Route */}
               <Route path="*" element={<NotFoundPage />} />
+
+              {/* Client Portal Routes */}
+              <Route
+                path="/client/*"
+                element={
+                  <ClientAuthProvider>
+                    <ClientPortalRoutes />
+                  </ClientAuthProvider>
+                }
+              />
             </Routes>
           </Suspense>
           <Toaster position="top-right" />
